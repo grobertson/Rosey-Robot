@@ -5,18 +5,18 @@
 domain: https://cytu.be
 
 # Channel to join
-channel: 420Grindhouse
+channel: "your-channel-name"
 
 # Bot credentials: [username, password]
-#user:
-#  - SaveTheRobots
-#  - wz6Kz.#2gXWw4B@
+# Keep the quotes around username and password to avoid YAML parsing errors
+
 user:
-    - FertilityHollis
-    - "@QLw!_Gev6_mpuz"
+    - "your-username"
+    - "your-password"
     
 # Socket.IO settings
-response_timeout: 1
+# Increase timeout for slower connections (default: 10 seconds)
+response_timeout: 10
 restart_delay: 5
 
 # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL

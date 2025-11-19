@@ -21,7 +21,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from common import Shell, get_config, configure_logger
-from common.database import Database
+from common.database import BotDatabase
 from lib.error import CytubeError, SocketIOError
 from lib import Bot
 

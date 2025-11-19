@@ -1,0 +1,26 @@
+# Weather API Plugin Configuration - Development Environment
+# Sprint 9 - External I/O and service provider validation
+
+enabled: true  # Enable for testing
+
+settings:
+  api_key_env: OPENWEATHER_API_KEY_DEV
+  cache_duration: 600  # 10 min for dev (test cache invalidation)
+  rate_limit: 120  # Higher limit for dev testing
+  default_units: metric  # Options: metric, imperial, kelvin
+  
+  # API Configuration
+  api_url: https://api.openweathermap.org/data/2.5/
+  timeout: 10
+  max_retries: 3
+  
+  # Display Options
+  include_forecast: true
+  forecast_days: 3
+  show_humidity: true
+  show_wind: true
+  show_pressure: false  # Less clutter in dev
+  
+  # Error Handling
+  fallback_on_error: true
+  cache_on_api_failure: true

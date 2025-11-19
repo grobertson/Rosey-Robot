@@ -1,0 +1,32 @@
+# Trivia Game Plugin Configuration - Production Environment
+# Sprint 9 - STAKEHOLDER PRIORITY ⚡
+
+enabled: true  # STAKEHOLDER REQUESTED - enabled in production
+
+settings:
+  question_source: local
+  question_database: /var/lib/rosey/trivia/questions.json
+  difficulty: medium
+  frequency: 30m  # Every 30 minutes
+  cooldown: 5m  # 5 minute cooldown between games
+  questions_per_game: 10
+  question_timeout: 30  # 30 seconds to answer
+  fast_answer_bonus: 2
+  
+  # Scoring
+  points_correct: 10
+  points_fast_bonus: 5
+  points_streak_multiplier: 1.5
+  
+  # Game Limits
+  max_concurrent_games: 3  # Support up to 3 concurrent games
+  min_players: 2  # Require at least 2 players
+  
+  # Notifications
+  announce_start: true
+  announce_winner: true
+  show_leaderboard_on_end: true
+  
+  # Production Safety
+  auto_disable_on_error: true  # Disable if errors occur
+  error_threshold: 5  # Disable after 5 errors

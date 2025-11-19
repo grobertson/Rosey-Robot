@@ -1,0 +1,23 @@
+# Quotable Quotes Plugin Configuration - Staging Environment
+# Sprint 9 - Storage adapter validation
+
+enabled: true  # Enable for testing
+
+settings:
+  max_quote_length: 500
+  search_result_limit: 5
+  enable_duplicate_detection: true
+  
+  # Storage
+  database_path: /var/lib/rosey/quotes.db
+  backup_on_startup: true
+  backup_retention_days: 7
+  
+  # Search
+  search_algorithm: fuzzy  # Options: exact, fuzzy, regex
+  min_search_length: 3
+  
+  # Display
+  include_attribution: true
+  include_timestamp: true
+  random_selection_weighted: true  # Favor popular quotes

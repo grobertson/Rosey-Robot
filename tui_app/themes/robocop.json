@@ -1,0 +1,45 @@
+{
+  "name": "RoboCop",
+  "description": "Part man, part machine, all cop. Serve the public trust, protect the innocent",
+  "colors": {
+    "status_bar": {
+      "background": "blue",
+      "text": "bright_white"
+    },
+    "borders": "bright_blue",
+    "timestamps": "bright_black",
+    "user_ranks": {
+      "owner": "bright_blue",
+      "admin": "bright_cyan",
+      "moderator": "blue",
+      "registered": "bright_white",
+      "guest": "white"
+    },
+    "user_list_header": {
+      "background": "blue",
+      "text": "bright_white"
+    },
+    "messages": {
+      "private": "bright_magenta",
+      "system_join": "bright_blue",
+      "system_leave": "blue",
+      "system_media": "bright_cyan",
+      "system_info": "bright_white",
+      "mention_highlight": "reverse"
+    },
+    "input": {
+      "prompt": "bright_blue",
+      "text": "bright_white"
+    }
+  },
+  "symbols": {
+    "rank_owner": "~",
+    "rank_admin": "%",
+    "rank_moderator": "@",
+    "rank_registered": "+",
+    "rank_guest": " ",
+    "leader_marker": "[*]",
+    "muted_marker": "[m]",
+    "shadow_muted_marker": "[s]"
+  }
+}
