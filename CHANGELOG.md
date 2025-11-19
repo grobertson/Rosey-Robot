@@ -241,7 +241,7 @@ This reorganization clarifies the project's purpose:
 - **Examples** (`examples/`) - Educational reference implementations
 - **TUI** (`examples/tui/`) - Featured terminal UI chat client (future standalone project)
 
-### Migration from 1.x
+### Migration from 0.1.x
 
 For users of previous versions:
 
