@@ -1,0 +1,45 @@
+{
+  "name": "Marvin",
+  "description": "Brain the size of a planet... The Paranoid Android from Hitchhiker's Guide",
+  "colors": {
+    "status_bar": {
+      "background": "green",
+      "text": "black"
+    },
+    "borders": "green",
+    "timestamps": "bright_black",
+    "user_ranks": {
+      "owner": "bright_green",
+      "admin": "green",
+      "moderator": "bright_green",
+      "registered": "white",
+      "guest": "bright_black"
+    },
+    "user_list_header": {
+      "background": "green",
+      "text": "black"
+    },
+    "messages": {
+      "private": "bright_magenta",
+      "system_join": "green",
+      "system_leave": "bright_black",
+      "system_media": "bright_green",
+      "system_info": "white",
+      "mention_highlight": "reverse"
+    },
+    "input": {
+      "prompt": "bright_green",
+      "text": "white"
+    }
+  },
+  "symbols": {
+    "rank_owner": "~",
+    "rank_admin": "%",
+    "rank_moderator": "@",
+    "rank_registered": "+",
+    "rank_guest": " ",
+    "leader_marker": "[*]",
+    "muted_marker": "[m]",
+    "shadow_muted_marker": "[s]"
+  }
+}

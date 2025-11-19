@@ -1,0 +1,45 @@
+{
+  "name": "R2D2",
+  "description": "Beep boop! The brave little astromech droid from Star Wars",
+  "colors": {
+    "status_bar": {
+      "background": "blue",
+      "text": "white"
+    },
+    "borders": "bright_blue",
+    "timestamps": "bright_black",
+    "user_ranks": {
+      "owner": "bright_blue",
+      "admin": "bright_cyan",
+      "moderator": "cyan",
+      "registered": "white",
+      "guest": "bright_black"
+    },
+    "user_list_header": {
+      "background": "blue",
+      "text": "white"
+    },
+    "messages": {
+      "private": "bright_magenta",
+      "system_join": "bright_blue",
+      "system_leave": "cyan",
+      "system_media": "bright_cyan",
+      "system_info": "white",
+      "mention_highlight": "reverse"
+    },
+    "input": {
+      "prompt": "bright_blue",
+      "text": "white"
+    }
+  },
+  "symbols": {
+    "rank_owner": "~",
+    "rank_admin": "%",
+    "rank_moderator": "@",
+    "rank_registered": "+",
+    "rank_guest": " ",
+    "leader_marker": "[*]",
+    "muted_marker": "[m]",
+    "shadow_muted_marker": "[s]"
+  }
+}

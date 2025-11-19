@@ -1,0 +1,17 @@
+# Dice Roller Plugin Configuration - Staging Environment
+# Sprint 9 - Simple plugin for lifecycle validation
+
+enabled: true  # Enable for testing
+
+settings:
+  max_dice: 20
+  max_sides: 1000
+  
+  # Formatting
+  show_individual_rolls: true
+  show_total: true
+  show_modifier: true
+  
+  # Limits (to prevent spam)
+  cooldown: 1  # Staging cooldown
+  max_rolls_per_command: 10

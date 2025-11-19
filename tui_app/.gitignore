@@ -1,0 +1,36 @@
+# TUI Application specific ignores
+
+# User configs (keep examples only)
+configs/*.yaml
+configs/*.json
+!configs/*.example
+
+# Log files
+logs/*.log
+logs/chat_*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.old

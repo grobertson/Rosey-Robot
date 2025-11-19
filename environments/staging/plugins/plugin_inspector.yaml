@@ -1,0 +1,30 @@
+# Plugin Inspector Configuration - Staging Environment
+# Sprint 9 - System introspection and monitoring
+
+enabled: true  # Enable for testing
+
+settings:
+  # Introspection Depth
+  show_internal_state: true  # Full visibility in staging
+  show_registered_hooks: true
+  show_dependencies: true
+  show_performance_metrics: true
+  
+  # Health Checks
+  health_check_interval: 60
+  alert_on_failure: true  # Enable alerts in staging
+  alert_threshold: 3  # Alert after 3 failures
+  
+  # Metrics Collection
+  collect_event_metrics: true
+  collect_command_metrics: true
+  collect_plugin_load_times: true
+  metrics_retention: 86400  # 24 hours
+  
+  # Access Control
+  require_admin: false  # Open in staging for testing
+  allowed_users: []
+  
+  # Output Format
+  format: detailed  # Options: brief, detailed, json
+  include_examples: true
