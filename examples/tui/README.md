@@ -386,7 +386,7 @@ See the main project LICENSE file.
 ## See Also
 
 - [Main README](../../README.md) - Project overview
-- [ARCHITECTURE.md](../../ARCHITECTURE.md) - System architecture
+- [ARCHITECTURE.md](../../docs/ARCHITECTURE.md) - System architecture
 - [lib/bot.py](../../lib/bot.py) - Core bot implementation
 - [blessed documentation](https://blessed.readthedocs.io/) - Terminal library docs
 

@@ -310,6 +310,6 @@ screen -r status
 
 ## See Also
 
-- [PM_GUIDE.md](../PM_GUIDE.md) - Using the bot via private messages
+- [PM_GUIDE.md](../docs/guides/PM_GUIDE.md) - Using the bot via private messages
 - [SHELL_COMMANDS.md](../SHELL_COMMANDS.md) - Command-line interface reference
 - [README.md](../README.md) - Main documentation

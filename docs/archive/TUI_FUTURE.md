@@ -1,4 +1,12 @@
-# TUI Application Migration Summary
+# TUI Application 
+
+These are the notes from the project that created "Juiced," the unofficial terminal chat app for Cytube. The project broke the example TUI application off from Rosey-Robot, promoting future TUI development to its own standalone application.
+
+The TUI example will not be developed further and may be removed entirely in a later version.
+
+Juiced is located at https://github.com/grobertson/Juiced/
+
+Historical notes continue:
 
 ## What Was Done
 

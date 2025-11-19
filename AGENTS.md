@@ -43,7 +43,7 @@ This document describes the **agent-assisted development workflow** used in the 
 9. **Future Enhancements**: Post-release roadmap
 10. **Open Questions**: Unresolved issues to address
 
-**Example**: [`docs/2-start-me-up/PRD-LLM-Integration.md`](docs/2-start-me-up/PRD-LLM-Integration.md)
+**Example**: [`docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md`](docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md)
 
 **Agent Usage**:
 
@@ -75,7 +75,7 @@ security considerations, cost analysis, etc.
 8. **Rollout**: Deployment steps and monitoring
 9. **Documentation**: Code comments, API docs, user guides
 
-**Example**: [`docs/2-start-me-up/SPEC-Sortie-1-LLM-Foundation.md`](docs/2-start-me-up/SPEC-Sortie-1-LLM-Foundation.md)
+**Example**: [`docs/sprints/completed/2-start-me-up/SPEC-Sortie-1-LLM-Foundation.md`](docs/sprints/completed/2-start-me-up/SPEC-Sortie-1-LLM-Foundation.md)
 
 **Agent Usage**:
 
@@ -249,28 +249,43 @@ features section, quick start, and configuration examples"
 
 ```text
 docs/
-├── {N}-{sprint-name}/          # Numbered sprint folders
-│   ├── PRD-{Feature}.md        # Product requirements
-│   ├── SPEC-Sortie-1-{Name}.md # First sortie spec
-│   ├── SPEC-Sortie-2-{Name}.md # Second sortie spec
-│   └── ...                     # Additional sortie specs
-├── LLM_CONFIGURATION.md        # Feature-specific guides
-├── SETUP.md                    # Setup instructions
-└── TUI_MIGRATION.md            # Migration guides
+├── sprints/
+│   ├── completed/              # Completed sprints
+│   │   ├── 2-start-me-up/     # LLM Integration
+│   │   ├── 5-ship-it/         # Production Deployment
+│   │   └── 6a-quicksilver/    # NATS Event Bus
+│   └── active/                 # Active/planned sprints
+│       ├── 3-rest-assured/    # REST API Migration
+│       ├── 4-test-assured/    # Testing Infrastructure
+│       └── 6-make-it-real/    # Advanced Deployment
+├── guides/                     # Feature guides
+│   ├── LLM_CONFIGURATION.md
+│   ├── PM_GUIDE.md
+│   ├── API_TOKENS.md
+│   └── NATS_CONFIGURATION.md
+├── ARCHITECTURE.md
+├── TESTING.md
+└── SETUP.md
 
 Top Level:
-├── AGENTS.MD                   # This file - workflow guide
-├── ARCHITECTURE.md             # System architecture
-├── PM_GUIDE.md                 # Bot control guide
+├── AGENTS.md                   # This file - workflow guide
 ├── README.md                   # Main documentation
 ├── QUICKSTART.md               # Quick start guide
-├── TESTING.md                  # Testing guide
 └── CHANGELOG.md                # Version history
+```
+
+Each sprint directory contains:
+
+```text
+docs/sprints/{completed|active}/{N}-{sprint-name}/
+├── PRD-{Feature}.md           # Product requirements
+├── SPEC-Sortie-{N}-{Name}.md  # Technical specifications
+└── ...                        # Additional documentation
 ```
 
 ### Sprint Naming Convention
 
-Format: `{number}-{descriptive-name}`
+Format: `{number}-{descriptive-name}` or `{number}-{movie-title}` (6a+)
 
 Examples:
 
@@ -279,7 +294,9 @@ Examples:
 - `4-test-assured` - Testing Infrastructure sprint
 - `5-ship-it` - Production Deployment sprint
 - `6-make-it-real` - Advanced Deployment sprint
-- `6a-quicksilver` - Message passing architecture using NATS
+- `6a-quicksilver` - NATS Event Bus architecture
+
+See [docs/SPRINT_NAMING.md](docs/SPRINT_NAMING.md) for the complete naming convention guide.
 
 ---
 
@@ -298,7 +315,7 @@ Examples:
 5. Implementation timeline and rollout plan
 6. Future enhancement roadmap
 
-**Format**: Use the existing PRD template from docs/2-start-me-up/PRD-LLM-Integration.md
+**Format**: Use the existing PRD template from docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md
 ```
 
 ### Pattern 2: Specification Breakdown
@@ -359,8 +376,8 @@ Examples:
 
 **Files to Update**:
 1. README.md - Add feature to list, quick start example
-2. ARCHITECTURE.md - Add new components to diagrams
-3. Create docs/[FEATURE]_GUIDE.md - Detailed usage guide
+2. docs/ARCHITECTURE.md - Add new components to diagrams
+3. Create docs/guides/[FEATURE]_GUIDE.md - Detailed usage guide
 4. Update CHANGELOG.md - Add entry for this version
 
 **Style**: Follow existing documentation patterns and tone
@@ -463,7 +480,7 @@ All commits will be flattened when merged with the pull request.
    conversation context, and rate limiting."
    ```
 
-   - Output: `docs/2-start-me-up/PRD-LLM-Integration.md`
+   - Output: `docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md`
 
 2. **Create Commit Specs**
 
@@ -538,8 +555,8 @@ All commits will be flattened when merged with the pull request.
    Prompt: "Implement SPEC-Commit-6-Documentation-PR.md"
    ```
 
-   - Updated: `README.md`, `ARCHITECTURE.md`
-   - Created: `docs/LLM_CONFIGURATION.md`
+   - Updated: `README.md`, `docs/ARCHITECTURE.md`
+   - Created: `docs/guides/LLM_CONFIGURATION.md`
    - Commit: "Complete LLM documentation"
 
 3. **Create PR**
@@ -686,16 +703,18 @@ Prompt: "Create an ONBOARDING.md guide for new contributors that covers:
 ### Project Documentation
 
 - [README.md](README.md) - Main project documentation
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture
-- [TESTING.md](TESTING.md) - Testing guide
-- [PM_GUIDE.md](PM_GUIDE.md) - Bot control guide
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture
+- [TESTING.md](docs/TESTING.md) - Testing guide
+- [PM_GUIDE.md](docs/guides/PM_GUIDE.md) - Bot control guide
 - [QUICKSTART.md](QUICKSTART.md) - Quick start guide
 
 ### Example Sprints
 
-- [2-start-me-up](docs/2-start-me-up/) - LLM Integration sprint (✅ Complete)
-- [3-rest-assured](docs/3-rest-assured/) - REST API Migration sprint (📋 Planning)
-- [4-test-assured](docs/4-test-assured/) - Testing Infrastructure sprint (📋 Planning)
+- [2-start-me-up](docs/sprints/completed/2-start-me-up/) - LLM Integration sprint (✅ Complete)
+- [3-rest-assured](docs/sprints/completed/3-rest-assured/) - REST API Migration sprint (✅ Complete)
+- [4-test-assured](docs/sprints/completed/4-test-assured/) - Testing Infrastructure sprint (✅ Complete)
+- [5-ship-it](docs/sprints/active/5-ship-it/) - Production Deployment sprint (⚠️ Needs Validation)
+- [6a-quicksilver](docs/sprints/completed/6a-quicksilver/) - NATS Event Bus sprint (✅ Complete)
 
 ### External Resources
 

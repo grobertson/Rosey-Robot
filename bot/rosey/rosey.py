@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Rosey - A feature-rich CyTube bot with logging, shell control, and database tracking.
+"""Rosey - A feature-rich CyTube bot with logging, pm control, and database tracking.
 
 Rosey is the main bot application that provides:
 - Chat and media logging
-- Remote shell control for moderators
 - Database tracking of users and statistics
-- PM command interface for channel management
+- PM command interface for channel and bot management
+
 """
 
 import sys
@@ -234,9 +234,8 @@ async def run_bot():
     # Create Rosey bot instance with configuration
     bot = Bot(**kwargs)
 
-    # Create and start shell server if configured
+    # Create shell (PM command handler) if configured
     shell = Shell(conf.get("shell", None), bot)
-    await shell.start()
     
     # Initialize LLM if configured
     llm_client = None
@@ -282,9 +281,6 @@ async def run_bot():
         # Run Rosey (blocks until cancelled or error)
         await bot.run()
     finally:
-        # Always close the shell on exit
-        shell.close()
-        
         # Close LLM client if active
         if llm_client:
             await llm_client.__aexit__(None, None, None)

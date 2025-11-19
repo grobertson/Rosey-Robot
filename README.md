@@ -243,7 +243,7 @@ Rosey: "Why did the bot go to therapy? It had too many connection issues!"
 
 ### Documentation
 
-- **[Complete LLM Configuration Guide](docs/LLM_CONFIGURATION.md)** - Setup for all providers, trigger configuration, troubleshooting
+- **[Complete LLM Configuration Guide](docs/guides/LLM_CONFIGURATION.md)** - Setup for all providers, trigger configuration, troubleshooting
 - **[Systemd Deployment with LLM](systemd/README.md)** - Production deployment guide
 
 ### Example Configurations
@@ -277,7 +277,7 @@ Rosey: "Why did the bot go to therapy? It had too many connection issues!"
 }
 ```
 
-See [docs/LLM_CONFIGURATION.md](docs/LLM_CONFIGURATION.md) for complete details.
+See [docs/guides/LLM_CONFIGURATION.md](docs/guides/LLM_CONFIGURATION.md) for complete details.
 
 ### Web Status Dashboard
 
@@ -478,7 +478,7 @@ playlist.get(uid)         # Get item by UID
 - ✅ Web Dashboard for monitoring bot status
 - ✅ Database Integration with PostgreSQL for data persistence
 - ✅ PM Command Interface for administrative control via private messages
-- ✅ **LLM Chat Integration** - AI-powered responses with OpenAI, Ollama, and OpenRouter support. Smart triggers, conversation context, flexible configuration. See [docs/LLM_CONFIGURATION.md](docs/LLM_CONFIGURATION.md)
+- ✅ **LLM Chat Integration** - AI-powered responses with OpenAI, Ollama, and OpenRouter support. Smart triggers, conversation context, flexible configuration. See [docs/guides/LLM_CONFIGURATION.md](docs/guides/LLM_CONFIGURATION.md)
 
 ### Planned Features
 
@@ -547,7 +547,7 @@ open htmlcov/index.html   # macOS
 
 ### Testing Documentation
 
-See **[TESTING.md](TESTING.md)** for comprehensive testing guide including:
+See **[TESTING.md](docs/TESTING.md)** for comprehensive testing guide including:
 
 - Writing new tests
 - Test fixtures and utilities

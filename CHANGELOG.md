@@ -110,9 +110,9 @@ This release integrates the Quicksilver nano-sprint, introducing a complete even
   - Test coverage maintained at 85%+
 
 - **Documentation**
-  - Added `docs/6a-quicksilver/` with complete PRD and 8 sortie specs
-  - Added `docs/TUI_MIGRATION.md` for TUI standalone project
-  - Updated `AGENTS.MD` with nano-sprint terminology
+  - Added `docs/sprints/completed/6a-quicksilver/` with complete PRD and 8 sortie specs
+  - Added `docs/archive/TUI_MIGRATION.md` for TUI standalone project
+  - Updated `AGENTS.md` with nano-sprint terminology
   - Added `IMPLEMENTATION-TRACKER.md` with sortie completion status
 
 #### Dependencies Added
@@ -226,7 +226,7 @@ This release represents a major restructuring and rebranding of the project from
 - **Documentation**: Comprehensive updates across all markdown files
   - README.md - Complete rebranding and structure updates
   - QUICKSTART.md - Updated paths and running instructions
-  - ARCHITECTURE.md - Updated layer diagrams and descriptions
+  - docs/ARCHITECTURE.md - Updated layer diagrams and descriptions
   - TUI documentation - Updated all path references
 
 #### Removed
