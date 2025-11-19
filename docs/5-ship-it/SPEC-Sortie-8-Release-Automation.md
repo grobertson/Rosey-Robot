@@ -28,9 +28,9 @@ Automate version tagging, changelog generation, and GitHub release creation for 
 **Semantic Versioning:** `vMAJOR.MINOR.PATCH`
 
 **Version Bump Rules:**
-- **MAJOR (v2.0.0):** Breaking changes, major refactors
-- **MINOR (v1.1.0):** New features, non-breaking changes
-- **PATCH (v1.0.1):** Bug fixes, minor improvements
+- **MAJOR (v0.2.0):** Breaking changes, major refactors
+- **MINOR (v0.1.0):** New features, non-breaking changes
+- **PATCH (v0.0.1):** Bug fixes, minor improvements
 
 **Version Storage:**
 - Git tags: `v1.2.3`
@@ -785,7 +785,7 @@ python scripts/bump_version.py --auto
 ### Feature Release
 
 ```markdown
-## [1.1.0] - 2024-11-12
+## [0.2.0] - 2024-11-12
 
 ### ✨ Features
 - Add CI/CD pipeline (#45) (abc1234)
@@ -815,7 +815,7 @@ python scripts/bump_version.py --auto
 ### Major Release
 
 ```markdown
-## [2.0.0] - 2024-11-12
+## [0.2.0] - 2024-11-12
 
 ### ⚠️ BREAKING CHANGES
 - Database schema updated - migration required

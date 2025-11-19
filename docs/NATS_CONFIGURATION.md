@@ -365,7 +365,7 @@ curl http://localhost:8000/api/health
   "connected": true,
   "channel": "mychannel",
   "uptime": 12345,
-  "version": "2.0.0",
+  "version": "0.2.0",
   "user_count": 42,
   "requests": 1000,
   "errors": 3,

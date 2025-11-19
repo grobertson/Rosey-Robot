@@ -2,7 +2,7 @@
 
 **Version:** 1.0  
 **Status:** Implementation Complete (Nano-Sprint)  
-**Target Release:** 2.1.0  
+**Target Release:** 0.3.0  
 **Author:** GitHub Copilot  
 **Date:** 2025-11-10  
 
@@ -773,7 +773,7 @@ markovify>=0.9.4         # Markov bot (optional)
 - Update documentation
 - Announce feature in README
 - Merge to main branch
-- Tag release v2.1.0
+- Tag release v0.3.0
 
 ### 8.2 Rollback Plan
 
@@ -959,7 +959,7 @@ api_key = os.getenv('OPENAI_API_KEY') or llm_config.get('openai_api_key')
 
 ## 10. Future Enhancements
 
-### 10.1 Planned Features (Post-v2.1.0)
+### 10.1 Planned Features (Post-v0.3.0)
 
 **PE-001: Persistent Context Storage**
 - Store conversation history in SQLite
@@ -1358,7 +1358,7 @@ Assumptions:
 **Status**: ✅ Implementation Complete (Nano-Sprint)  
 **Next Steps**: 
 1. Merge PR #7 to main branch
-2. Tag release v2.1.0
+2. Tag release v0.3.0
 3. Announce feature in community channels
 4. Monitor production deployment
 5. Plan Phase 2 features (persistent context, advanced rate limiting)

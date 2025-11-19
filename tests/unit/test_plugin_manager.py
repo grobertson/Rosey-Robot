@@ -102,7 +102,7 @@ class TestPluginMetadata:
         """Test serializing metadata"""
         metadata = PluginMetadata(
             name="test-plugin",
-            version="2.0.0",
+            version="0.2.0",
             description="Test",
             author="Author",
             module_path="test.module",
@@ -112,7 +112,7 @@ class TestPluginMetadata:
         data = metadata.to_dict()
         
         assert data["name"] == "test-plugin"
-        assert data["version"] == "2.0.0"
+        assert data["version"] == "0.2.0"
         assert data["description"] == "Test"
         assert data["author"] == "Author"
         assert data["module_path"] == "test.module"
@@ -123,7 +123,7 @@ class TestPluginMetadata:
         """Test deserializing metadata"""
         data = {
             "name": "test-plugin",
-            "version": "2.0.0",
+            "version": "0.2.0",
             "description": "Test plugin",
             "author": "Author",
             "module_path": "test.module",
@@ -137,7 +137,7 @@ class TestPluginMetadata:
         metadata = PluginMetadata.from_dict(data)
         
         assert metadata.name == "test-plugin"
-        assert metadata.version == "2.0.0"
+        assert metadata.version == "0.2.0"
         assert metadata.description == "Test plugin"
         assert metadata.dependencies == ["dep1", "dep2"]
         assert metadata.permission_profile == PermissionProfile.EXTENDED

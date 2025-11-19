@@ -59,7 +59,7 @@ setup_tui.py                      # Optional: pip installable
 ### 4. Better Maintainability
 - TUI code isolated from examples
 - Clear package structure with __init__.py and __main__.py
-- Version tracking (2.0.0)
+- Version tracking (0.2.0)
 - Proper .gitignore
 
 ## Migration from Old Structure

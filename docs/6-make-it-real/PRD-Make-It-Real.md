@@ -406,7 +406,7 @@ Web Browser
   "connected": true,
   "channel": "RoseyRoom",
   "uptime": 86400,
-  "version": "1.0.0",
+  "version": "0.2.0",
   "user_count": 42,
   "requests": 1234,
   "errors": 5
