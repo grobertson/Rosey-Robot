@@ -56,12 +56,14 @@ Sprint 6 is successful when:
 
 ### Prerequisites
 - Sprint 5 complete (all infrastructure code exists)
+- Sprint 6a (Quicksilver) complete (NATS event bus architecture)
 - PR #12 merged (or Sprint 6 branches from Sprint 5)
 
 ### External Dependencies
 - **Servers**: Need access to test and production servers (VM, cloud, or physical)
 - **Domain/Networking**: Server connectivity and firewall configuration
 - **CyTube Access**: Production bot credentials and channel access
+- **NATS Server**: Message broker for event bus architecture (Sprint 6a requirement)
 
 ### Technical Debt from Sprint 5
 Must be resolved during Sprint 6:
@@ -69,6 +71,13 @@ Must be resolved during Sprint 6:
 - **SSH deployment** (#17) - Required for automated deployments
 - **WebSocket timeout** (#14) - Critical bug blocking bot functionality
 - **Database checks** (#18) - Optional, document for future
+
+### New Requirements from Sprint 6a (Quicksilver)
+The Quicksilver nano-sprint introduced a NATS-based event bus architecture that requires:
+- **NATS Server Installation**: Must be installed and running on all deployment servers
+- **NATS Configuration**: Connection strings and credentials in environment configs
+- **Firewall Rules**: NATS ports (4222 client, 8222 monitoring) must be accessible
+- **Service Management**: NATS must start before bot and restart on failure
 
 ## Sprint 6 Sorties
 

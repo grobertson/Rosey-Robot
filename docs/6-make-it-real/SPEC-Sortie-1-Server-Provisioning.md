@@ -257,7 +257,154 @@ cd /opt/rosey-bot
 mkdir -p {web,monitoring,scripts,logs}
 ```
 
-#### Step 3.7: Configure Firewall
+#### Step 3.7: Install and Configure NATS Server
+
+**CRITICAL**: Sprint 6a (Quicksilver) introduced a NATS-based event bus architecture. NATS server must be installed and running before the bot can function.
+
+**On each server (test and production)**:
+
+##### Install NATS Server
+
+```bash
+# Download and install NATS server (latest stable)
+wget https://github.com/nats-io/nats-server/releases/download/v2.10.7/nats-server-v2.10.7-linux-amd64.tar.gz
+
+# Extract
+tar -xzf nats-server-v2.10.7-linux-amd64.tar.gz
+
+# Move binary to system path
+sudo mv nats-server-v2.10.7-linux-amd64/nats-server /usr/local/bin/
+
+# Verify installation
+nats-server --version
+# Expected: nats-server: v2.10.7
+
+# Clean up
+rm -rf nats-server-v2.10.7-linux-amd64*
+```
+
+##### Create NATS Configuration
+
+```bash
+# Create NATS config directory
+sudo mkdir -p /etc/nats
+
+# Create NATS server configuration
+sudo tee /etc/nats/nats-server.conf <<'EOF'
+# NATS Server Configuration for Rosey Bot
+
+# Server identification
+server_name: rosey_nats
+
+# Listen on localhost only (bot and NATS on same server)
+host: 127.0.0.1
+port: 4222
+
+# Monitoring endpoint (for health checks)
+http_port: 8222
+
+# Logging
+log_file: "/var/log/nats/nats-server.log"
+debug: false
+trace: false
+logtime: true
+
+# Limits
+max_connections: 100
+max_control_line: 4096
+max_payload: 1048576    # 1MB
+
+# Timeouts
+ping_interval: 2m
+ping_max: 2
+
+# JetStream (persistence) - optional for now
+jetstream {
+    store_dir: "/var/lib/nats"
+    max_mem: 1G
+    max_file: 10G
+}
+EOF
+```
+
+##### Create NATS System Service
+
+```bash
+# Create NATS user
+sudo useradd -r -s /bin/false nats
+
+# Create directories
+sudo mkdir -p /var/log/nats /var/lib/nats
+sudo chown -R nats:nats /var/log/nats /var/lib/nats
+
+# Create systemd service
+sudo tee /etc/systemd/system/nats.service <<'EOF'
+[Unit]
+Description=NATS Server
+Documentation=https://docs.nats.io
+After=network.target
+
+[Service]
+Type=simple
+User=nats
+Group=nats
+ExecStart=/usr/local/bin/nats-server -c /etc/nats/nats-server.conf
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nats-server
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/nats /var/lib/nats
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd
+sudo systemctl daemon-reload
+
+# Enable NATS to start on boot
+sudo systemctl enable nats
+
+# Start NATS server
+sudo systemctl start nats
+
+# Check status
+sudo systemctl status nats
+```
+
+##### Verify NATS Installation
+
+```bash
+# Check NATS is running
+curl http://localhost:8222/varz
+
+# Expected: JSON response with server info
+
+# Check logs
+sudo tail -f /var/log/nats/nats-server.log
+# Expected: "Server is ready" message
+
+# Test NATS connectivity (if nats CLI is installed)
+# Optional: install NATS CLI for testing
+curl -L https://github.com/nats-io/natscli/releases/download/v0.1.1/nats-0.1.1-linux-amd64.tar.gz -o nats-cli.tar.gz
+tar -xzf nats-cli.tar.gz
+sudo mv nats-0.1.1-linux-amd64/nats /usr/local/bin/
+rm -rf nats-*
+
+# Test pub/sub
+nats pub test "Hello NATS"
+# Expected: Published message
+```
+
+#### Step 3.8: Configure Firewall
 
 **On each server**:
 
@@ -271,6 +418,9 @@ sudo ufw allow 22/tcp
 # Allow health endpoint ports
 sudo ufw allow 8000/tcp  # Production health endpoint
 sudo ufw allow 8001/tcp  # Test health endpoint
+
+# NATS server listens on localhost only (127.0.0.1:4222)
+# No external firewall rule needed - bot and NATS on same server
 
 # Allow Prometheus (if accessing remotely)
 sudo ufw allow 9090/tcp
@@ -344,6 +494,9 @@ Complete this checklist for BOTH servers before proceeding:
 - [ ] User `rosey` created with sudo access
 - [ ] SSH key authentication works (passwordless)
 - [ ] Directory `/opt/rosey-bot` exists and owned by `rosey`
+- [ ] NATS server installed (`nats-server --version`)
+- [ ] NATS service running (`systemctl status nats`)
+- [ ] NATS monitoring accessible (`curl http://localhost:8222/varz`)
 - [ ] Firewall configured (ports 22, 8001, 9090, 9093 open)
 - [ ] Can connect: `ssh -i ~\.ssh\rosey_bot_test_deploy rosey@TEST_IP`
 - [ ] Server IP address documented
@@ -357,6 +510,9 @@ Complete this checklist for BOTH servers before proceeding:
 - [ ] User `rosey` created with sudo access
 - [ ] SSH key authentication works (passwordless)
 - [ ] Directory `/opt/rosey-bot` exists and owned by `rosey`
+- [ ] NATS server installed (`nats-server --version`)
+- [ ] NATS service running (`systemctl status nats`)
+- [ ] NATS monitoring accessible (`curl http://localhost:8222/varz`)
 - [ ] Firewall configured (ports 22, 8000, 9090, 9093 open)
 - [ ] Can connect: `ssh -i ~\.ssh\rosey_bot_prod_deploy rosey@PROD_IP`
 - [ ] Server IP address documented
