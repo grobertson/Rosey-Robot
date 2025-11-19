@@ -5,7 +5,7 @@
 **Status:** ✅ Implemented  
 **Related PRD Section:** 5.1 Nano-Sprint Deliverables (Item 2), US-003  
 **Dependencies:** SPEC-Commit-1-LLM-Foundation.md  
-**Target Release:** v2.1.0  
+**Target Release:** v0.3.0  
 
 ---
 

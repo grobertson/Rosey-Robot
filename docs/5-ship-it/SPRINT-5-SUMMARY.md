@@ -815,7 +815,7 @@ The following features are complete but require the bot's health endpoint:
   "connected": true,
   "channel": "rosey",
   "uptime": 12345,
-  "version": "1.0.0",
+  "version": "0.2.0",
   "user_count": 42,
   "requests": 1000,
   "errors": 5

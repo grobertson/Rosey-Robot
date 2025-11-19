@@ -1,6 +1,6 @@
 # Changelog
 
-## [2.0.0] - 2025-11-10
+## [0.2.0] - 2025-11-10
 
 ### Major Reorganization - "Rosey" Rebranding
 
@@ -46,7 +46,7 @@ This reorganization clarifies the project's purpose:
 - **Examples** (`examples/`) - Educational reference implementations
 - **TUI** (`examples/tui/`) - Featured terminal UI chat client (future standalone project)
 
-### Migration from 1.x
+### Migration from 0.1.x
 
 For users of previous versions:
 
@@ -55,13 +55,13 @@ For users of previous versions:
 3. **Import paths unchanged**: All imports still use `lib` and `common`
 4. **Configuration format**: Same JSON/YAML format, just use `.dist` templates
 
-## [1.1.2] - 2025-11-09
+## [0.1.2] - 2025-11-09
 
 ### Changed - Separated Services Approach
 
 **Reverted unified daemon system** due to asyncio event loop conflicts when running Flask and the bot together.
 
-Instead of a single process, v1.1.2 provides **separate systemd services**:
+Instead of a single process, v0.1.2 provides **separate systemd services**:
 - Bot runs independently with its own event loop
 - Web server runs independently with its own event loop
 - No asyncio conflicts or RuntimeError exceptions
@@ -116,11 +116,11 @@ See `systemd/README.md` for complete documentation.
 
 ---
 
-## [1.0.1] - 2025-11-09
+## [0.1.1] - 2025-11-09
 
 ### Bug Fixes
 
-This patch release fixes critical issues discovered immediately after the 1.0.0 release.
+This patch release fixes critical issues discovered immediately after the 0.1.0 release.
 
 #### Fixed
 
@@ -160,7 +160,7 @@ This patch release fixes critical issues discovered immediately after the 1.0.0 
 
 ---
 
-## [1.0.0] - 2025-11-09
+## [0.1.0] - 2025-11-09
 
 ### Security & Reliability Hardening
 

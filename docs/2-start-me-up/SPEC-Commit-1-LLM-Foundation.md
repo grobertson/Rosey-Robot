@@ -4,7 +4,7 @@
 **Feature:** Core LLM Integration  
 **Status:** ✅ Implemented  
 **Related PRD Section:** 5.1 Nano-Sprint Deliverables (Item 1)  
-**Target Release:** v2.1.0  
+**Target Release:** v0.3.0  
 
 ---
 

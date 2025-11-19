@@ -2,7 +2,7 @@
 
 ## Overview
 
-Rosey v2.0.0 includes built-in support for Large Language Model (LLM) integration, allowing the bot to have intelligent conversations with users in the channel.
+Rosey v0.2.0 includes built-in support for Large Language Model (LLM) integration, allowing the bot to have intelligent conversations with users in the channel.
 
 ## Supported Providers
 
