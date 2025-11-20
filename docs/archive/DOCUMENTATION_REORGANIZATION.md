@@ -194,6 +194,12 @@ When a sprint is completed:
 2. Update CHANGELOG.md with completion date
 3. Update sprint status in `docs/SPRINT_NAMING.md`
 
+When a sprint is deferred:
+
+1. Move from `docs/sprints/active/{N}-{name}/` to `docs/sprints/deferred/{N}-{name}/`
+2. Document reason for deferral in `docs/sprints/deferred/README.md`
+3. Update sprint status in `docs/SPRINT_NAMING.md` and `docs/README.md`
+
 ## Related Documentation
 
 - [Documentation Directory Guide](docs/README.md)
@@ -201,6 +207,17 @@ When a sprint is completed:
 - [Agent Workflow](AGENTS.md)
 
 ---
+
+## Update: January 2025
+
+**Sprint 5 and 6 Deferred**
+
+Sprints 5 (ship-it) and 6 (make-it-real) have been moved to `docs/sprints/deferred/` due to cost constraints:
+
+- **Sprint 5**: GitHub Actions automation deferred - using manual SSH deployment instead
+- **Sprint 6**: Advanced deployment infrastructure deferred - single production server sufficient for current scale
+
+Both sprints are fully documented with PRDs and technical specifications and can be resumed if circumstances change. See `docs/sprints/deferred/README.md` for details.
 
 **Status:** ✅ Complete  
 **Commit:** [To be committed with nano-sprint/6-make-it-real]
