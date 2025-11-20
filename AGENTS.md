@@ -252,12 +252,16 @@ docs/
 ├── sprints/
 │   ├── completed/              # Completed sprints
 │   │   ├── 2-start-me-up/     # LLM Integration
-│   │   ├── 5-ship-it/         # Production Deployment
+│   │   ├── 3-rest-assured/    # REST API Migration
+│   │   ├── 4-test-assured/    # Testing Infrastructure
 │   │   └── 6a-quicksilver/    # NATS Event Bus
+│   ├── deferred/               # Deferred sprints
+│   │   ├── 5-ship-it/         # Production Deployment
+│   │   └── 6-make-it-real/    # Advanced Deployment
 │   └── active/                 # Active/planned sprints
-│       ├── 3-rest-assured/    # REST API Migration
-│       ├── 4-test-assured/    # Testing Infrastructure
-│       └── 6-make-it-real/    # Advanced Deployment
+│       ├── 7-the-divide/      # API Separation
+│       ├── 8-inception/       # Multi-level Architecture
+│       └── 9-funny-games/     # Interactive Features
 ├── guides/                     # Feature guides
 │   ├── LLM_CONFIGURATION.md
 │   ├── PM_GUIDE.md
@@ -292,9 +296,12 @@ Examples:
 - `2-start-me-up` - LLM Integration sprint
 - `3-rest-assured` - REST API Migration sprint
 - `4-test-assured` - Testing Infrastructure sprint
-- `5-ship-it` - Production Deployment sprint
-- `6-make-it-real` - Advanced Deployment sprint
+- `5-ship-it` - Production Deployment sprint (deferred)
+- `6-make-it-real` - Advanced Deployment sprint (deferred)
 - `6a-quicksilver` - NATS Event Bus architecture
+- `7-the-divide` - API Separation sprint (planned)
+- `8-inception` - Multi-level Architecture sprint (planned)
+- `9-funny-games` - Interactive Features sprint (planned)
 
 See [docs/SPRINT_NAMING.md](docs/SPRINT_NAMING.md) for the complete naming convention guide.
 
@@ -713,7 +720,8 @@ Prompt: "Create an ONBOARDING.md guide for new contributors that covers:
 - [2-start-me-up](docs/sprints/completed/2-start-me-up/) - LLM Integration sprint (✅ Complete)
 - [3-rest-assured](docs/sprints/completed/3-rest-assured/) - REST API Migration sprint (✅ Complete)
 - [4-test-assured](docs/sprints/completed/4-test-assured/) - Testing Infrastructure sprint (✅ Complete)
-- [5-ship-it](docs/sprints/active/5-ship-it/) - Production Deployment sprint (⚠️ Needs Validation)
+- [5-ship-it](docs/sprints/deferred/5-ship-it/) - Production Deployment sprint (⏸️ Deferred - using manual deployment)
+- [6-make-it-real](docs/sprints/deferred/6-make-it-real/) - Advanced Deployment sprint (⏸️ Deferred - cost constraints)
 - [6a-quicksilver](docs/sprints/completed/6a-quicksilver/) - NATS Event Bus sprint (✅ Complete)
 
 ### External Resources

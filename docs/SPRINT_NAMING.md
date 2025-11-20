@@ -88,8 +88,8 @@ docs/{N}-{movie-title}/
 | 2 | start-me-up | LLM Integration | ✅ Complete |
 | 3 | rest-assured | REST API Migration | ✅ Complete |
 | 4 | test-assured | Test Coverage | ✅ Complete |
-| 5 | ship-it | Production Deployment | ⚠️ Needs Validation |
-| 6 | make-it-real | Advanced Deployment | 🔄 In Progress |
+| 5 | ship-it | Production Deployment | ⏸️ Deferred |
+| 6 | make-it-real | Advanced Deployment | ⏸️ Deferred |
 | 6a | quicksilver | NATS Event Bus | ✅ Complete |
 | 7 | the-divide | TBD | 📋 Planned |
 

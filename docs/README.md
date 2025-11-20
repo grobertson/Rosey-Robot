@@ -26,9 +26,11 @@ docs/
 │   │   ├── 4-test-assured/    # Test Coverage
 │   │   └── 6a-quicksilver/    # NATS Event Bus
 │   │
+│   ├── deferred/               # Deferred sprints (postponed)
+│   │   ├── 5-ship-it/         # Production Deployment (deferred - using manual deployment)
+│   │   └── 6-make-it-real/    # Advanced Deployment (deferred - cost constraints)
+│   │
 │   └── active/                 # Active/planned sprints
-│       ├── 5-ship-it/         # Production Deployment (needs validation)
-│       ├── 6-make-it-real/    # Advanced Deployment (in progress)
 │       ├── 7-the-divide/      # Architecture refactoring (planned)
 │       ├── 8-inception/       # TBD
 │       └── 9-funny-games/     # TBD
@@ -65,7 +67,8 @@ docs/
 ### Sprint Documentation
 
 - **[Completed Sprints](sprints/completed/)** - Finished work (2, 3, 4, 6a)
-- **[Active Sprints](sprints/active/)** - Current and planned work (5-9)
+- **[Deferred Sprints](sprints/deferred/)** - Postponed work (5, 6)
+- **[Active Sprints](sprints/active/)** - Current and planned work (7-9)
 
 ## Document Organization
 
@@ -91,6 +94,7 @@ Feature-specific setup and usage guides:
 All sprint documentation organized by status:
 
 - **completed/** - Sprints that have been fully implemented and merged
+- **deferred/** - Sprints that are postponed due to cost or priority constraints
 - **active/** - Sprints currently in progress or planned for future work
 
 Each sprint contains:
@@ -112,8 +116,9 @@ When adding new documentation:
 1. **Feature guides** → `docs/guides/`
 2. **New sprints** → `docs/sprints/active/` (until completed)
 3. **Completed sprints** → Move to `docs/sprints/completed/`
-4. **Root-level docs** → Only for AGENTS, CHANGELOG, QUICKSTART, README
-5. **Historical docs** → `docs/archive/` when no longer relevant
+4. **Deferred sprints** → Move to `docs/sprints/deferred/` if postponed
+5. **Root-level docs** → Only for AGENTS, CHANGELOG, QUICKSTART, README
+6. **Historical docs** → `docs/archive/` when no longer relevant
 
 ## See Also
 
