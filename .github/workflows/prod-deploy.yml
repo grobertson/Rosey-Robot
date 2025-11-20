@@ -1,5 +1,8 @@
 name: Deploy to Production
 
+# DISABLED: GitHub Actions temporarily disabled for cost reasons
+# Production deployment kept as workflow_dispatch only (manual trigger)
+# This workflow can still be run manually if needed
 on:
   workflow_dispatch:
     inputs:
@@ -107,11 +110,6 @@ jobs:
         with:
           ref: ${{ inputs.version }}
       
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
       - name: Create deployment record
         run: |
           echo "📝 Creating deployment record..."
@@ -119,31 +117,77 @@ jobs:
           echo "Reason: ${{ inputs.reason }}"
           echo "Timestamp: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
       
-      - name: Deploy to production server
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_KEY_PROD }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.PROD_SERVER_HOST }} >> ~/.ssh/known_hosts
+      
+      - name: Backup current production
+        run: |
+          echo "💾 Creating backup of current production..."
+          ssh -i ~/.ssh/deploy_key ${{ secrets.PROD_SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} << 'EOF'
+            BACKUP_DIR="/opt/rosey-bot-backup-$(date +%Y%m%d-%H%M%S)"
+            sudo cp -r /opt/rosey-bot "$BACKUP_DIR"
+            echo "✅ Backup created at $BACKUP_DIR"
+          EOF
+      
+      - name: Deploy code to production
         run: |
           echo "🚀 Deploying ${{ inputs.version }} to production..."
-          echo "This step would SSH to production server and run deploy.sh"
-          echo "For now, marking as successful simulation"
-          # In real implementation:
-          # ssh prod-server 'cd /opt/rosey-bot && ./scripts/deploy.sh prod'
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'tests/' \
+            --exclude '*.pyc' \
+            --exclude '__pycache__' \
+            --exclude '.pytest_cache' \
+            --exclude '.coverage' \
+            --exclude '.venv' \
+            ./ ${{ secrets.PROD_SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }}:/opt/rosey-bot/
       
-      - name: Wait for startup
+      - name: Restart bot service
         run: |
-          echo "⏳ Waiting 30 seconds for bot startup..."
-          sleep 30
+          ssh -i ~/.ssh/deploy_key ${{ secrets.PROD_SERVER_USER }}@${{ secrets.PROD_SERVER_HOST }} << 'EOF'
+            sudo systemctl restart rosey-bot
+            sudo systemctl restart rosey-dashboard
+          EOF
       
       - name: Verify deployment
         run: |
-          echo "✓ Production verification would run here"
-          echo "Command: python scripts/verify_deployment.py --env prod"
-          echo "Requires health endpoint implementation (future work)"
-          # Will be fully integrated when health endpoint is ready
+          echo "⏳ Waiting for services to start..."
+          sleep 10
+          
+          HEALTH_URL="http://${{ secrets.PROD_SERVER_HOST }}:8000/api/health"
+          
+          for i in {1..5}; do
+            if curl -f -s "$HEALTH_URL" | grep -q "healthy"; then
+              echo "✅ Production deployment successful!"
+              curl -s "$HEALTH_URL" | jq '.' || curl -s "$HEALTH_URL"
+              exit 0
+            fi
+            echo "Waiting for health endpoint... ($i/5)"
+            sleep 5
+          done
+          
+          echo "❌ Health endpoint not responding"
+          echo "⚠️  Consider rolling back!"
+          exit 1
       
       - name: Record deployment
+        if: success()
         run: |
           echo "💾 Recording deployment in database..."
+          echo "Version: ${{ inputs.version }}"
           echo "This would log deployment to dashboard database"
           # Will be implemented in Sortie 11 (Dashboard)
+      
+      - name: Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
 
   rollback-prep:
     name: Prepare Rollback

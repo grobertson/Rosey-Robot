@@ -1,8 +1,12 @@
 name: PR Status Check
 
+# DISABLED: GitHub Actions temporarily disabled for cost reasons
+# Uncomment the 'on:' section below to re-enable
+# on:
+#   pull_request:
+#     types: [opened, synchronize, reopened]
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   contents: read
