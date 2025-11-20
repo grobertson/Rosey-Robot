@@ -1,0 +1,28 @@
+# Trivia Game Plugin Configuration - Staging Environment
+# Sprint 9 - STAKEHOLDER PRIORITY
+
+enabled: true  # Enable for testing
+
+settings:
+  question_source: local
+  question_database: /var/lib/rosey/trivia/questions.json
+  difficulty: medium
+  frequency: 30m  # Production-like timing
+  cooldown: 5m
+  questions_per_game: 10
+  question_timeout: 30
+  fast_answer_bonus: 2
+  
+  # Scoring
+  points_correct: 10
+  points_fast_bonus: 5
+  points_streak_multiplier: 1.5
+  
+  # Game Limits
+  max_concurrent_games: 2  # Test concurrent games
+  min_players: 2  # Require multiple players
+  
+  # Notifications
+  announce_start: true
+  announce_winner: true
+  show_leaderboard_on_end: true

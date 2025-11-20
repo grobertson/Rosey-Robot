@@ -1,0 +1,20 @@
+# Dice Roller Plugin Configuration - Production Environment
+# Sprint 9 - Simple, low-risk plugin
+
+enabled: true  # Safe for production
+
+settings:
+  max_dice: 20
+  max_sides: 1000
+  
+  # Formatting
+  show_individual_rolls: true
+  show_total: true
+  show_modifier: true
+  
+  # Limits (to prevent spam)
+  cooldown: 2  # 2 second cooldown in production
+  max_rolls_per_command: 10
+  
+  # Production Safety
+  rate_limit_per_user: 10  # Max 10 rolls per minute per user

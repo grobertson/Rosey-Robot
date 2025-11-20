@@ -1,0 +1,275 @@
+# Development Environment Configuration
+# Bot configuration optimized for local development and testing
+
+# Configuration Version (for schema tracking)
+config_version: "1.0"
+
+# Environment Definition
+environment: 
+  name: development
+  deployed_by: ${USER}
+  deployed_at: ${TIMESTAMP}
+  git_commit: ${GIT_SHA}
+
+# Server/Infrastructure Configuration
+server:
+  host: localhost
+  enabled: true
+  os_user: ${USER}
+  os_group: ${USER}
+  
+  # Port Configuration (non-privileged ports for dev)
+  ports:
+    ssh: 22
+    api: 5000
+    health_check: 5001
+    web_ui: 3000
+    metrics: 9091  # Non-privileged port
+  
+  # URL Configuration
+  urls:
+    base: http://localhost:5000
+    web_ui: http://localhost:3000
+    api: http://localhost:5000
+
+# Secrets Management
+secrets:
+  provider: env  # Use environment variables
+
+# Logging Configuration
+logging:
+  enabled: true
+  level: DEBUG  # Verbose logging for development
+  path: ./logs/
+  mask: 0644  # More permissive for dev
+  rotation: daily
+  retention_days: 7  # Shorter retention for dev
+  compress: false  # Don't compress in dev for easier reading
+  
+  # Log Streams
+  streams:
+    channel:
+      filename: conversation.log
+      level: DEBUG
+    media:
+      filename: media_changes.log
+      level: DEBUG
+    llm:
+      filename: llm_activities.log
+      level: DEBUG
+    user:
+      filename: user_actions.log
+      level: DEBUG
+    error:
+      filename: error.log
+      level: ERROR
+
+# Database Configuration
+database:
+  enabled: true
+  type: sqlite
+  
+  sqlite:
+    path: ./data/rosey_dev.db
+    timeout: 30
+    check_same_thread: false
+  
+  connection_pool:
+    min_size: 1
+    max_size: 10
+    timeout: 30
+
+# SocketIO Configuration
+socketio:
+  enabled: true
+  response_timeout: 30
+  restart_delay: 5
+  debug: true
+  max_retries: 10
+  backoff_multiplier: 2.0
+  reconnect_on_error: true
+  ping_interval: 25
+  ping_timeout: 60
+
+# Bot Configuration
+bot:
+  name: CynthiaRothbot-Dev
+  enabled: true
+  service_type: cytube
+  
+  # Channels
+  channels:
+    - name: TestChannel
+      enabled: true
+      command_prefix: "!"
+      respond_to_mentions_only: false
+  
+  # Credentials (use environment variables for secrets)
+  credentials:
+    username: CynthiaRothbot-Dev
+    password_env: ROSEY_BOT_PASSWORD_DEV
+  
+  # Connection Settings
+  connection:
+    timeout: 30
+    restart_delay: 5
+    max_reconnect_attempts: 10
+    backoff_multiplier: 2.0
+    health_check_interval: 60
+    auto_rejoin_on_kick: true
+  
+  # Rate Limiting (more permissive for dev)
+  rate_limits:
+    commands_per_user_per_minute: 20
+    api_calls_per_minute: 120
+    llm_requests_per_hour: 200
+    global_commands_per_minute: 100
+  
+  # Features
+  features:
+    command_prefix: "!"
+    llm_responses: true  # Enable for testing
+    pm_shell: true
+    allow_private_messages: true
+    message_history: true
+    max_message_history: 100  # Lower for dev
+    enable_mentions: true
+    respond_to_mentions_only: false
+    command_cooldown: 0  # No cooldown in dev
+
+# Plugin Configuration
+plugins:
+  # Plugin configs are loaded from ./plugins/ directory
+  config_dir: ./plugins/
+  auto_load: true
+  hot_reload: true  # Enable hot reload in dev
+
+# LLM Configuration
+llm:
+  enabled: true  # Enable for testing
+  default_profile: Ollama-Local
+  request_timeout: 60  # Longer timeout for dev
+  max_retries: 3
+  
+  # Connection Profiles
+  profiles:
+    OpenAI-GPT4Turbo:
+      enabled: false  # Disable to avoid costs in dev
+      type: openai
+      api_key_env: OPENAI_API_KEY_DEV
+      api_url: https://api.openai.com/v1/
+      model: gpt-4-turbo
+      temperature: 0.7
+      max_tokens: 1500
+      timeout: 30
+      system_prompt_file: ./prompts/dev.md
+      
+    OpenAI-GPT35:
+      enabled: true  # Cheaper for dev testing
+      type: openai
+      api_key_env: OPENAI_API_KEY_DEV
+      api_url: https://api.openai.com/v1/
+      model: gpt-3.5-turbo
+      temperature: 0.7
+      max_tokens: 500  # Lower for dev
+      timeout: 20
+      system_prompt_file: ./prompts/dev.md
+      
+    Ollama-Local:
+      enabled: true  # Default for dev (free!)
+      type: ollama
+      api_url: http://localhost:11434/api/
+      model: llama2
+      temperature: 0.8
+      max_tokens: 2000
+      timeout: 60
+      system_prompt_file: ./prompts/dev.md
+
+# Monitoring & Observability
+monitoring:
+  enabled: true  # Enable for testing
+  
+  health_check:
+    enabled: true
+    endpoint: /health
+    port: 5001  # Non-privileged port
+    interval: 60  # Less frequent in dev
+  
+  metrics:
+    enabled: true
+    port: 9091  # Non-privileged port
+    format: prometheus
+    endpoint: /metrics
+  
+  stats:
+    enabled: true
+    endpoint: /stats
+    include_system_info: true
+  
+  tracing:
+    enabled: false  # Disable unless debugging
+    provider: jaeger
+    endpoint: http://localhost:14268/api/traces
+
+# Backup Configuration
+backup:
+  enabled: false  # Disable backups in dev
+  
+  database:
+    enabled: false
+    schedule: "0 2 * * *"
+    retention_days: 7
+    location: ./backups/db/
+    compress: false
+    
+  plugins:
+    enabled: false
+    schedule: "0 3 * * *"
+    retention_days: 7
+    location: ./backups/plugins/
+    
+  logs:
+    enabled: false
+    rotation: daily
+    retention_days: 7
+    compress: false
+    location: ./backups/logs/
+
+# Web UI Configuration
+web_ui:
+  enabled: true
+  port: 3000  # Non-privileged port
+  host: 127.0.0.1  # Localhost only
+  base_path: /
+  static_files: ./web/static/
+  templates: ./web/templates/
+  session_timeout: 7200  # Longer for dev
+  auth:
+    enabled: false  # No auth in dev
+    username_env: ROSEY_ADMIN_USER_DEV
+    password_env: ROSEY_ADMIN_PASSWORD_DEV
+
+# API Configuration  
+api:
+  enabled: true
+  port: 5000  # Non-privileged port
+  host: 127.0.0.1  # Localhost only
+  base_path: /api/v1
+  cors:
+    enabled: true
+    origins:
+      - http://localhost:3000  # Web UI
+      - http://localhost:5000  # Self
+      - http://127.0.0.1:3000
+      - http://127.0.0.1:5000
+    credentials: true
+  
+  auth:
+    enabled: false  # No auth in dev
+    token_env: ROSEY_API_TOKEN_DEV
+    token_expiry: 86400  # 24 hours
+  
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 120  # Higher for dev
+    burst_size: 30

@@ -1,0 +1,28 @@
+# Trivia Game Plugin Configuration - Development Environment
+# Sprint 9 - STAKEHOLDER PRIORITY
+
+enabled: true  # Enable for testing
+
+settings:
+  question_source: local
+  question_database: ./data/trivia/questions.json
+  difficulty: easy  # Easier questions for dev testing
+  frequency: 5m  # More frequent for testing (vs 30m prod)
+  cooldown: 1m  # Shorter cooldown (vs 5m prod)
+  questions_per_game: 5  # Shorter games for testing (vs 10 prod)
+  question_timeout: 60  # Longer for debugging (vs 30 prod)
+  fast_answer_bonus: 2
+  
+  # Scoring
+  points_correct: 10
+  points_fast_bonus: 5
+  points_streak_multiplier: 1.5
+  
+  # Game Limits
+  max_concurrent_games: 1  # Single game in dev
+  min_players: 1  # Allow solo testing
+  
+  # Notifications
+  announce_start: true
+  announce_winner: true
+  show_leaderboard_on_end: true

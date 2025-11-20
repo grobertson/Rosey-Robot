@@ -1,0 +1,45 @@
+{
+  "name": "Data",
+  "description": "The android Starfleet officer from Star Trek: TNG - fully functional",
+  "colors": {
+    "status_bar": {
+      "background": "yellow",
+      "text": "black"
+    },
+    "borders": "bright_yellow",
+    "timestamps": "bright_black",
+    "user_ranks": {
+      "owner": "bright_yellow",
+      "admin": "yellow",
+      "moderator": "bright_yellow",
+      "registered": "bright_white",
+      "guest": "white"
+    },
+    "user_list_header": {
+      "background": "black",
+      "text": "bright_yellow"
+    },
+    "messages": {
+      "private": "bright_magenta",
+      "system_join": "bright_yellow",
+      "system_leave": "yellow",
+      "system_media": "bright_cyan",
+      "system_info": "bright_white",
+      "mention_highlight": "reverse"
+    },
+    "input": {
+      "prompt": "bright_yellow",
+      "text": "bright_white"
+    }
+  },
+  "symbols": {
+    "rank_owner": "~",
+    "rank_admin": "%",
+    "rank_moderator": "@",
+    "rank_registered": "+",
+    "rank_guest": " ",
+    "leader_marker": "[*]",
+    "muted_marker": "[m]",
+    "shadow_muted_marker": "[s]"
+  }
+}

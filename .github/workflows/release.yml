@@ -1,11 +1,15 @@
 name: Release Automation
 
+# DISABLED: GitHub Actions temporarily disabled for cost reasons
+# Uncomment the 'on:' section below to re-enable
+# on:
+#   push:
+#     branches:
+#       - main
+#     paths:
+#       - 'VERSION'
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'VERSION'
+  workflow_dispatch:
 
 permissions:
   contents: write

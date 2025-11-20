@@ -1,0 +1,283 @@
+# Staging Environment Configuration
+# Pre-production testing environment with production-like settings
+
+# Configuration Version (for schema tracking)
+config_version: "1.0"
+
+# Environment Definition
+environment: 
+  name: staging
+  deployed_by: ${USER}
+  deployed_at: ${TIMESTAMP}
+  git_commit: ${GIT_SHA}
+
+# Server/Infrastructure Configuration
+server:
+  host: bot-stage.grindhouse.com
+  enabled: true
+  os_user: rosey
+  os_group: www-data
+  
+  # Port Configuration
+  ports:
+    ssh: 22
+    api: 8000
+    health_check: 8001
+    web_ui: 8080
+    metrics: 9090
+  
+  # URL Configuration
+  urls:
+    base: https://bot-stage.grindhouse.com
+    web_ui: https://bot-stage.grindhouse.com:8080
+    api: https://bot-stage.grindhouse.com:8000
+
+# Secrets Management
+secrets:
+  provider: env
+
+# Logging Configuration
+logging:
+  enabled: true
+  level: INFO  # Moderate logging for staging
+  path: /var/log/rosey/
+  mask: 0640
+  rotation: daily
+  retention_days: 14  # 2 weeks
+  compress: true
+  
+  # Log Streams
+  streams:
+    channel:
+      filename: conversation.log
+      level: INFO
+    media:
+      filename: media_changes.log
+      level: INFO
+    llm:
+      filename: llm_activities.log
+      level: INFO
+    user:
+      filename: user_actions.log
+      level: INFO
+    error:
+      filename: error.log
+      level: ERROR
+
+# Database Configuration
+database:
+  enabled: true
+  type: sqlite
+  
+  sqlite:
+    path: /var/lib/rosey/rosey_staging.db
+    timeout: 30
+    check_same_thread: false
+  
+  postgresql:
+    host: db.example.com
+    port: 5432
+    database: rosey_staging
+    user: rosey
+    password_env: ROSEY_DB_PASSWORD_STAGING
+    pool_size: 10
+    pool_timeout: 30
+    ssl_mode: require
+  
+  connection_pool:
+    min_size: 1
+    max_size: 10
+    timeout: 30
+
+# SocketIO Configuration
+socketio:
+  enabled: true
+  response_timeout: 30
+  restart_delay: 5
+  debug: true
+  max_retries: 10
+  backoff_multiplier: 2.0
+  reconnect_on_error: true
+  ping_interval: 25
+  ping_timeout: 60
+
+# Bot Configuration
+bot:
+  name: CynthiaRothbot-Staging
+  enabled: true
+  service_type: cytube
+  
+  # Channels
+  channels:
+    - name: TestStaging  # Staging test channel
+      enabled: true
+      command_prefix: "!"
+      respond_to_mentions_only: false
+  
+  # Credentials
+  credentials:
+    username: CynthiaRothbot-Staging
+    password_env: ROSEY_BOT_PASSWORD_STAGING
+  
+  # Connection Settings
+  connection:
+    timeout: 30
+    restart_delay: 5
+    max_reconnect_attempts: 10
+    backoff_multiplier: 2.0
+    health_check_interval: 60
+    auto_rejoin_on_kick: true
+  
+  # Rate Limiting (moderate for staging)
+  rate_limits:
+    commands_per_user_per_minute: 10
+    api_calls_per_minute: 90
+    llm_requests_per_hour: 150
+    global_commands_per_minute: 50
+  
+  # Features
+  features:
+    command_prefix: "!"
+    llm_responses: true  # Test LLM in staging
+    pm_shell: true
+    allow_private_messages: true
+    message_history: true
+    max_message_history: 500
+    enable_mentions: true
+    respond_to_mentions_only: false
+    command_cooldown: 1  # Shorter cooldown for staging
+
+# Plugin Configuration
+plugins:
+  # Plugin configs are loaded from ./plugins/ directory
+  config_dir: /etc/rosey/plugins/
+  auto_load: true
+  hot_reload: false  # Disable hot reload in staging
+
+# LLM Configuration
+llm:
+  enabled: true  # Enable for staging testing
+  default_profile: OpenAI-GPT35  # Cheaper for staging
+  request_timeout: 30
+  max_retries: 3
+  
+  # Connection Profiles
+  profiles:
+    OpenAI-GPT4Turbo:
+      enabled: false  # Keep expensive model disabled
+      type: openai
+      api_key_env: OPENAI_API_KEY_STAGING
+      api_url: https://api.openai.com/v1/
+      model: gpt-4-turbo
+      temperature: 0.7
+      max_tokens: 1500
+      timeout: 30
+      system_prompt_file: /etc/rosey/prompts/staging.md
+      
+    OpenAI-GPT35:
+      enabled: true  # Cheaper for staging
+      type: openai
+      api_key_env: OPENAI_API_KEY_STAGING
+      api_url: https://api.openai.com/v1/
+      model: gpt-3.5-turbo
+      temperature: 0.7
+      max_tokens: 1000
+      timeout: 20
+      system_prompt_file: /etc/rosey/prompts/staging.md
+      
+    Ollama-Local:
+      enabled: false  # No local Ollama on staging server
+      type: ollama
+      api_url: http://localhost:11434/api/
+      model: llama2
+      temperature: 0.8
+      max_tokens: 2000
+      timeout: 60
+      system_prompt_file: /etc/rosey/prompts/staging.md
+
+# Monitoring & Observability
+monitoring:
+  enabled: true
+  
+  health_check:
+    enabled: true
+    endpoint: /health
+    port: 8001
+    interval: 30
+  
+  metrics:
+    enabled: true
+    port: 9090
+    format: prometheus
+    endpoint: /metrics
+  
+  stats:
+    enabled: true
+    endpoint: /stats
+    include_system_info: true
+  
+  tracing:
+    enabled: false
+    provider: jaeger
+    endpoint: http://localhost:14268/api/traces
+
+# Backup Configuration
+backup:
+  enabled: true
+  
+  database:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention_days: 30
+    location: /backups/rosey/db/
+    compress: true
+    
+  plugins:
+    enabled: true
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    retention_days: 14
+    location: /backups/rosey/plugins/
+    
+  logs:
+    enabled: true
+    rotation: daily
+    retention_days: 14
+    compress: true
+    location: /backups/rosey/logs/
+
+# Web UI Configuration
+web_ui:
+  enabled: true
+  port: 8080
+  host: 0.0.0.0
+  base_path: /
+  static_files: /var/www/rosey/static/
+  templates: /var/www/rosey/templates/
+  session_timeout: 3600
+  auth:
+    enabled: true
+    username_env: ROSEY_ADMIN_USER_STAGING
+    password_env: ROSEY_ADMIN_PASSWORD_STAGING
+
+# API Configuration  
+api:
+  enabled: true
+  port: 8000
+  host: 0.0.0.0
+  base_path: /api/v1
+  cors:
+    enabled: true
+    origins:
+      - https://bot-stage.grindhouse.com
+      - https://grindhouse.com
+    credentials: true
+  
+  auth:
+    enabled: true
+    token_env: ROSEY_API_TOKEN_STAGING
+    token_expiry: 3600
+  
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+    burst_size: 20

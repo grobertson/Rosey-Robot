@@ -1,0 +1,45 @@
+{
+  "name": "Johnny5",
+  "description": "Number 5 is ALIVE! The friendly robot from Short Circuit",
+  "colors": {
+    "status_bar": {
+      "background": "bright_white",
+      "text": "black"
+    },
+    "borders": "bright_white",
+    "timestamps": "bright_black",
+    "user_ranks": {
+      "owner": "bright_yellow",
+      "admin": "bright_cyan",
+      "moderator": "bright_magenta",
+      "registered": "bright_white",
+      "guest": "white"
+    },
+    "user_list_header": {
+      "background": "bright_white",
+      "text": "black"
+    },
+    "messages": {
+      "private": "bright_magenta",
+      "system_join": "bright_green",
+      "system_leave": "bright_red",
+      "system_media": "bright_cyan",
+      "system_info": "bright_yellow",
+      "mention_highlight": "reverse"
+    },
+    "input": {
+      "prompt": "bright_white",
+      "text": "white"
+    }
+  },
+  "symbols": {
+    "rank_owner": "~",
+    "rank_admin": "%",
+    "rank_moderator": "@",
+    "rank_registered": "+",
+    "rank_guest": " ",
+    "leader_marker": "[*]",
+    "muted_marker": "[m]",
+    "shadow_muted_marker": "[s]"
+  }
+}
