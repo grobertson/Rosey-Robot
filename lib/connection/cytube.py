@@ -352,7 +352,7 @@ class CyTubeConnection(ConnectionAdapter):
         self.logger.info(f"Fetching socket config: {url}")
         
         try:
-            response = await self.get_func(url, loop=asyncio.get_event_loop())
+            response = await self.get_func(url)
             config = json.loads(response)
         except Exception as e:
             raise ConnectionError(f"Failed to fetch socket config: {e}") from e
@@ -462,6 +462,31 @@ class CyTubeConnection(ConnectionAdapter):
         else:
             self.logger.info("Connected as guest")
     
+    def _normalize_cytube_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize CyTube user object to platform-agnostic structure.
+        
+        Converts CyTube-specific user fields to normalized format that works
+        across platforms. This enables platform-agnostic user handling.
+        
+        Args:
+            user_data: Raw CyTube user object
+            
+        Returns:
+            Normalized user dictionary with standard fields:
+            - username: User's name
+            - rank: Privilege level (0=guest, 2+=moderator)
+            - is_afk: Away from keyboard status
+            - is_moderator: True if rank >= 2
+            - meta: User profile metadata
+        """
+        return {
+            'username': user_data.get('name', ''),
+            'rank': user_data.get('rank', 0),
+            'is_afk': user_data.get('afk', False),
+            'is_moderator': user_data.get('rank', 0) >= 2,
+            'meta': user_data.get('meta', {})
+        }
+    
     def _normalize_event(self, 
                         event: str, 
                         data: Dict[str, Any]) -> Optional[Tuple[str, Dict[str, Any]]]:
@@ -476,43 +501,62 @@ class CyTubeConnection(ConnectionAdapter):
             Tuple of (normalized_event, normalized_data) or None to skip
         """
         # Chat message
+        # ✅ NORMALIZATION COMPLETE: Platform-agnostic message structure
+        # All top-level fields are normalized, platform-specific data in platform_data
         if event == 'chatMsg':
             return ('message', {
-                'user': data.get('username'),
-                'content': data.get('msg'),
+                'user': data.get('username', ''),
+                'content': data.get('msg', ''),
                 'timestamp': data.get('time', 0) // 1000,
                 'platform_data': data
             })
         
         # User joined
+        # ✅ NORMALIZATION COMPLETE: Adds user_data for platform-agnostic user handling
+        # Includes both 'user' (string) and 'user_data' (full normalized object)
         elif event == 'addUser':
             return ('user_join', {
-                'user': data.get('name'),
+                'user': data.get('name', ''),
+                'user_data': self._normalize_cytube_user(data),
                 'timestamp': data.get('time', 0),
                 'platform_data': data
             })
         
         # User left
+        # ✅ NORMALIZATION COMPLETE: Adds optional user_data for enhanced logging
+        # CyTube user_leave may or may not include full user data
         elif event == 'userLeave':
-            return ('user_leave', {
-                'user': data.get('name'),
+            normalized = {
+                'user': data.get('name', ''),
                 'timestamp': data.get('time', 0),
                 'platform_data': data
-            })
+            }
+            
+            # Add user_data if available (has rank or afk fields)
+            if 'rank' in data or 'afk' in data:
+                normalized['user_data'] = self._normalize_cytube_user(data)
+            
+            return ('user_leave', normalized)
         
         # User list
+        # ✅ NORMALIZATION COMPLETE: Array of user objects (not strings)
+        # ⚠️ BREAKING CHANGE: 'users' now contains full objects, not just usernames
+        # Handlers must use user['username'] instead of treating user as string
         elif event == 'userlist':
             return ('user_list', {
-                'users': [u.get('name') for u in data],
+                'users': [self._normalize_cytube_user(u) for u in data],
                 'count': len(data),
                 'platform_data': data
             })
         
         # Private message
+        # ✅ NORMALIZATION COMPLETE: Adds recipient field for bi-directional support
+        # For CyTube, bot is always the recipient (PMs are always TO the bot)
         elif event == 'pm':
             return ('pm', {
-                'user': data.get('username'),
-                'content': data.get('msg'),
+                'user': data.get('username', ''),
+                'recipient': self.user_name or 'bot',  # Bot is recipient
+                'content': data.get('msg', ''),
                 'timestamp': data.get('time', 0) // 1000,
                 'platform_data': data
             })

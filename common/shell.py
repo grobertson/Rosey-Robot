@@ -98,9 +98,14 @@ Examples:
         Returns:
             None - responses are sent back via PM
         """
-        # Extract data from PM
-        username = data.get('username', '')
-        message = data.get('msg', '').strip()
+        self.logger.debug('handle_pm_command called: event=%s, data=%s', event, data)
+        
+        # TODO: NORMALIZATION - Shell should only use normalized fields (user, content)
+        # Platform-specific access to platform_data should be removed once normalization is complete
+        # Extract data from PM - check both normalized and platform_data locations
+        platform_data = data.get('platform_data', {})
+        username = data.get('user', platform_data.get('username', ''))
+        message = data.get('content', platform_data.get('msg', '')).strip()
 
         # Ignore empty messages
         if not message:
@@ -112,19 +117,21 @@ Examples:
             self.logger.debug('Ignoring PM from self')
             return
 
-        # Get the user object
-        if not bot.channel or username not in bot.channel.userlist:
-            self.logger.warning('PM from unknown user: %s', username)
-            return
-
-        user = bot.channel.userlist[username]
-
-        # Check if user is a moderator (rank 2.0+)
-        if user.rank < 2.0:
-            self.logger.info('PM command from non-moderator %s: %s',
-                           username, message)
-            # Don't respond to non-moderators to avoid spam
-            return
+        # Get the user object if available
+        if bot.channel and username in bot.channel.userlist:
+            user = bot.channel.userlist[username]
+            
+            # Check if user is a moderator (rank 2.0+)
+            if user.rank < 2.0:
+                self.logger.info('PM command from non-moderator %s: %s',
+                               username, message)
+                # Don't respond to non-moderators to avoid spam
+                return
+        else:
+            # User not in userlist - this can happen if they joined before bot
+            # or if there's a sync issue. For now, allow the command and let
+            # CyTube's permissions handle any operations
+            self.logger.warning('PM from user not in userlist: %s (allowing command)', username)
 
         self.logger.info('PM command from %s: %s', username, message)
 

@@ -263,15 +263,21 @@ class Bot:
 
     def _on_user_list(self, _, data):
         """Handle normalized user_list event."""
+        # TODO: NORMALIZATION - Should use normalized 'users' array with full user objects
+        # Currently accessing platform_data because connection layer puts objects there
+        # Once connection layer fixed, use: users_data = data.get('users', [])
         self.channel.userlist.clear()
-        # Normalized event has 'users' field with array
-        users_data = data.get('users', [])
+        # Normalized event: 'users' has username strings, 'platform_data' has full user objects
+        users_data = data.get('platform_data', [])
         for user in users_data:
             self._add_user(user)
         self.logger.info('userlist: %s', self.channel.userlist)
 
     def _on_user_join(self, _, data):
         """Handle normalized user_join event."""
+        # TODO: NORMALIZATION - Should have 'user_data' at top level with full user object
+        # Currently must access platform_data due to incomplete normalization
+        # Target: user_data = data.get('user_data', {})
         # Normalized event structure - get platform_data for CyTube format
         user_data = data.get('platform_data', data)
         self._add_user(user_data)
@@ -289,6 +295,8 @@ class Bot:
 
     def _on_user_leave(self, _, data):
         """Handle normalized user_leave event."""
+        # TODO: NORMALIZATION - Should only use 'user' field once connection layer fixed
+        # Remove fallback to 'name' after normalization complete
         # Normalized event has 'user' field
         user = data.get('user', data.get('name', ''))
 
@@ -389,6 +397,8 @@ class Bot:
 
     def _on_message(self, _, data):
         """Handle normalized message event."""
+        # TODO: NORMALIZATION - This is correct pattern, all handlers should follow this
+        # Use normalized fields (user, content) - no platform_data access needed
         if self.db:
             # Normalized event has 'user' and 'content' fields
             username = data.get('user')
@@ -811,7 +821,7 @@ class Bot:
             raise ChannelPermissionError('muted')
 
         try:
-            await self.connection.send_pm(to, msg, meta=meta)
+            await self.connection.send_pm(to, msg)
             # Return dict for compatibility
             return {'to': to, 'msg': msg, 'meta': meta if meta else {}}
         except NotConnectedError:

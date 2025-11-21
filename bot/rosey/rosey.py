@@ -237,6 +237,10 @@ async def run_bot():
     channel = kwargs.pop('channel', None)
     user = kwargs.pop('user', None)
     
+    # Remove parameters that aren't valid for Bot constructor
+    kwargs.pop('response_timeout', None)  # Not used by Bot
+    kwargs.pop('socket_io', None)  # Not used by Bot
+    
     # Handle channel password if it's a tuple
     channel_name = channel[0] if isinstance(channel, (list, tuple)) else channel
     channel_password = channel[1] if isinstance(channel, (list, tuple)) and len(channel) > 1 else None
