@@ -6,6 +6,9 @@ aiohttp>=3.9.0  # For async HTTP requests (LLM providers)
 # NATS messaging (for Quicksilver architecture)
 nats-py>=2.7.0  # NATS client for event-driven messaging
 
+# Plugin system
+watchdog>=3.0.0  # For hot reload file watching
+
 # LLM providers (optional but recommended)
 openai>=1.0.0   # For OpenAI API and compatible endpoints (Azure, LocalAI, LM Studio)
 

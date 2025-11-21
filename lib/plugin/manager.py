@@ -133,6 +133,8 @@ class PluginManager:
         self,
         bot,
         plugin_dir: str = "plugins",
+        hot_reload: bool = False,
+        hot_reload_delay: float = 0.5,
         logger: Optional[logging.Logger] = None,
     ):
         """
@@ -141,6 +143,8 @@ class PluginManager:
         Args:
             bot: Bot instance
             plugin_dir: Directory containing plugin files
+            hot_reload: Enable automatic reload on file changes (default: False)
+            hot_reload_delay: Debounce delay for hot reload in seconds (default: 0.5)
             logger: Optional logger instance
         """
         self.bot = bot
@@ -152,6 +156,11 @@ class PluginManager:
 
         # File tracking: path -> name (for hot reload)
         self._file_to_name: Dict[Path, str] = {}
+
+        # Hot reload watcher (lazy initialization)
+        self._hot_reload_enabled = hot_reload
+        self._hot_reload_delay = hot_reload_delay
+        self._hot_reload: Optional[object] = None  # HotReloadWatcher
 
     # =================================================================
     # Discovery
@@ -247,6 +256,23 @@ class PluginManager:
             1 for p in self._plugins.values() if p.state == PluginState.ENABLED
         )
         self.logger.info(f"Loaded {enabled_count}/{len(self._plugins)} plugins")
+
+        # Start hot reload if enabled
+        if self._hot_reload_enabled and not self._hot_reload:
+            try:
+                from .hot_reload import HotReloadWatcher
+
+                self._hot_reload = HotReloadWatcher(
+                    self,
+                    enabled=True,
+                    debounce_delay=self._hot_reload_delay,
+                    logger=self.logger,
+                )
+            except ImportError:
+                self.logger.warning(
+                    "Hot reload requested but watchdog not installed. "
+                    "Install with: pip install watchdog"
+                )
 
     async def _load_plugin_file(self, file_path: Path) -> None:
         """
@@ -630,13 +656,19 @@ class PluginManager:
         Unload all plugins (disable, teardown, remove from registry).
         
         Performs graceful shutdown of all plugins:
-            1. Disable all enabled plugins
-            2. Teardown all setup plugins
-            3. Clear registry
+            1. Stop hot reload watcher
+            2. Disable all enabled plugins
+            3. Teardown all setup plugins
+            4. Clear registry
         
         Example:
             await manager.unload_all()
         """
+        # Stop hot reload first
+        if self._hot_reload:
+            self._hot_reload.stop()
+            self._hot_reload = None
+
         for name in list(self._plugins.keys()):
             info = self._plugins[name]
 
