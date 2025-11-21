@@ -8,6 +8,7 @@ import asyncio
 import json
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, MagicMock
+from lib.connection import ConnectionAdapter
 
 
 @pytest.fixture
@@ -200,6 +201,35 @@ def mock_bot():
     bot.send_chat_message = AsyncMock()
     bot.pm = AsyncMock()
     return bot
+
+
+@pytest.fixture
+def mock_connection():
+    """
+    Mock ConnectionAdapter for testing Bot integration.
+    
+    Returns:
+        AsyncMock: Connection adapter with all required methods mocked
+    """
+    conn = AsyncMock(spec=ConnectionAdapter)
+    conn.is_connected = True
+    conn.connect = AsyncMock()
+    conn.disconnect = AsyncMock()
+    conn.send_message = AsyncMock()
+    conn.send_pm = AsyncMock()
+    conn.on_event = Mock()
+    conn.off_event = Mock()
+    conn.reconnect = AsyncMock()
+    
+    # Mock event iterator that returns no events by default
+    # Tests can override this
+    async def mock_recv_events():
+        if False:  # Never yield, just return empty iterator
+            yield
+    
+    conn.recv_events = mock_recv_events
+    
+    return conn
 
 
 # Test data files

@@ -5,13 +5,15 @@ import json
 import logging
 import asyncio
 import collections
+from typing import Optional
 
 from .error import (
     CytubeError,
     SocketConfigError, LoginError,
     ChannelError, ChannelPermissionError, Kicked
 )
-from .socket_io import SocketIO, SocketIOResponse, SocketIOError
+from .connection import ConnectionAdapter, CyTubeConnection
+from .connection.errors import ConnectionError as ConnError, NotConnectedError
 from .channel import Channel
 from .user import User
 from .playlist import PlaylistItem
@@ -53,6 +55,7 @@ class Bot:
     """
     logger = logging.getLogger(__name__)
 
+    # Kept for backward compatibility with CyTube-specific operations
     SOCKET_CONFIG_URL = '%(domain)s/socketconfig/%(channel)s.json'
     SOCKET_IO_URL = '%(domain)s/socket.io/'
 
@@ -62,57 +65,98 @@ class Bot:
     EVENT_LOG_LEVEL = {
         'mediaUpdate': logging.DEBUG,
         'channelCSSJS': logging.DEBUG,
-        'emoteList': logging.DEBUG
+        'emoteList': logging.DEBUG,
+        # Normalized events
+        'message': logging.INFO,
+        'user_join': logging.INFO,
+        'user_leave': logging.INFO,
+        'user_list': logging.INFO,
+        'pm': logging.INFO
     }
 
     EVENT_LOG_LEVEL_DEFAULT = logging.INFO
 
-    def __init__(self, domain,
-                 channel, user=None,
-                 restart_delay=5,
-                 response_timeout=0.1,
-                 get=default_get,
-                 socket_io=SocketIO.connect,
-                 db_path='bot_data.db',
-                 enable_db=True):
+    @classmethod
+    def from_cytube(cls, domain: str, channel: str,
+                    channel_password: Optional[str] = None,
+                    user: Optional[str] = None,
+                    password: Optional[str] = None,
+                    **kwargs):
         """
+        Create Bot with CyTube connection (backward compatibility helper).
+        
         Parameters
         ----------
-        domain : `str`
-            Domain.
-        channel : `str` or (`str`, `str`)
-            'name' or ('name', 'password')
-        user : `None` or `str` or (`str`, `str`), optional
-            `None` (anonymous) or 'name' (guest) or
-            ('name', 'password') (registered)
-        restart_delay : `None` or `float`, optional
+        domain : str
+            CyTube server domain
+        channel : str
+            Channel name
+        channel_password : str, optional
+            Optional channel password
+        user : str, optional
+            Optional username (guest or registered)
+        password : str, optional
+            Optional user password (for registered users)
+        **kwargs : optional
+            Additional Bot options (restart_delay, db_path, enable_db)
+        
+        Returns
+        -------
+        Bot
+            Bot instance configured for CyTube
+        
+        Example
+        -------
+        >>> bot = Bot.from_cytube('https://cytu.be', 'mychannel',
+        ...                       user='botname', password='secret')
+        >>> await bot.run()
+        """
+        connection = CyTubeConnection(
+            domain=domain,
+            channel=channel,
+            channel_password=channel_password,
+            user=user,
+            password=password
+        )
+        
+        # Set channel info from connection (for backward compatibility)
+        instance = cls(connection=connection, **kwargs)
+        instance.channel.name = channel
+        instance.channel.password = channel_password or ''
+        if user:
+            instance.user.name = user
+            instance.user.password = password or ''
+        
+        return instance
+
+    def __init__(self, connection: ConnectionAdapter,
+                 restart_delay: float = 5.0,
+                 db_path: str = 'bot_data.db',
+                 enable_db: bool = True):
+        """
+        Initialize bot with connection adapter.
+        
+        Parameters
+        ----------
+        connection : ConnectionAdapter
+            Connection adapter for chat platform.
+        restart_delay : float, optional
             Delay in seconds before reconnection.
-            `None` or < 0 - do not reconnect.
-        response_timeout : `float`, optional
-            socket.io event response timeout in seconds.
-        get : `function` (url, loop), optional
-            HTTP GET coroutine.
-        socket_io : `function` (url, loop), optional
-            socket.io connect coroutine.
-        db_path : `str`, optional
+            0 or negative - do not reconnect.
+        db_path : str, optional
             Path to SQLite database file.
-        enable_db : `bool`, optional
+        enable_db : bool, optional
             Whether to enable database tracking.
         """
         import time
-        self.get = get
-        self.socket_io = socket_io
-        self.response_timeout = response_timeout
+        self.connection = connection
         self.restart_delay = restart_delay
-        self.domain = domain
-        self.channel = Channel(*to_sequence(channel))
-        self.user = User(*to_sequence(user))
+        self.channel = Channel()
+        self.user = User()
         try:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
             self.loop = asyncio.new_event_loop()
-        self.server = None
-        self.socket = None
         self.handlers = collections.defaultdict(list)
         self.start_time = time.time()  # Track bot start time
         self.connect_time = None  # Track connection time
@@ -132,9 +176,34 @@ class Bot:
         elif enable_db:
             self.logger.warning('Database module not available')
 
+        # Register event handlers
         for attr in dir(self):
             if attr.startswith('_on_'):
-                self.on(attr[4:], getattr(self, attr))
+                event_name = attr[4:]
+                self.on(event_name, getattr(self, attr))
+                # Also register handler with connection adapter
+                self.connection.on_event(event_name, getattr(self, attr))
+
+    @property
+    def socket(self):
+        """
+        Access underlying socket for CyTube-specific operations.
+        
+        This property provides backward compatibility for CyTube-specific
+        methods that need direct socket access (playlist control, etc.).
+        
+        Returns None if connection is not a CyTubeConnection.
+        """
+        if isinstance(self.connection, CyTubeConnection):
+            return self.connection.socket
+        return None
+    
+    @property
+    def response_timeout(self):
+        """Response timeout for CyTube operations (backward compatibility)."""
+        if isinstance(self.connection, CyTubeConnection):
+            return self.connection.response_timeout
+        return 0.1  # Default fallback
 
     def _on_rank(self, _, data):
         self.user.rank = data
@@ -192,19 +261,25 @@ class Bot:
         else:
             self.channel.userlist.add(User(**data))
 
-    def _on_userlist(self, _, data):
+    def _on_user_list(self, _, data):
+        """Handle normalized user_list event."""
         self.channel.userlist.clear()
-        for user in data:
+        # Normalized event has 'users' field with array
+        users_data = data.get('users', [])
+        for user in users_data:
             self._add_user(user)
         self.logger.info('userlist: %s', self.channel.userlist)
 
-    def _on_addUser(self, _, data):
-        self._add_user(data)
+    def _on_user_join(self, _, data):
+        """Handle normalized user_join event."""
+        # Normalized event structure - get platform_data for CyTube format
+        user_data = data.get('platform_data', data)
+        self._add_user(user_data)
         self.logger.info('userlist: %s', self.channel.userlist)
 
         # Track user join in database
         if self.db:
-            username = data.get('name')
+            username = data.get('user', user_data.get('name'))
             if username:
                 self.db.user_joined(username)
                 # Update high water mark
@@ -212,8 +287,10 @@ class Bot:
                 connected_count = self.channel.userlist.count
                 self.db.update_high_water_mark(user_count, connected_count)
 
-    def _on_userLeave(self, _, data):
-        user = data['name']
+    def _on_user_leave(self, _, data):
+        """Handle normalized user_leave event."""
+        # Normalized event has 'user' field
+        user = data.get('user', data.get('name', ''))
 
         # Track user leave in database
         if self.db and user:
@@ -310,147 +387,15 @@ class Bot:
         self.channel.playlist.locked = data
         self.logger.info('playlist locked %s', data)
 
-    def _on_chatMsg(self, _, data):
-        """Track chat messages in database"""
+    def _on_message(self, _, data):
+        """Handle normalized message event."""
         if self.db:
-            username = data.get('username')
-            msg = data.get('msg', '')
+            # Normalized event has 'user' and 'content' fields
+            username = data.get('user')
+            msg = data.get('content', '')
             if username:
                 # Store message text for recent chat display
                 self.db.user_chat_message(username, msg)
-
-    async def get_socket_config(self):
-        """Get server URL.
-
-        Raises
-        ------
-        cytube_bot.error.SocketConfigError
-        """
-        data = {
-            'domain': self.domain,
-            'channel': self.channel.name
-        }
-        url = self.SOCKET_CONFIG_URL % data
-        if not url.startswith('http'):
-            url = 'https://' + url
-        self.logger.info('get_socket_config %s', url)
-        try:
-            conf = await self.get(url)
-        except (CytubeError, asyncio.CancelledError):
-            raise
-        except Exception as ex:
-            raise SocketIOError(ex)
-        conf = json.loads(conf)
-        self.logger.info(conf)
-        if 'error' in conf:
-            raise SocketConfigError(conf['error'])
-        try:
-            server = next(
-                srv['url']
-                for srv in conf['servers']
-                if srv['secure']
-            )
-            self.logger.info('secure server %s', server)
-        except (KeyError, StopIteration):
-            self.logger.info('no secure servers')
-            try:
-                server = next(srv['url'] for srv in conf['servers'])
-                self.logger.info('server %s', server)
-            except (KeyError, StopIteration):
-                self.logger.info('no servers')
-                raise SocketConfigError('no servers in socket config', conf)
-        data['domain'] = server
-        self.server = self.SOCKET_IO_URL % data
-
-    async def disconnect(self):
-        """Disconnect.
-        """
-        self.logger.info('disconnect %s', self.server)
-        if self.socket is None:
-            self.logger.info('already disconnected')
-            return
-        try:
-            await self.socket.close()
-        except Exception as ex:
-            self.logger.error('socket.close(): %s: %r', self.server, ex)
-            raise
-        finally:
-            self.socket = None
-            self.user.rank = -1
-
-    async def connect(self):
-        """Get server URL and connect.
-
-        Raises
-        ------
-        `cytube_bot.error.SocketIOError`
-        """
-        import time
-        await self.disconnect()
-        if self.server is None:
-            await self.get_socket_config()
-        self.logger.info('connect %s', self.server)
-        self.socket = await self.socket_io(self.server, loop=self.loop)
-        self.connect_time = time.time()  # Record connection time
-
-    async def login(self):
-        """Connect, join channel, log in.
-
-        Raises
-        ------
-        `cytube_bot.error.LoginError`
-        `cytube_bot.error.SocketIOError`
-        """
-        await self.connect()
-
-        self.logger.info('join channel %s', self.channel)
-        res = await self.socket.emit(
-            'joinChannel',
-            {
-                'name': self.channel.name,
-                'pw': self.channel.password
-            },
-            SocketIOResponse.match_event(r'^(needPassword|)$'),
-            self.response_timeout
-        )
-        if res is None:
-            raise SocketIOError('joinChannel response timeout')
-        if res[0] == 'needPassword':
-            raise LoginError('invalid channel password')
-
-        if not self.user.name:
-            self.logger.warning('no user')
-        else:
-            while True:
-                self.logger.info('login %s', self.user)
-                res = await self.socket.emit(
-                    'login',
-                    {
-                        'name': self.user.name,
-                        'pw': self.user.password
-                    },
-                    SocketIOResponse.match_event(r'^login$'),
-                    self.response_timeout
-                )
-                if res is None:
-                    raise SocketIOError('login response timeout')
-                res = res[1]
-                self.logger.info('login %s', res)
-                if res.get('success', False):
-                    break
-                err = res.get('error', '<no error message>')
-                self.logger.error('login error: %s', res)
-                match = self.GUEST_LOGIN_LIMIT.match(err)
-                if match:
-                    try:
-                        delay = max(int(match.group(1)), 1)
-                        self.logger.warning('sleep(%d)', delay)
-                        await asyncio.sleep(delay)
-                    except ValueError:
-                        raise LoginError(err)
-                else:
-                    raise LoginError(err)
-        await self.trigger('login', self)
 
     async def _log_user_counts_periodically(self):
         """Background task to periodically log user counts for graphing
@@ -498,7 +443,7 @@ class Bot:
                                 len(self.channel.userlist)
                             ),
                             'bot_start_time': int(self.start_time),
-                            'bot_connected': 1 if self.socket else 0
+                            'bot_connected': 1 if self.connection.is_connected else 0
                         }
 
                         # Add playlist info if available
@@ -533,7 +478,7 @@ class Bot:
                 # Check if bot is connected and ready
                 if not self.db:
                     continue
-                if not self.socket:
+                if not self.connection.is_connected:
                     self.logger.debug(
                         'Outbound processor waiting for socket connection'
                     )
@@ -620,7 +565,7 @@ class Bot:
     async def _perform_maintenance_periodically(self):
         """Background task for periodic database maintenance.
 
-        Runs once per day (at startup + every 24h) to:
+        Runs once per day (at startup and then every 24 hours) to:
         - Clean up old records (history, outbound messages, tokens)
         - VACUUM database to reclaim space
         - Update query planner statistics
@@ -648,8 +593,9 @@ class Bot:
             self.logger.debug('Maintenance task cancelled')
 
     async def run(self):
-        """Main loop.
+        """Main event loop.
         """
+        import time
         try:
             # Start background tasks for logging and status updates
             if self.db:
@@ -668,18 +614,28 @@ class Bot:
 
             while True:
                 try:
-                    if self.socket is None:
-                        self.logger.info('login')
-                        await self.login()
-                    ev, data = await self.socket.recv()
-                    await self.trigger(ev, data)
-                except SocketIOError as ex:
-                    self.logger.error('network error: %r', ex)
-                    await self.disconnect()
-                    if self.restart_delay is None or self.restart_delay < 0:
+                    if not self.connection.is_connected:
+                        self.logger.info('connecting')
+                        await self.connection.connect()
+                        self.connect_time = time.time()  # Record connection time
+                    
+                    async for ev, data in self.connection.recv_events():
+                        await self.trigger(ev, data)
+                        
+                except (ConnError, Exception) as ex:
+                    self.logger.error('connection error: %r', ex, exc_info=True)
+                    try:
+                        await self.connection.disconnect()
+                    except Exception:
+                        pass
+                    
+                    if self.restart_delay is None or self.restart_delay <= 0:
                         break
-                    self.logger.error('restarting')
+                    
+                    self.logger.error('restarting in %s seconds', self.restart_delay)
                     await asyncio.sleep(self.restart_delay)
+                    await self.connection.reconnect()
+                    
         except asyncio.CancelledError:
             self.logger.info('cancelled')
         finally:
@@ -712,7 +668,10 @@ class Bot:
                 except asyncio.CancelledError:
                     pass
 
-            await self.disconnect()
+            try:
+                await self.connection.disconnect()
+            except Exception as ex:
+                self.logger.error('disconnect error: %r', ex)
 
     def on(self, event, *handlers):
         """Add event handlers.
@@ -809,35 +768,22 @@ class Bot:
         cytube_bot.error.ChannelError
         cytube_bot.error.ChannelPermissionError
         """
-
-        def match_chat_response(event, data):
-            if event == 'noflood':
-                return True
-            if event == 'chatMsg':
-                return data.get('username') == self.user.name
-            return False
-
         self.logger.info('chat %s', msg)
         self.channel.check_permission('chat', self.user)
 
         if self.user.muted or self.user.smuted:
             raise ChannelPermissionError('muted')
 
-        res = await self.socket.emit(
-            'chatMsg',
-            {'msg': msg, 'meta': meta if meta else {}},
-            match_chat_response,
-            self.response_timeout
-        )
-        if res is None:
-            self.logger.error('chat: timeout')
-            raise ChannelError('could not send chat message')
-        if res[0] == 'noflood':
-            self.logger.error('chat: noflood: %s', res)
-            raise ChannelPermissionError(res[1].get('msg', 'noflood'))
-            # if self.MUTED.match(res['msg']):
-            #     raise ChannelPermissionError('muted')
-        return res[1]
+        try:
+            await self.connection.send_message(msg, meta=meta)
+            # Return dict for compatibility
+            return {'msg': msg, 'meta': meta if meta else {}}
+        except NotConnectedError:
+            self.logger.error('chat: not connected')
+            raise ChannelError('not connected')
+        except Exception as ex:
+            self.logger.error('chat: error: %r', ex)
+            raise ChannelError(f'could not send chat message: {ex}')
 
     async def pm(self, to, msg, meta=None):
         """Send a private chat message.
@@ -858,34 +804,22 @@ class Bot:
         cytube_bot.error.ChannelPermissionError
         cytube_bot.error.ChannelError
         """
-
-        def match_pm_response(event, data):
-            if event == 'errorMsg':
-                return True
-            if event == 'pm':
-                return (data.get('username') == self.user.name
-                        and data.get('to') == to)
-            return False
-
         self.logger.info('pm %s %s', to, msg)
         self.channel.check_permission('chat', self.user)
 
         if self.user.muted or self.user.smuted:
             raise ChannelPermissionError('muted')
 
-        res = await self.socket.emit(
-            'pm',
-            {'msg': msg, 'to': to, 'meta': meta if meta else {}},
-            match_pm_response,
-            self.response_timeout
-        )
-        if res is None:
-            self.logger.error('pm: %s: timeout', to)
-            raise ChannelError('could not send private message')
-        if res[0] == 'errorMsg':
-            self.logger.error('pm: %r', res)
-            raise ChannelError(res[1].get('msg', '<no message>'))
-        return res[1]
+        try:
+            await self.connection.send_pm(to, msg, meta=meta)
+            # Return dict for compatibility
+            return {'to': to, 'msg': msg, 'meta': meta if meta else {}}
+        except NotConnectedError:
+            self.logger.error('pm: %s: not connected', to)
+            raise ChannelError('not connected')
+        except Exception as ex:
+            self.logger.error('pm: %s: error: %r', to, ex)
+            raise ChannelError(f'could not send private message: {ex}')
 
     async def set_afk(self, value=True):
         """Set bot AFK.
@@ -899,7 +833,7 @@ class Bot:
         cytube_bot.error.ChannelPermissionError
         """
         if self.user.afk != value:
-            await self.socket.emit('chatMsg', {'msg': '/afk'})
+            await self.connection.send_message('/afk')
 
     async def clear_chat(self):
         """Clear chat.
@@ -909,7 +843,7 @@ class Bot:
         cytube_bot.error.ChannelPermissionError
         """
         self.channel.check_permission('chatclear', self.user)
-        await self.socket.emit('chatMsg', {'msg': '/clear'})
+        await self.connection.send_message('/clear')
 
     async def kick(self, user, reason=''):
         """Kick a user.

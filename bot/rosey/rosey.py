@@ -38,22 +38,23 @@ def log_chat(logger, event, data):
 
     Args:
         logger: Logger instance to write to
-        event: Event name ('chatMsg' or 'pm')
-        data: Event data dictionary containing time, username, msg, etc.
+        event: Event name ('message' or 'pm')
+        data: Event data dictionary containing time, user, content, etc.
     """
     # Extract timestamp (milliseconds since epoch) and convert to local time
-    time = data.get("time", 0)
-    time = strftime("%d/%m/%Y %H:%m:%S", localtime(time // 1000))
+    # For normalized events, get from timestamp field or platform_data
+    time_ms = data.get("timestamp", data.get("platform_data", {}).get("time", 0))
+    time = strftime("%d/%m/%Y %H:%m:%S", localtime(time_ms // 1000))
 
-    # Extract username and message
-    user = data.get("username", "<no username>")
-    msg = data.get("msg", "<no message>")
+    # Extract username and message - normalized events use 'user' and 'content'
+    user = data.get("user", data.get("username", "<no username>"))
+    msg = data.get("content", data.get("msg", "<no message>"))
 
     # Format differently for private messages
     if event == "pm":
+        to_user = data.get("to", data.get("platform_data", {}).get("to", "<no username>"))
         logger.info(
-            "[%s] %s -> %s: %s", time, user, data.get(
-                "to", "<no username>"), msg
+            "[%s] %s -> %s: %s", time, user, to_user, msg
         )
     else:
         logger.info("[%s] %s: %s", time, user, msg)
@@ -231,8 +232,28 @@ async def run_bot():
         log_format="[%(asctime).19s] [%(levelname)s] %(message)s",
     )
 
-    # Create Rosey bot instance with configuration
-    bot = Bot(**kwargs)
+    # Extract CyTube connection parameters from kwargs
+    domain = kwargs.pop('domain', None)
+    channel = kwargs.pop('channel', None)
+    user = kwargs.pop('user', None)
+    
+    # Handle channel password if it's a tuple
+    channel_name = channel[0] if isinstance(channel, (list, tuple)) else channel
+    channel_password = channel[1] if isinstance(channel, (list, tuple)) and len(channel) > 1 else None
+    
+    # Handle user credentials if it's a tuple
+    username = user[0] if isinstance(user, (list, tuple)) and user else None
+    password = user[1] if isinstance(user, (list, tuple)) and len(user) > 1 else None
+    
+    # Create Rosey bot instance using from_cytube helper
+    bot = Bot.from_cytube(
+        domain=domain,
+        channel=channel_name,
+        channel_password=channel_password,
+        user=username,
+        password=password,
+        **kwargs  # restart_delay, db_path, enable_db
+    )
 
     # Create shell (PM command handler) if configured
     shell = Shell(conf.get("shell", None), bot)
@@ -261,8 +282,8 @@ async def run_bot():
     log = partial(log_chat, chat_logger)
     log_m = partial(log_media, bot, media_logger)
 
-    # Register event handlers
-    bot.on("chatMsg", log)  # Log public chat messages
+    # Register event handlers (using normalized event names)
+    bot.on("message", log)  # Log public chat messages (normalized from chatMsg)
     bot.on("pm", log)  # Log private messages
     bot.on("setCurrent", log_m)  # Log media changes
 
