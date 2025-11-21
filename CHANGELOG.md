@@ -1,5 +1,177 @@
 # Changelog
 
+## [Sprint 9: The Accountant] - 2025-11-18
+
+### ⚠️ BREAKING CHANGES - Configuration v2 & NATS-First Architecture
+
+This release completes the NATS-first transformation started in Sprint 6a. **NATS server is now REQUIRED** - the bot cannot run without it. All backward compatibility has been removed.
+
+#### 💥 Breaking Changes
+
+**1. Bot Constructor Signature Changed**
+```python
+# ❌ OLD (v1 - NO LONGER WORKS):
+Bot(connection, restart_delay=5.0, 
+    db_path='bot_data.db', enable_db=True, 
+    nats_client=None)
+
+# ✅ NEW (v2 - REQUIRED):
+Bot(connection, nats_client, restart_delay=5.0)
+```
+- `nats_client` moved from optional 5th parameter to **REQUIRED** 2nd parameter
+- `db_path` and `enable_db` parameters **REMOVED**
+- Bot raises `ValueError` if `nats_client` is `None`
+- Database access **ONLY** via NATS event bus (no direct DB connection)
+
+**2. Configuration Format v2**
+```json
+{
+  "version": "2.0",
+  "nats": { /* REQUIRED section */ },
+  "database": { /* path, run_as_service */ },
+  "platforms": [ /* array of platform configs */ ],
+  "shell": { /* enabled, host, port */ },
+  "logging": { /* level, files */ },
+  "llm": { /* unchanged */ },
+  "plugins": { /* enabled, directory */ }
+}
+```
+- Flat v1 format **NO LONGER SUPPORTED**
+- `version` field now required (must be "2.0")
+- `nats` section **REQUIRED** (url, timeouts, reconnect)
+- `platforms` is now an **array** (multi-platform ready)
+- `shell` is now an **object** (not string "host:port")
+
+**3. NATS Server Required**
+- Bot **WILL NOT START** without NATS connection
+- Database operations **ONLY** work via NATS
+- No fallback to direct database access
+- Clear error messages guide users to install NATS
+
+#### 🔧 Migration Path
+
+**Automatic Config Migration:**
+```bash
+# Backup and migrate your config
+python scripts/migrate_config.py config.json --backup
+
+# Or specify output file
+python scripts/migrate_config.py old-config.json --output new-config.json
+```
+
+**Install NATS Server:**
+```bash
+# macOS
+brew install nats-server
+
+# Linux/Windows
+# Download from: https://github.com/nats-io/nats-server/releases
+```
+
+**Start NATS Server:**
+```bash
+nats-server
+```
+
+**Update Bot Instantiation Code:**
+```python
+# ❌ OLD:
+bot = Bot(connection, restart_delay=5.0, 
+          db_path="bot_data.db", enable_db=True)
+
+# ✅ NEW:
+from nats.aio.client import Client as NATS
+nats = NATS()
+await nats.connect("nats://localhost:4222")
+bot = Bot(connection, nats_client=nats, restart_delay=5.0)
+```
+
+#### Added
+
+- **Migration Script** (`scripts/migrate_config.py`)
+  - Automatic v1 → v2 config conversion
+  - Backup functionality (`--backup` flag)
+  - Version detection (skips if already v2)
+  - Clear error messages and next steps
+  - CLI: `python scripts/migrate_config.py config.json`
+
+- **Config v2 Validation**
+  - Startup validation checks config version
+  - Clear error with migration instructions
+  - Validates NATS configuration presence
+  - Validates platform configuration structure
+
+- **DatabaseService Integration**
+  - Runs as separate async service on NATS
+  - Handles all database operations via events
+  - Started automatically by bot initialization
+  - Isolated from main bot process
+
+#### Changed
+
+- **Bot Initialization** (`bot/rosey/rosey.py`)
+  - Now fully async with NATS connection required
+  - Connects to NATS before bot creation
+  - Starts DatabaseService as separate service
+  - Parses config v2 platform array
+  - Comprehensive error handling with helpful messages
+  - Cleanup on shutdown (closes NATS connection)
+
+- **Database Operations** (`lib/bot.py`)
+  - **REMOVED**: All direct database access code (45 lines)
+  - **REMOVED**: All `elif self.db:` fallback blocks (9 locations)
+  - **REMOVED**: `self.db` attribute completely
+  - All operations now publish NATS events exclusively
+  - No conditional NATS checks (NATS always used)
+
+#### Removed
+
+- **Database Fallback Code** (45 lines removed)
+  - `_on_usercount` - high water mark tracking
+  - `_on_user_join` - user join logging
+  - `_on_user_leave` - user leave logging
+  - `_on_message` - message logging
+  - `_log_user_counts_periodically` - user count logging
+  - `_update_current_status_periodically` - status updates
+  - `_process_outbound_messages_periodically` - query, mark_sent, mark_failed (3 locations)
+
+- **NATS Conditional Checks** (9 locations)
+  - All `if self.nats:` checks removed
+  - NATS operations execute unconditionally
+  - Code un-indented (no longer inside conditionals)
+
+- **Bot Constructor Parameters**
+  - `db_path` parameter removed
+  - `enable_db` parameter removed
+  - `nats_client` no longer optional
+
+#### Fixed
+
+- NATS is now always available (no None checks needed)
+- Database consistency ensured (only one path via NATS)
+- Clear startup errors guide users to fix configuration
+
+#### Documentation
+
+- Migration guide in `scripts/migrate_config.py` help text
+- Config v2 template in `bot/rosey/config.json.dist`
+- Error messages provide next steps and documentation links
+- SPEC documents in `docs/sprints/active/9-The-Accountant/`
+
+#### Testing
+
+- Migration script tested with v1 configs
+- Config v2 validation tested
+- Error handling verified (wrong version, missing NATS)
+- Bot startup tested with v2 config
+
+#### Dependencies
+
+- **nats-py** - REQUIRED (install: `pip install nats-py`)
+- NATS server must be running (install: see migration guide)
+
+---
+
 ## [Sprint 6a: Quicksilver] - 2025-11-18
 
 ### NATS-Based Event Bus Architecture

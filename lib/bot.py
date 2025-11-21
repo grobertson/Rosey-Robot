@@ -130,30 +130,61 @@ class Bot:
         return instance
 
     def __init__(self, connection: ConnectionAdapter,
-                 restart_delay: float = 5.0,
-                 db_path: str = 'bot_data.db',
-                 enable_db: bool = True,
-                 nats_client=None):
+                 nats_client,
+                 restart_delay: float = 5.0):
         """
-        Initialize bot with connection adapter.
+        Initialize bot with connection adapter and NATS event bus.
+        
+        ⚠️ BREAKING CHANGE (Sprint 9 Sortie 5):
+        - The `db`, `db_path`, and `enable_db` parameters have been REMOVED
+        - `nats_client` is now REQUIRED (second parameter, not optional)
+        - All database operations now go through NATS event bus
+        - DatabaseService must be started separately
         
         Parameters
         ----------
         connection : ConnectionAdapter
             Connection adapter for chat platform.
+        nats_client : NATS client
+            NATS client for event bus communication (REQUIRED).
+            Bot cannot operate without NATS. All database operations
+            publish events to NATS subjects.
         restart_delay : float, optional
             Delay in seconds before reconnection.
             0 or negative - do not reconnect.
-        db_path : str, optional
-            Path to SQLite database file.
-        enable_db : bool, optional
-            Whether to enable database tracking.
-        nats_client : NATS client, optional
-            NATS client for event bus communication.
-            If provided, database operations use NATS.
-            Falls back to direct database calls if unavailable.
+            
+        Raises
+        ------
+        ValueError
+            If nats_client is None. NATS is mandatory in Sprint 9+.
+            
+        See Also
+        --------
+        docs/sprints/active/9-The-Accountant/MIGRATION.md : Migration guide
+        common.database_service.DatabaseService : Database event bus subscriber
+        
+        Notes
+        -----
+        Migration from pre-Sprint 9:
+        
+        Old (v1)::
+        
+            bot = Bot(connection, db=database, nats_client=nats)
+            
+        New (v2)::
+        
+            bot = Bot(connection, nats_client=nats)
+            # DatabaseService runs separately
         """
         import time
+        
+        # Validate NATS client (REQUIRED)
+        if nats_client is None:
+            raise ValueError(
+                "NATS client is required. Bot cannot operate without NATS event bus. "
+                "See docs/sprints/active/9-The-Accountant/MIGRATION.md for migration guide."
+            )
+        
         self.connection = connection
         self.restart_delay = restart_delay
         self.channel = Channel()
@@ -170,25 +201,12 @@ class Bot:
         self._outbound_task = None  # Background task for sending messages
         self._maintenance_task = None  # Background task for DB maintenance
 
-        # Store NATS client for event bus communication
+        # Store NATS client for event bus communication (REQUIRED)
         self.nats = nats_client
-        if self.nats:
-            self.logger.info('NATS event bus enabled')
+        self.logger.info('NATS event bus enabled')
         
-        # Initialize database if available and enabled
-        # Database used as fallback when NATS unavailable
-        self.db = None
-        if enable_db and BotDatabase is not None:
-            try:
-                self.db = BotDatabase(db_path)
-                if self.nats:
-                    self.logger.info('Database tracking enabled (NATS primary, direct fallback)')
-                else:
-                    self.logger.info('Database tracking enabled (direct mode)')
-            except Exception as e:
-                self.logger.error('Failed to initialize database: %s', e)
-        elif enable_db:
-            self.logger.warning('Database module not available')
+        # NO self.db - Database operations go through NATS only
+        # DatabaseService subscribes to NATS subjects separately
 
         # Register event handlers
         for attr in dir(self):
@@ -248,17 +266,12 @@ class Bot:
         user_count = len(self.channel.userlist)
         connected_count = data
         
-        if self.nats:
-            # Publish via NATS
-            await self.nats.publish('rosey.db.stats.high_water', json.dumps({
-                'chat_count': user_count,
-                'connected_count': connected_count
-            }).encode())
-            self.logger.debug(f"[NATS] Published high_water: {user_count}/{connected_count}")
-        elif self.db:
-            # Fallback to direct database call
-            self.db.update_high_water_mark(user_count, connected_count)
-            self.logger.debug(f"[DB] Direct call update_high_water_mark: {user_count}/{connected_count}")
+        # Publish via NATS (REQUIRED)
+        await self.nats.publish('rosey.db.stats.high_water', json.dumps({
+            'chat_count': user_count,
+            'connected_count': connected_count
+        }).encode())
+        self.logger.debug(f"[NATS] Published high_water: {user_count}/{connected_count}")
 
     @staticmethod
     def _on_needPassword(_, data):
@@ -346,29 +359,21 @@ class Bot:
         else:
             self.logger.warning('User join without user_data: %s', username)
 
-        # Track user join via NATS or database
+        # Track user join via NATS (REQUIRED)
         if username:
-            if self.nats:
-                # Publish via NATS
-                await self.nats.publish('rosey.db.user.joined', json.dumps({
-                    'username': username
-                }).encode())
-                self.logger.debug(f"[NATS] Published user_joined: {username}")
-                
-                # Update high water mark
-                user_count = len(self.channel.userlist)
-                connected_count = self.channel.userlist.count
-                await self.nats.publish('rosey.db.stats.high_water', json.dumps({
-                    'chat_count': user_count,
-                    'connected_count': connected_count
-                }).encode())
-            elif self.db:
-                # Fallback to direct database calls
-                self.db.user_joined(username)
-                user_count = len(self.channel.userlist)
-                connected_count = self.channel.userlist.count
-                self.db.update_high_water_mark(user_count, connected_count)
-                self.logger.debug(f"[DB] Direct calls for user_joined: {username}")
+            # Publish via NATS
+            await self.nats.publish('rosey.db.user.joined', json.dumps({
+                'username': username
+            }).encode())
+            self.logger.debug(f"[NATS] Published user_joined: {username}")
+            
+            # Update high water mark
+            user_count = len(self.channel.userlist)
+            connected_count = self.channel.userlist.count
+            await self.nats.publish('rosey.db.stats.high_water', json.dumps({
+                'chat_count': user_count,
+                'connected_count': connected_count
+            }).encode())
 
     async def _on_user_leave(self, _, data):
         """Handle normalized user_leave event.
@@ -384,17 +389,11 @@ class Bot:
 
         # Track user leave via NATS or database
         if username:
-            if self.nats:
-                # Publish via NATS
-                await self.nats.publish('rosey.db.user.left', json.dumps({
-                    'username': username
-                }).encode())
-                self.logger.debug(f"[NATS] Published user_left: {username}")
-            elif self.db:
-                # Fallback to direct database call
-                self.db.user_left(username)
-                self.logger.debug(f"[DB] Direct call user_left: {username}")
-
+            # Publish via NATS
+            await self.nats.publish('rosey.db.user.left', json.dumps({
+                'username': username
+            }).encode())
+            self.logger.debug(f"[NATS] Published user_left: {username}")
         try:
             del self.channel.userlist[username]
             
@@ -501,19 +500,12 @@ class Bot:
         msg = data.get('content', '')
         
         if username:
-            if self.nats:
-                # Publish via NATS
-                await self.nats.publish('rosey.db.message.log', json.dumps({
-                    'username': username,
-                    'message': msg
-                }).encode())
-                self.logger.debug(f"[NATS] Published message_log: {username}")
-            elif self.db:
-                # Fallback to direct database call
-                # Store message text for recent chat display
-                self.db.user_chat_message(username, msg)
-                self.logger.debug(f"[DB] Direct call user_chat_message: {username}")
-
+            # Publish via NATS
+            await self.nats.publish('rosey.db.message.log', json.dumps({
+                'username': username,
+                'message': msg
+            }).encode())
+            self.logger.debug(f"[NATS] Published message_log: {username}")
     async def _log_user_counts_periodically(self):
         """Background task to periodically log user counts for graphing
 
@@ -528,23 +520,15 @@ class Bot:
                     connected_users = len(self.channel.userlist)  # Same as chat_users for dict-based userlist
 
                     try:
-                        if self.nats:
-                            # Publish via NATS
-                            await self.nats.publish('rosey.db.stats.user_count', json.dumps({
-                                'chat_count': chat_users,
-                                'connected_count': connected_users
-                            }).encode())
-                            self.logger.debug(
-                                '[NATS] Published user_count: %d chat, %d connected',
-                                chat_users, connected_users
-                            )
-                        elif self.db:
-                            # Fallback to direct database call
-                            self.db.log_user_count(chat_users, connected_users)
-                            self.logger.debug(
-                                '[DB] Logged user counts: %d chat, %d connected',
-                                chat_users, connected_users
-                            )
+                        # Publish via NATS
+                        await self.nats.publish('rosey.db.stats.user_count', json.dumps({
+                            'chat_count': chat_users,
+                            'connected_count': connected_users
+                        }).encode())
+                        self.logger.debug(
+                            '[NATS] Published user_count: %d chat, %d connected',
+                            chat_users, connected_users
+                        )
                     except Exception as e:
                         self.logger.error('Failed to log user counts: %s', e)
         except asyncio.CancelledError:
@@ -585,16 +569,11 @@ class Bot:
                                 status['current_media_duration'] = (
                                     self.channel.playlist.current.duration)
 
-                        if self.nats:
-                            # Publish via NATS
-                            await self.nats.publish('rosey.db.status.update', json.dumps({
-                                'status_data': status
-                            }).encode())
-                            self.logger.debug('[NATS] Published status_update')
-                        elif self.db:
-                            # Fallback to direct database call
-                            self.db.update_current_status(**status)
-                            self.logger.debug('[DB] Updated current status')
+                        # Publish via NATS
+                        await self.nats.publish('rosey.db.status.update', json.dumps({
+                            'status_data': status
+                        }).encode())
+                        self.logger.debug('[NATS] Published status_update')
                     except Exception as e:
                         self.logger.error('Failed to update status: %s', e)
         except asyncio.CancelledError:
@@ -631,30 +610,21 @@ class Bot:
                     # Fetch messages ready for sending (respects retry backoff)
                     messages = []
                     
-                    if self.nats:
-                        # Query via NATS request/reply
-                        try:
-                            response = await self.nats.request(
-                                'rosey.db.messages.outbound.get',
-                                json.dumps({'limit': 20, 'max_retries': 3}).encode(),
-                                timeout=2.0
-                            )
-                            messages = json.loads(response.data.decode())
-                            self.logger.debug(f"[NATS] Queried outbound messages: {len(messages)} found")
-                        except asyncio.TimeoutError:
-                            self.logger.warning("[NATS] Timeout querying outbound messages")
-                            messages = []
-                        except Exception as e:
-                            self.logger.error(f"[NATS] Error querying outbound messages: {e}")
-                            messages = []
-                    elif self.db:
-                        # Fallback to direct database query
-                        messages = self.db.get_unsent_outbound_messages(
-                            limit=20,
-                            max_retries=3
+                    # Query via NATS request/reply
+                    try:
+                        response = await self.nats.request(
+                            'rosey.db.messages.outbound.get',
+                            json.dumps({'limit': 20, 'max_retries': 3}).encode(),
+                            timeout=2.0
                         )
-                        self.logger.debug(f"[DB] Queried outbound messages: {len(messages)} found")
-
+                        messages = json.loads(response.data.decode())
+                        self.logger.debug(f"[NATS] Queried outbound messages: {len(messages)} found")
+                    except asyncio.TimeoutError:
+                        self.logger.warning("[NATS] Timeout querying outbound messages")
+                        messages = []
+                    except Exception as e:
+                        self.logger.error(f"[NATS] Error querying outbound messages: {e}")
+                        messages = []
                     if messages:
                         self.logger.debug(
                             'Processing %d queued outbound message(s)',
@@ -670,13 +640,9 @@ class Bot:
                             await self.chat(text)
                             
                             # Mark as sent via NATS or database
-                            if self.nats:
-                                await self.nats.publish('rosey.db.messages.outbound.mark_sent', json.dumps({
-                                    'message_id': mid
-                                }).encode())
-                            elif self.db:
-                                self.db.mark_outbound_sent(mid)
-
+                            await self.nats.publish('rosey.db.messages.outbound.mark_sent', json.dumps({
+                                'message_id': mid
+                            }).encode())
                             if retry_count > 0:
                                 self.logger.info(
                                     'Sent outbound id=%s after %d retries',
@@ -698,17 +664,10 @@ class Bot:
                                     ChannelPermissionError,
                                     ChannelError)):
                                 # Permanent: permissions, muted, flood control
-                                if self.nats:
-                                    # For now, we can't mark as failed via NATS
-                                    # (DatabaseService doesn't have mark_failed handler yet)
-                                    # Fall back to direct call if available
-                                    if self.db:
-                                        self.db.mark_outbound_failed(
-                                            mid,
-                                            error_msg,
-                                            is_permanent=True
-                                        )
-                                elif self.db:
+                                # For now, we can't mark as failed via NATS
+                                # (DatabaseService doesn't have mark_failed handler yet)
+                                # Fall back to direct call if available
+                                if self.db:
                                     self.db.mark_outbound_failed(
                                         mid,
                                         error_msg,
@@ -720,15 +679,8 @@ class Bot:
                                 )
                             else:
                                 # Transient: network, timeout, etc - will retry
-                                if self.nats:
-                                    # Fall back to direct call for mark_failed
-                                    if self.db:
-                                        self.db.mark_outbound_failed(
-                                            mid,
-                                            error_msg,
-                                            is_permanent=False
-                                        )
-                                elif self.db:
+                                # Fall back to direct call for mark_failed
+                                if self.db:
                                     self.db.mark_outbound_failed(
                                         mid,
                                         error_msg,
