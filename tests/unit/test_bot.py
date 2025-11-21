@@ -308,9 +308,12 @@ class TestBotUserEvents:
     @pytest.mark.asyncio
     async def test_on_addUser(self, bot_simple):
         """_on_user_join adds user to userlist"""
-        user_data = {'name': 'newuser', 'rank': 1.0}
-        # Normalized event uses 'platform_data' wrapper
-        await bot_simple.trigger('user_join', {'platform_data': user_data})
+        # Sortie 1: user_join events include user_data field
+        await bot_simple.trigger('user_join', {
+            'user': 'newuser',
+            'user_data': {'username': 'newuser', 'rank': 1.0, 'is_afk': False, 'is_moderator': False, 'meta': {}},
+            'timestamp': 0
+        })
         assert 'newuser' in bot_simple.channel.userlist
         assert bot_simple.channel.userlist['newuser'].rank == 1.0
 
@@ -318,21 +321,28 @@ class TestBotUserEvents:
     async def test_on_addUser_self(self, bot_simple):
         """_on_user_join with bot's own name updates bot user"""
         bot_simple.user.name = 'testbot'
-        user_data = {'name': 'testbot', 'rank': 2.0, 'meta': {'afk': False}}
-        # Normalized event uses 'platform_data' wrapper
-        await bot_simple.trigger('user_join', {'platform_data': user_data})
+        # Sortie 1: user_join events include user_data field
+        await bot_simple.trigger('user_join', {
+            'user': 'testbot',
+            'user_data': {'username': 'testbot', 'rank': 2.0, 'is_afk': False, 'is_moderator': False, 'meta': {}},
+            'timestamp': 0
+        })
         assert bot_simple.user.rank == 2.0
         assert 'testbot' in bot_simple.channel.userlist
 
     @pytest.mark.asyncio
     async def test_on_userLeave(self, bot_simple):
         """_on_user_leave removes user from userlist"""
-        # Add user first
-        await bot_simple.trigger('user_join', {'platform_data': {'name': 'leavinguser', 'rank': 1.0}})
+        # Add user first with normalized event
+        await bot_simple.trigger('user_join', {
+            'user': 'leavinguser',
+            'user_data': {'username': 'leavinguser', 'rank': 1.0, 'is_afk': False, 'is_moderator': False, 'meta': {}},
+            'timestamp': 0
+        })
         assert 'leavinguser' in bot_simple.channel.userlist
         
         # Remove user - normalized event has 'user' field
-        await bot_simple.trigger('user_leave', {'user': 'leavinguser'})
+        await bot_simple.trigger('user_leave', {'user': 'leavinguser', 'timestamp': 0})
         assert 'leavinguser' not in bot_simple.channel.userlist
 
     @pytest.mark.asyncio
@@ -345,7 +355,11 @@ class TestBotUserEvents:
     async def test_on_setUserMeta(self, bot_simple):
         """_on_setUserMeta updates user metadata"""
         # Add user with normalized event
-        await bot_simple.trigger('user_join', {'platform_data': {'name': 'user1', 'rank': 1.0}})
+        await bot_simple.trigger('user_join', {
+            'user': 'user1',
+            'user_data': {'username': 'user1', 'rank': 1.0, 'is_afk': False, 'is_moderator': False, 'meta': {}},
+            'timestamp': 0
+        })
         await bot_simple.trigger('setUserMeta', {'name': 'user1', 'meta': {'afk': True, 'muted': False}})
         # Meta will contain all fields from update
         assert bot_simple.channel.userlist['user1'].meta['afk'] is True
@@ -360,7 +374,11 @@ class TestBotUserEvents:
     async def test_on_setUserRank(self, bot_simple):
         """_on_setUserRank updates user rank"""
         # Add user with normalized event
-        await bot_simple.trigger('user_join', {'platform_data': {'name': 'user1', 'rank': 1.0}})
+        await bot_simple.trigger('user_join', {
+            'user': 'user1',
+            'user_data': {'username': 'user1', 'rank': 1.0, 'is_afk': False, 'is_moderator': False, 'meta': {}},
+            'timestamp': 0
+        })
         await bot_simple.trigger('setUserRank', {'name': 'user1', 'rank': 3.0})
         assert bot_simple.channel.userlist['user1'].rank == 3.0
 
@@ -374,7 +392,11 @@ class TestBotUserEvents:
     async def test_on_setAFK(self, bot_simple):
         """_on_setAFK updates user AFK status"""
         # Add user with normalized event
-        await bot_simple.trigger('user_join', {'platform_data': {'name': 'user1', 'rank': 1.0}})
+        await bot_simple.trigger('user_join', {
+            'user': 'user1',
+            'user_data': {'username': 'user1', 'rank': 1.0, 'is_afk': False, 'is_moderator': False, 'meta': {}},
+            'timestamp': 0
+        })
         await bot_simple.trigger('setAFK', {'name': 'user1', 'afk': True})
         assert bot_simple.channel.userlist['user1'].afk is True
 
@@ -382,7 +404,11 @@ class TestBotUserEvents:
     async def test_on_setLeader(self, bot_simple):
         """_on_setLeader updates userlist leader"""
         # Add user first so leader lookup works - use normalized event
-        await bot_simple.trigger('user_join', {'platform_data': {'name': 'leader_user', 'rank': 3.0}})
+        await bot_simple.trigger('user_join', {
+            'user': 'leader_user',
+            'user_data': {'username': 'leader_user', 'rank': 3.0, 'is_afk': False, 'is_moderator': True, 'meta': {}},
+            'timestamp': 0
+        })
         await bot_simple.trigger('setLeader', 'leader_user')
         assert bot_simple.channel.userlist.leader.name == 'leader_user'
 
@@ -598,14 +624,26 @@ class TestBotEdgeCases:
     @pytest.mark.asyncio
     async def test_userlist_cleared_on_new_userlist(self, bot_simple):
         """user_list event clears existing users first"""
-        # Add users with normalized events
-        await bot_simple.trigger('user_join', {'platform_data': {'name': 'user1', 'rank': 1.0}})
-        await bot_simple.trigger('user_join', {'platform_data': {'name': 'user2', 'rank': 1.0}})
+        # Add users with normalized events (Sortie 1: includes user_data)
+        await bot_simple.trigger('user_join', {
+            'user': 'user1',
+            'user_data': {'username': 'user1', 'rank': 1.0, 'is_afk': False, 'is_moderator': False, 'meta': {}},
+            'timestamp': 0
+        })
+        await bot_simple.trigger('user_join', {
+            'user': 'user2',
+            'user_data': {'username': 'user2', 'rank': 1.0, 'is_afk': False, 'is_moderator': False, 'meta': {}},
+            'timestamp': 0
+        })
         assert len(bot_simple.channel.userlist) == 2
         
-        # New userlist should replace - normalized event wraps in 'users' field
-        new_users = [{'name': 'user3', 'rank': 1.0}]
-        await bot_simple.trigger('user_list', {'users': new_users})
+        # New userlist should replace (Sortie 1: users array contains full objects)
+        await bot_simple.trigger('user_list', {
+            'users': [
+                {'username': 'user3', 'rank': 1.0, 'is_afk': False, 'is_moderator': False, 'meta': {}}
+            ],
+            'count': 1
+        })
         assert len(bot_simple.channel.userlist) == 1
         assert 'user3' in bot_simple.channel.userlist
         assert 'user1' not in bot_simple.channel.userlist

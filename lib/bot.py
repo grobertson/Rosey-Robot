@@ -132,7 +132,8 @@ class Bot:
     def __init__(self, connection: ConnectionAdapter,
                  restart_delay: float = 5.0,
                  db_path: str = 'bot_data.db',
-                 enable_db: bool = True):
+                 enable_db: bool = True,
+                 nats_client=None):
         """
         Initialize bot with connection adapter.
         
@@ -147,6 +148,10 @@ class Bot:
             Path to SQLite database file.
         enable_db : bool, optional
             Whether to enable database tracking.
+        nats_client : NATS client, optional
+            NATS client for event bus communication.
+            If provided, database operations use NATS.
+            Falls back to direct database calls if unavailable.
         """
         import time
         self.connection = connection
@@ -165,12 +170,21 @@ class Bot:
         self._outbound_task = None  # Background task for sending messages
         self._maintenance_task = None  # Background task for DB maintenance
 
+        # Store NATS client for event bus communication
+        self.nats = nats_client
+        if self.nats:
+            self.logger.info('NATS event bus enabled')
+        
         # Initialize database if available and enabled
+        # Database used as fallback when NATS unavailable
         self.db = None
         if enable_db and BotDatabase is not None:
             try:
                 self.db = BotDatabase(db_path)
-                self.logger.info('Database tracking enabled')
+                if self.nats:
+                    self.logger.info('Database tracking enabled (NATS primary, direct fallback)')
+                else:
+                    self.logger.info('Database tracking enabled (direct mode)')
             except Exception as e:
                 self.logger.error('Failed to initialize database: %s', e)
         elif enable_db:
@@ -227,14 +241,24 @@ class Bot:
     def _on_drinkCount(self, _, data):
         self.channel.drink_count = data
 
-    def _on_usercount(self, _, data):
+    async def _on_usercount(self, _, data):
         self.channel.userlist.count = data
 
         # Update high water mark for connected count when it changes
-        if self.db:
-            user_count = len(self.channel.userlist)
-            connected_count = data
+        user_count = len(self.channel.userlist)
+        connected_count = data
+        
+        if self.nats:
+            # Publish via NATS
+            await self.nats.publish('rosey.db.stats.high_water', json.dumps({
+                'chat_count': user_count,
+                'connected_count': connected_count
+            }).encode())
+            self.logger.debug(f"[NATS] Published high_water: {user_count}/{connected_count}")
+        elif self.db:
+            # Fallback to direct database call
             self.db.update_high_water_mark(user_count, connected_count)
+            self.logger.debug(f"[DB] Direct call update_high_water_mark: {user_count}/{connected_count}")
 
     @staticmethod
     def _on_needPassword(_, data):
@@ -255,60 +279,134 @@ class Bot:
         raise Kicked(data)
 
     def _add_user(self, data):
-        if data['name'] == self.user.name:
-            self.user.update(**data)
+        """Add user from normalized or platform-specific data.
+        
+        Accepts both normalized format (username, rank, is_afk, is_moderator)
+        and CyTube format (name, rank, afk) for backward compatibility.
+        
+        Args:
+            data: User data dict with either 'username' or 'name' field
+        """
+        # Support both normalized 'username' and CyTube 'name'
+        username = data.get('username', data.get('name', ''))
+        
+        # Create User with basic fields that __init__ accepts
+        user_dict = {
+            'name': username,
+            'rank': data.get('rank', 0),
+            'meta': data.get('meta', {})
+        }
+        
+        if username == self.user.name:
+            self.user.update(**user_dict)
+            # Set afk attribute directly (not in __init__)
+            self.user.afk = data.get('is_afk', data.get('afk', False))
             self.channel.userlist.add(self.user)
         else:
-            self.channel.userlist.add(User(**data))
+            new_user = User(**user_dict)
+            # Set afk attribute directly (not in __init__)
+            new_user.afk = data.get('is_afk', data.get('afk', False))
+            self.channel.userlist.add(new_user)
 
     def _on_user_list(self, _, data):
-        """Handle normalized user_list event."""
-        # TODO: NORMALIZATION - Should use normalized 'users' array with full user objects
-        # Currently accessing platform_data because connection layer puts objects there
-        # Once connection layer fixed, use: users_data = data.get('users', [])
+        """Handle normalized user_list event.
+        
+        Uses normalized 'users' field which contains array of user objects
+        with platform-agnostic structure (username, rank, is_moderator, etc).
+        
+        ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'users' array
+        """
         self.channel.userlist.clear()
-        # Normalized event: 'users' has username strings, 'platform_data' has full user objects
-        users_data = data.get('platform_data', [])
+        
+        # ✅ Use normalized 'users' array (Sortie 1 provides full objects)
+        users_data = data.get('users', [])
+        
         for user in users_data:
+            # user is now guaranteed to be a dict with normalized fields
             self._add_user(user)
-        self.logger.info('userlist: %s', self.channel.userlist)
+        
+        self.logger.info('userlist: %s users', len(self.channel.userlist))
 
-    def _on_user_join(self, _, data):
-        """Handle normalized user_join event."""
-        # TODO: NORMALIZATION - Should have 'user_data' at top level with full user object
-        # Currently must access platform_data due to incomplete normalization
-        # Target: user_data = data.get('user_data', {})
-        # Normalized event structure - get platform_data for CyTube format
-        user_data = data.get('platform_data', data)
-        self._add_user(user_data)
-        self.logger.info('userlist: %s', self.channel.userlist)
+    async def _on_user_join(self, _, data):
+        """Handle normalized user_join event.
+        
+        Uses normalized 'user_data' field which contains full user object
+        with platform-agnostic structure.
+        
+        ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'user_data' field
+        """
+        # ✅ Use normalized 'user_data' field (Sortie 1 provides full object)
+        user_data = data.get('user_data', {})
+        username = data.get('user', user_data.get('username', ''))
+        
+        if user_data:
+            self._add_user(user_data)
+            self.logger.info('User joined: %s (rank=%s)', 
+                           username, user_data.get('rank', 0))
+        else:
+            self.logger.warning('User join without user_data: %s', username)
 
-        # Track user join in database
-        if self.db:
-            username = data.get('user', user_data.get('name'))
-            if username:
-                self.db.user_joined(username)
+        # Track user join via NATS or database
+        if username:
+            if self.nats:
+                # Publish via NATS
+                await self.nats.publish('rosey.db.user.joined', json.dumps({
+                    'username': username
+                }).encode())
+                self.logger.debug(f"[NATS] Published user_joined: {username}")
+                
                 # Update high water mark
                 user_count = len(self.channel.userlist)
                 connected_count = self.channel.userlist.count
+                await self.nats.publish('rosey.db.stats.high_water', json.dumps({
+                    'chat_count': user_count,
+                    'connected_count': connected_count
+                }).encode())
+            elif self.db:
+                # Fallback to direct database calls
+                self.db.user_joined(username)
+                user_count = len(self.channel.userlist)
+                connected_count = self.channel.userlist.count
                 self.db.update_high_water_mark(user_count, connected_count)
+                self.logger.debug(f"[DB] Direct calls for user_joined: {username}")
 
-    def _on_user_leave(self, _, data):
-        """Handle normalized user_leave event."""
-        # TODO: NORMALIZATION - Should only use 'user' field once connection layer fixed
-        # Remove fallback to 'name' after normalization complete
-        # Normalized event has 'user' field
-        user = data.get('user', data.get('name', ''))
+    async def _on_user_leave(self, _, data):
+        """Handle normalized user_leave event.
+        
+        Optionally uses 'user_data' field if available for enhanced logging.
+        
+        ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'user' field,
+        optionally 'user_data' for enhanced logging
+        """
+        # ✅ Use normalized 'user' field (always present)
+        username = data.get('user', '')
+        user_data = data.get('user_data', None)  # May be None
 
-        # Track user leave in database
-        if self.db and user:
-            self.db.user_left(user)
+        # Track user leave via NATS or database
+        if username:
+            if self.nats:
+                # Publish via NATS
+                await self.nats.publish('rosey.db.user.left', json.dumps({
+                    'username': username
+                }).encode())
+                self.logger.debug(f"[NATS] Published user_left: {username}")
+            elif self.db:
+                # Fallback to direct database call
+                self.db.user_left(username)
+                self.logger.debug(f"[DB] Direct call user_left: {username}")
 
         try:
-            del self.channel.userlist[user]
+            del self.channel.userlist[username]
+            
+            # Enhanced logging if user_data available
+            if user_data:
+                rank = user_data.get('rank', 0)
+                was_mod = user_data.get('is_moderator', False)
+                self.logger.info('User left: %s (rank=%s, mod=%s)', username, rank, was_mod)
+            else:
+                self.logger.info('User left: %s', username)
         except KeyError:
-            self.logger.error('userLeave: %s not found', user)
-        self.logger.info('userlist: %s', self.channel.userlist)
+            self.logger.error('userLeave: %s not found', username)
 
     def _on_setUserMeta(self, _, data):
         # Check if user exists before updating metadata
@@ -395,17 +493,26 @@ class Bot:
         self.channel.playlist.locked = data
         self.logger.info('playlist locked %s', data)
 
-    def _on_message(self, _, data):
+    async def _on_message(self, _, data):
         """Handle normalized message event."""
         # TODO: NORMALIZATION - This is correct pattern, all handlers should follow this
         # Use normalized fields (user, content) - no platform_data access needed
-        if self.db:
-            # Normalized event has 'user' and 'content' fields
-            username = data.get('user')
-            msg = data.get('content', '')
-            if username:
+        username = data.get('user')
+        msg = data.get('content', '')
+        
+        if username:
+            if self.nats:
+                # Publish via NATS
+                await self.nats.publish('rosey.db.message.log', json.dumps({
+                    'username': username,
+                    'message': msg
+                }).encode())
+                self.logger.debug(f"[NATS] Published message_log: {username}")
+            elif self.db:
+                # Fallback to direct database call
                 # Store message text for recent chat display
                 self.db.user_chat_message(username, msg)
+                self.logger.debug(f"[DB] Direct call user_chat_message: {username}")
 
     async def _log_user_counts_periodically(self):
         """Background task to periodically log user counts for graphing
@@ -416,16 +523,28 @@ class Bot:
             while True:
                 await asyncio.sleep(300)  # 5 minutes
 
-                if self.db and self.channel and self.channel.userlist:
+                if self.channel and self.channel.userlist:
                     chat_users = len(self.channel.userlist)
-                    connected_users = self.channel.userlist.count or chat_users
+                    connected_users = len(self.channel.userlist)  # Same as chat_users for dict-based userlist
 
                     try:
-                        self.db.log_user_count(chat_users, connected_users)
-                        self.logger.debug(
-                            'Logged user counts: %d chat, %d connected',
-                            chat_users, connected_users
-                        )
+                        if self.nats:
+                            # Publish via NATS
+                            await self.nats.publish('rosey.db.stats.user_count', json.dumps({
+                                'chat_count': chat_users,
+                                'connected_count': connected_users
+                            }).encode())
+                            self.logger.debug(
+                                '[NATS] Published user_count: %d chat, %d connected',
+                                chat_users, connected_users
+                            )
+                        elif self.db:
+                            # Fallback to direct database call
+                            self.db.log_user_count(chat_users, connected_users)
+                            self.logger.debug(
+                                '[DB] Logged user counts: %d chat, %d connected',
+                                chat_users, connected_users
+                            )
                     except Exception as e:
                         self.logger.error('Failed to log user counts: %s', e)
         except asyncio.CancelledError:
@@ -466,8 +585,16 @@ class Bot:
                                 status['current_media_duration'] = (
                                     self.channel.playlist.current.duration)
 
-                        self.db.update_current_status(**status)
-                        self.logger.debug('Updated current status')
+                        if self.nats:
+                            # Publish via NATS
+                            await self.nats.publish('rosey.db.status.update', json.dumps({
+                                'status_data': status
+                            }).encode())
+                            self.logger.debug('[NATS] Published status_update')
+                        elif self.db:
+                            # Fallback to direct database call
+                            self.db.update_current_status(**status)
+                            self.logger.debug('[DB] Updated current status')
                     except Exception as e:
                         self.logger.error('Failed to update status: %s', e)
         except asyncio.CancelledError:
@@ -486,7 +613,7 @@ class Bot:
                 await asyncio.sleep(2)  # Poll every 2 seconds
 
                 # Check if bot is connected and ready
-                if not self.db:
+                if not self.nats and not self.db:
                     continue
                 if not self.connection.is_connected:
                     self.logger.debug(
@@ -502,10 +629,31 @@ class Bot:
 
                 try:
                     # Fetch messages ready for sending (respects retry backoff)
-                    messages = self.db.get_unsent_outbound_messages(
-                        limit=20,
-                        max_retries=3
-                    )
+                    messages = []
+                    
+                    if self.nats:
+                        # Query via NATS request/reply
+                        try:
+                            response = await self.nats.request(
+                                'rosey.db.messages.outbound.get',
+                                json.dumps({'limit': 20, 'max_retries': 3}).encode(),
+                                timeout=2.0
+                            )
+                            messages = json.loads(response.data.decode())
+                            self.logger.debug(f"[NATS] Queried outbound messages: {len(messages)} found")
+                        except asyncio.TimeoutError:
+                            self.logger.warning("[NATS] Timeout querying outbound messages")
+                            messages = []
+                        except Exception as e:
+                            self.logger.error(f"[NATS] Error querying outbound messages: {e}")
+                            messages = []
+                    elif self.db:
+                        # Fallback to direct database query
+                        messages = self.db.get_unsent_outbound_messages(
+                            limit=20,
+                            max_retries=3
+                        )
+                        self.logger.debug(f"[DB] Queried outbound messages: {len(messages)} found")
 
                     if messages:
                         self.logger.debug(
@@ -520,7 +668,14 @@ class Bot:
 
                         try:
                             await self.chat(text)
-                            self.db.mark_outbound_sent(mid)
+                            
+                            # Mark as sent via NATS or database
+                            if self.nats:
+                                await self.nats.publish('rosey.db.messages.outbound.mark_sent', json.dumps({
+                                    'message_id': mid
+                                }).encode())
+                            elif self.db:
+                                self.db.mark_outbound_sent(mid)
 
                             if retry_count > 0:
                                 self.logger.info(
@@ -543,22 +698,42 @@ class Bot:
                                     ChannelPermissionError,
                                     ChannelError)):
                                 # Permanent: permissions, muted, flood control
-                                self.db.mark_outbound_failed(
-                                    mid,
-                                    error_msg,
-                                    is_permanent=True
-                                )
+                                if self.nats:
+                                    # For now, we can't mark as failed via NATS
+                                    # (DatabaseService doesn't have mark_failed handler yet)
+                                    # Fall back to direct call if available
+                                    if self.db:
+                                        self.db.mark_outbound_failed(
+                                            mid,
+                                            error_msg,
+                                            is_permanent=True
+                                        )
+                                elif self.db:
+                                    self.db.mark_outbound_failed(
+                                        mid,
+                                        error_msg,
+                                        is_permanent=True
+                                    )
                                 self.logger.error(
                                     'Permanent failure for outbound id=%s: %s',
                                     mid, error_msg
                                 )
                             else:
                                 # Transient: network, timeout, etc - will retry
-                                self.db.mark_outbound_failed(
-                                    mid,
-                                    error_msg,
-                                    is_permanent=False
-                                )
+                                if self.nats:
+                                    # Fall back to direct call for mark_failed
+                                    if self.db:
+                                        self.db.mark_outbound_failed(
+                                            mid,
+                                            error_msg,
+                                            is_permanent=False
+                                        )
+                                elif self.db:
+                                    self.db.mark_outbound_failed(
+                                        mid,
+                                        error_msg,
+                                        is_permanent=False
+                                    )
                                 self.logger.warning(
                                     'Transient failure for outbound id=%s '
                                     '(retry %d): %s',

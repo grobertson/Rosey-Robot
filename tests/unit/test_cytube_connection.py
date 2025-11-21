@@ -443,17 +443,29 @@ class TestEventNormalization:
         assert data['user'] == 'charlie'
         
     def test_normalize_user_list(self, connection):
-        """Test userlist event normalization."""
+        """Test userlist event normalization.
+        
+        After Sortie 1: users array contains full normalized user objects,
+        not just username strings.
+        """
         cytube_event = [
-            {'name': 'alice', 'rank': 2},
-            {'name': 'bob', 'rank': 1}
+            {'name': 'alice', 'rank': 2, 'afk': False},
+            {'name': 'bob', 'rank': 1, 'afk': False}
         ]
         
         event, data = connection._normalize_event('userlist', cytube_event)
         
         assert event == 'user_list'
-        assert data['users'] == ['alice', 'bob']
         assert data['count'] == 2
+        
+        # ✅ Users array now contains full normalized objects (Sortie 1)
+        assert len(data['users']) == 2
+        assert data['users'][0]['username'] == 'alice'
+        assert data['users'][0]['rank'] == 2
+        assert data['users'][0]['is_moderator'] is True
+        assert data['users'][1]['username'] == 'bob'
+        assert data['users'][1]['rank'] == 1
+        assert data['users'][1]['is_moderator'] is False
         
     def test_normalize_pm(self, connection):
         """Test pm event normalization."""

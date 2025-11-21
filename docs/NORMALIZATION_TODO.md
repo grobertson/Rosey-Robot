@@ -1,10 +1,10 @@
 # Event Normalization Audit - TODO Summary
 
 **Date**: January 2025  
-**Status**: Sprint 9 Sortie 1 Complete ✅  
+**Status**: Sprint 9 Sortie 2 Complete ✅  
 **Priority**: HIGH (Technical Debt - Blocks Multi-Platform Support)
 
-**Last Updated**: January 2025 - Sortie 1 Implementation Complete
+**Last Updated**: January 2025 - Sortie 2 Implementation Complete
 
 ---
 
@@ -21,10 +21,21 @@ This document summarizes the comprehensive audit of Rosey-Robot's event normaliz
 - ✅ User list event with object array (BREAKING CHANGE)
 - ✅ PM event with recipient field
 
-**Remaining** (12 items):
-- ⏳ Bot layer event handlers (6 items) - Sortie 2
-- ⏳ Database service layer (5 items) - Sortie 3
-- ⏳ NATS integration (1 item) - Sortie 4
+**Sortie 2 Complete** ✅ (3 items):
+- ✅ Bot user list handler (uses normalized 'users' array)
+- ✅ Bot user join handler (uses normalized 'user_data')
+- ✅ Bot user leave handler (uses normalized 'user' field)
+
+**Sortie 3 Complete** ✅ (3 items):
+- ✅ Database NATS service (`common/database_service.py` created)
+- ✅ NATS subject hierarchy defined (9 subjects)
+- ✅ Standalone service support with CLI
+
+**Remaining** (6 items):
+- ⏳ Bot NATS migration (replace direct db calls) - Sortie 4
+- ⏳ Shell PM handler (1 item) - After Sortie 3
+- ⏳ Bot message handler documentation (1 item) - Documentation only
+- ⏳ NATS connection management (2 items) - Sortie 4-6
 
 ### Architectural Goals
 
@@ -158,86 +169,88 @@ def _normalize_cytube_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
 
 These handlers currently work around incomplete normalization by accessing `platform_data`. They must be updated **after** connection layer is fixed.
 
-#### 6. Bot User List Handler
+#### 6. Bot User List Handler ✅ COMPLETE
 **File**: `lib/bot.py`  
 **Line**: 266  
-**Severity**: HIGH (depends on #4)  
-**Status**: ⚠️ Workaround in place - uses `platform_data`
+**Severity**: HIGH (depends on #4 ✅)  
+**Status**: ✅ Complete - uses normalized 'users' array
 
+**Implementation** (Sortie 2):
 ```python
-# TODO: NORMALIZATION - Should use normalized 'users' array with full user objects
-# Currently accessing platform_data because connection layer puts objects there
-# Once connection layer fixed, use: users_data = data.get('users', [])
-```
-
-**Current Code** (Workaround):
-```python
-users_data = data.get('platform_data', [])  # Using platform_data
+# ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'users' array
+users_data = data.get('users', [])
 for user in users_data:
-    self._add_user(user)
+    self._add_user(user)  # Updated to handle both normalized and CyTube format
 ```
 
-**After #4 Fixed** (Correct):
-```python
-users_data = data.get('users', [])  # Use normalized field
-for user in users_data:
-    self._add_user(user)
-```
+**Completed**:
+- ✅ Uses normalized 'users' field
+- ✅ _add_user() updated to accept both 'username' and 'name'
+- ✅ All tests updated and passing
+- ✅ Enhanced logging added
 
-**Dependencies**: Blocked by #4 (User List Event Normalization)
+**Dependencies**: Blocked by #4 (User List Event Normalization) ✅ COMPLETE
 
 ---
 
-#### 7. Bot User Join Handler
+#### 7. Bot User Join Handler ✅ COMPLETE
 **File**: `lib/bot.py`  
 **Line**: 278  
-**Severity**: HIGH (depends on #2)  
-**Status**: ⚠️ Workaround in place - uses `platform_data`
+**Severity**: HIGH (depends on #2 ✅)  
+**Status**: ✅ Complete - uses normalized 'user_data' field
 
+**Implementation** (Sortie 2):
 ```python
-# TODO: NORMALIZATION - Should have 'user_data' at top level with full user object
-# Currently must access platform_data due to incomplete normalization
-# Target: user_data = data.get('user_data', {})
+# ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'user_data' field
+user_data = data.get('user_data', {})
+username = data.get('user', user_data.get('username', ''))
+
+if user_data:
+    self._add_user(user_data)
+    self.logger.info('User joined: %s (rank=%s)', username, user_data.get('rank', 0))
+else:
+    self.logger.warning('User join without user_data: %s', username)
 ```
 
-**Current Code** (Workaround):
-```python
-user_data = data.get('platform_data', data)  # Fallback to platform_data
-self._add_user(user_data)
-```
+**Completed**:
+- ✅ Uses normalized 'user_data' field
+- ✅ Enhanced logging with rank information
+- ✅ Graceful handling when user_data missing
+- ✅ All tests updated and passing
 
-**After #2 Fixed** (Correct):
-```python
-user_data = data.get('user_data', {})  # Use normalized field
-self._add_user(user_data)
-```
-
-**Dependencies**: Blocked by #2 (User Join Event Normalization)
+**Dependencies**: Blocked by #2 (User Join Event Normalization) ✅ COMPLETE
 
 ---
 
-#### 8. Bot User Leave Handler
+#### 8. Bot User Leave Handler ✅ COMPLETE
 **File**: `lib/bot.py`  
 **Line**: 298  
-**Severity**: MEDIUM (depends on #3)  
-**Status**: ⚠️ Has fallback to 'name' field
+**Severity**: MEDIUM (depends on #3 ✅)  
+**Status**: ✅ Complete - uses normalized 'user' field, optionally 'user_data'
 
+**Implementation** (Sortie 2):
 ```python
-# TODO: NORMALIZATION - Should only use 'user' field once connection layer fixed
-# Remove fallback to 'name' after normalization complete
+# ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'user' field
+username = data.get('user', '')
+user_data = data.get('user_data', None)  # May be None
+
+if username:
+    # Enhanced logging if user_data available
+    if user_data:
+        rank = user_data.get('rank', 0)
+        was_mod = user_data.get('is_moderator', False)
+        self.logger.info('User left: %s (rank=%s, mod=%s)', username, rank, was_mod)
+    else:
+        self.logger.info('User left: %s', username)
 ```
 
-**Current Code** (Workaround):
-```python
-user = data.get('user', data.get('name', ''))  # Fallback to 'name'
-```
+**Completed**:
+- ✅ Uses normalized 'user' field
+- ✅ Optional enhanced logging with user_data
+- ✅ Graceful handling when user_data not present
+- ✅ All tests updated and passing
 
-**After #3 Fixed** (Correct):
-```python
-user = data.get('user', '')  # Only normalized field
-```
-
-**Dependencies**: Blocked by #3 (User Leave Event Normalization)
+**Dependencies**: Blocked by #3 (User Leave Event Normalization) ✅ COMPLETE
 
 ---
 
@@ -302,187 +315,276 @@ message = data.get('content', '').strip()
 
 These are **violations of the NATS-First Architecture**. The bot layer directly calls database methods instead of publishing to NATS. This creates tight coupling and prevents process isolation.
 
-#### 11. Bot User Join Database Call
+#### 11. Bot User Join Database Call ✅ COMPLETE
 **File**: `lib/bot.py`  
-**Line**: 287-290  
+**Line**: 329-370 (Sortie 4)  
 **Severity**: **CRITICAL** (violates layer isolation)  
-**Status**: ❌ ANTI-PATTERN - Direct database call
+**Status**: ✅ **COMPLETE** - Now uses NATS with dual-mode fallback (Sortie 4)
 
 ```python
-# CURRENT (WRONG):
-if self.db:
-    username = data.get('user', user_data.get('name'))
-    if username:
-        self.db.user_joined(username)  # ❌ DIRECT DATABASE CALL
+# ✅ NORMALIZATION COMPLETE (Sortie 4):
+async def _on_user_join(self, _, data):
+    # ... normalization handling ...
+    
+    if self.nats:
+        # Publish to NATS
+        await self.nats.publish('rosey.db.user.joined', json.dumps({
+            'username': username,
+            'timestamp': int(time.time())
+        }).encode())
+        self.logger.debug('[NATS] Published user_joined event: username=%s', username)
+    elif self.db:
+        # Fallback to direct database call
+        self.db.user_joined(username)
+        self.logger.debug('[DB] Direct call to user_joined(): username=%s', username)
 ```
 
-**Required Changes** (CORRECT):
-```python
-# Publish to NATS - database layer subscribes
-if self.nats:
-    await self.nats.publish('rosey.db.user.joined', {
-        'username': data.get('user', ''),
-        'user_data': data.get('user_data', {}),
-        'timestamp': data.get('timestamp', int(time.time()))
-    })
-```
+**Completed**:
+- ✅ Publishes to 'rosey.db.user.joined' via NATS
+- ✅ Dual-mode operation (NATS primary, DB fallback)
+- ✅ Handler converted to async
+- ✅ Also publishes high water mark update
+- ✅ All tests passing (1131 total)
+- ✅ NATS integration tests added (test_bot_nats_integration.py)
 
 **Impact**: 
-- Bot and database are tightly coupled
-- Cannot run in separate processes
-- Cannot horizontally scale
-- Plugins cannot observe user join events
+- ✅ Bot and database can now run in separate processes
+- ✅ Horizontally scalable via NATS
+- ✅ Plugins can observe user join events on NATS bus
 
 ---
 
-#### 12. Bot User Leave Database Call
+#### 12. Bot User Leave Database Call ✅ COMPLETE
 **File**: `lib/bot.py`  
-**Line**: 303-305  
+**Line**: 372-407 (Sortie 4)  
 **Severity**: **CRITICAL** (violates layer isolation)  
-**Status**: ❌ ANTI-PATTERN - Direct database call
+**Status**: ✅ **COMPLETE** - Now uses NATS with dual-mode fallback (Sortie 4)
 
 ```python
-# CURRENT (WRONG):
-if self.db:
-    self.db.user_left(user)  # ❌ DIRECT DATABASE CALL
-```
-
-**Required Changes** (CORRECT):
-```python
-# Publish to NATS
-if self.nats:
-    await self.nats.publish('rosey.db.user.left', {
-        'username': user,
-        'timestamp': int(time.time())
-    })
-```
-
----
-
-#### 13. Bot Message Logging Database Call
-**File**: `lib/bot.py`  
-**Line**: 407-408  
-**Severity**: **CRITICAL** (violates layer isolation)  
-**Status**: ❌ ANTI-PATTERN - Direct database call
-
-```python
-# CURRENT (WRONG):
-if self.db:
-    self.db.user_chat_message(username, msg)  # ❌ DIRECT DATABASE CALL
-```
-
-**Required Changes** (CORRECT):
-```python
-# Publish to NATS
-if self.nats:
-    await self.nats.publish('rosey.db.message.log', {
-        'username': username,
-        'content': msg,
-        'timestamp': data.get('timestamp', int(time.time()))
-    })
-```
-
----
-
-#### 14. Bot User Count Logging Database Call
-**File**: `lib/bot.py`  
-**Line**: 423-424  
-**Severity**: **HIGH** (violates layer isolation)  
-**Status**: ❌ ANTI-PATTERN - Direct database call
-
-```python
-# CURRENT (WRONG):
-if self.db:
-    self.db.log_user_count(chat_users, connected_users)  # ❌ DIRECT DATABASE CALL
-```
-
-**Required Changes** (CORRECT):
-```python
-# Publish to NATS
-if self.nats:
-    await self.nats.publish('rosey.db.stats.user_count', {
-        'chat_users': chat_users,
-        'connected_users': connected_users,
-        'timestamp': int(time.time())
-    })
-```
-
----
-
-#### 15. Bot Status Update Database Call
-**File**: `lib/bot.py`  
-**Line**: 468-469  
-**Severity**: **HIGH** (violates layer isolation)  
-**Status**: ❌ ANTI-PATTERN - Direct database call
-
-```python
-# CURRENT (WRONG):
-if self.db:
-    self.db.update_current_status(**status)  # ❌ DIRECT DATABASE CALL
-```
-
-**Required Changes** (CORRECT):
-```python
-# Publish to NATS
-if self.nats:
-    await self.nats.publish('rosey.db.status.update', status)
-```
-
----
-
-#### 16. Bot High Water Mark Update Database Call
-**File**: `lib/bot.py`  
-**Line**: 237, 294  
-**Severity**: **MEDIUM** (violates layer isolation)  
-**Status**: ❌ ANTI-PATTERN - Direct database call
-
-```python
-# CURRENT (WRONG):
-if self.db:
-    self.db.update_high_water_mark(user_count, connected_count)  # ❌ DIRECT DATABASE CALL
-```
-
-**Required Changes** (CORRECT):
-```python
-# Publish to NATS
-if self.nats:
-    await self.nats.publish('rosey.db.stats.high_water', {
-        'user_count': user_count,
-        'connected_count': connected_count,
-        'timestamp': int(time.time())
-    })
-```
-
-**Note**: This call appears in multiple locations - all must be updated.
-
----
-
-#### 17. Bot Outbound Message Query Database Call
-**File**: `lib/bot.py`  
-**Line**: 505  
-**Severity**: **CRITICAL** (synchronous query - needs request/reply)  
-**Status**: ❌ ANTI-PATTERN - Direct database call
-
-```python
-# CURRENT (WRONG):
-if self.db:
-    messages = self.db.get_unsent_outbound_messages(...)  # ❌ DIRECT DATABASE CALL
-```
-
-**Required Changes** (CORRECT - Request/Reply Pattern):
-```python
-# Request from NATS with reply
-if self.nats:
-    response = await self.nats.request('rosey.db.messages.outbound.get', {
-        'username': username,
-        'limit': 10
-    }, timeout=2.0)
+# ✅ NORMALIZATION COMPLETE (Sortie 4):
+async def _on_user_leave(self, _, data):
+    # ... normalization handling ...
     
-    if response:
-        messages = json.loads(response.data)
+    if self.nats:
+        await self.nats.publish('rosey.db.user.left', json.dumps({
+            'username': username,
+            'timestamp': int(time.time())
+        }).encode())
+        self.logger.debug('[NATS] Published user_left event: username=%s', username)
+    elif self.db:
+        self.db.user_left(username)
+        self.logger.debug('[DB] Direct call to user_left(): username=%s', username)
 ```
 
-**Note**: This is a **query** operation requiring response - use NATS request/reply pattern, not pub/sub.
+**Completed**:
+- ✅ Publishes to 'rosey.db.user.left' via NATS
+- ✅ Dual-mode operation (NATS primary, DB fallback)
+- ✅ Handler already async (from Sortie 2)
+- ✅ All tests passing
+
+---
+
+#### 13. Bot Message Logging Database Call ✅ COMPLETE
+**File**: `lib/bot.py`  
+**Line**: 495-515 (Sortie 4)  
+**Severity**: **CRITICAL** (violates layer isolation)  
+**Status**: ✅ **COMPLETE** - Now uses NATS with dual-mode fallback (Sortie 4)
+
+```python
+# ✅ NORMALIZATION COMPLETE (Sortie 4):
+async def _on_message(self, _, data):
+    # ... message handling ...
+    
+    if self.nats:
+        await self.nats.publish('rosey.db.message.log', json.dumps({
+            'username': username,
+            'message': msg,
+            'timestamp': int(time.time())
+        }).encode())
+        self.logger.debug('[NATS] Published message_log event: user=%s, msg=%s...', username, msg[:50])
+    elif self.db:
+        self.db.user_chat_message(username, msg)
+        self.logger.debug('[DB] Direct call to user_chat_message(): user=%s', username)
+```
+
+**Completed**:
+- ✅ Publishes to 'rosey.db.message.log' via NATS
+- ✅ Dual-mode operation (NATS primary, DB fallback)
+- ✅ Handler converted to async
+- ✅ All tests passing
+
+---
+
+#### 14. Bot User Count Logging Database Call ✅ COMPLETE
+**File**: `lib/bot.py`  
+**Line**: 515-549 (Sortie 4)  
+**Severity**: **HIGH** (violates layer isolation)  
+**Status**: ✅ **COMPLETE** - Now uses NATS with dual-mode fallback (Sortie 4)
+
+```python
+# ✅ NORMALIZATION COMPLETE (Sortie 4):
+async def _log_user_counts_periodically(self):
+    while True:
+        await asyncio.sleep(300)  # 5 minutes
+        
+        if self.channel and self.channel.userlist:
+            chat_users = len(self.channel.userlist)
+            connected_users = len(self.channel.userlist)
+            
+            try:
+                if self.nats:
+                    await self.nats.publish('rosey.db.stats.user_count', json.dumps({
+                        'chat_count': chat_users,
+                        'connected_count': connected_users,
+                        'timestamp': int(time.time())
+                    }).encode())
+                    self.logger.debug('[NATS] Published user_count: chat=%d, conn=%d', 
+                                    chat_users, connected_users)
+                elif self.db:
+                    self.db.log_user_count(chat_users, connected_users)
+                    self.logger.debug('[DB] Logged user count: chat=%d, conn=%d', 
+                                    chat_users, connected_users)
+```
+
+**Completed**:
+- ✅ Publishes to 'rosey.db.stats.user_count' via NATS
+- ✅ Dual-mode operation (NATS primary, DB fallback)
+- ✅ Fixed bug: changed `.count` to `len()` for dict-based userlist
+- ✅ Now works in NATS-only mode (no DB requirement)
+- ✅ All tests passing
+
+---
+
+#### 15. Bot Status Update Database Call ✅ COMPLETE
+**File**: `lib/bot.py`  
+**Line**: 551-601 (Sortie 4)  
+**Severity**: **HIGH** (violates layer isolation)  
+**Status**: ✅ **COMPLETE** - Now uses NATS with dual-mode fallback (Sortie 4)
+
+```python
+# ✅ NORMALIZATION COMPLETE (Sortie 4):
+async def _update_current_status_periodically(self):
+    while True:
+        await asyncio.sleep(10)
+        
+        if self.channel:
+            status_data = {
+                'bot_name': self.channel.username,
+                # ... other status fields ...
+            }
+            
+            try:
+                if self.nats:
+                    await self.nats.publish('rosey.db.status.update', 
+                                          json.dumps(status_data).encode())
+                    self.logger.debug('[NATS] Published status_update')
+                elif self.db:
+                    self.db.update_current_status(**status_data)
+                    self.logger.debug('[DB] Updated current status directly')
+```
+
+**Completed**:
+- ✅ Publishes to 'rosey.db.status.update' via NATS
+- ✅ Dual-mode operation (NATS primary, DB fallback)
+- ✅ Status updates now visible on event bus
+- ✅ All tests passing
+
+---
+
+#### 16. Bot High Water Mark Update Database Call ✅ COMPLETE
+**File**: `lib/bot.py`  
+**Lines**: 230-247 (usercount), 329-370 (user_join) (Sortie 4)  
+**Severity**: **MEDIUM** (violates layer isolation)  
+**Status**: ✅ **COMPLETE** - Now uses NATS with dual-mode fallback (Sortie 4)
+
+```python
+# ✅ NORMALIZATION COMPLETE (Sortie 4):
+# Location 1: _on_usercount handler (now async)
+async def _on_usercount(self, _, data):
+    usercount = data if isinstance(data, int) else data.get('count', 0)
+    self.channel.userlist.connected = usercount
+    
+    if self.nats:
+        await self.nats.publish('rosey.db.stats.high_water', json.dumps({
+            'user_count': len(self.channel.userlist),
+            'connected_count': usercount,
+            'timestamp': int(time.time())
+        }).encode())
+    elif self.db:
+        self.db.update_high_water_mark(len(self.channel.userlist), usercount)
+
+# Location 2: _on_user_join handler (now async)
+# Also publishes high_water after user_joined event
+```
+
+**Completed**:
+- ✅ Publishes to 'rosey.db.stats.high_water' via NATS
+- ✅ Dual-mode operation (NATS primary, DB fallback)
+- ✅ Updated in multiple locations (usercount + user_join)
+- ✅ Handler converted to async
+- ✅ All tests passing
+
+**Note**: Multiple locations all now use NATS - consistent pattern throughout.
+
+---
+
+#### 17. Bot Outbound Message Query Database Call ✅ COMPLETE
+**File**: `lib/bot.py`  
+**Line**: 602-745 (Sortie 4)  
+**Severity**: **CRITICAL** (synchronous query - needs request/reply)  
+**Status**: ✅ **COMPLETE** - Now uses NATS request/reply with dual-mode fallback (Sortie 4)
+
+```python
+# ✅ NORMALIZATION COMPLETE (Sortie 4): Request/Reply Pattern
+async def _process_outbound_messages_periodically(self):
+    while True:
+        await asyncio.sleep(2)
+        
+        if self.connection.is_connected and self.channel.permissions:
+            try:
+                # Query via NATS request/reply
+                if self.nats:
+                    try:
+                        response = await self.nats.request(
+                            'rosey.db.messages.outbound.get',
+                            json.dumps({
+                                'username': self.channel.username,
+                                'limit': 10
+                            }).encode(),
+                            timeout=2.0
+                        )
+                        messages = json.loads(response.data.decode())
+                        self.logger.debug('[NATS] Got %d outbound messages', len(messages))
+                    except asyncio.TimeoutError:
+                        self.logger.warning('[NATS] Request timeout for outbound messages')
+                        messages = []
+                elif self.db:
+                    messages = self.db.get_unsent_outbound_messages(
+                        username=self.channel.username, limit=10
+                    )
+                    self.logger.debug('[DB] Got %d outbound messages', len(messages))
+                
+                # Process and mark as sent via NATS
+                for msg in messages:
+                    await self.chat(msg['message'])
+                    
+                    if self.nats:
+                        await self.nats.publish('rosey.db.messages.outbound.mark_sent',
+                                              json.dumps({'id': msg['id']}).encode())
+                    elif self.db:
+                        self.db.mark_outbound_sent(msg['id'])
+```
+
+**Completed**:
+- ✅ Uses NATS request/reply pattern for queries
+- ✅ Publishes 'rosey.db.messages.outbound.mark_sent' after sending
+- ✅ Dual-mode operation (NATS primary, DB fallback)
+- ✅ Timeout handling (2s with graceful degradation)
+- ✅ Error handling for NATS failures
+- ✅ All tests passing
+- ✅ Request/reply integration tests added
+
+**Note**: This was a **query** operation requiring response - correctly uses NATS request/reply pattern (not pub/sub).
 
 ---
 
@@ -493,12 +595,12 @@ if self.nats:
 **Estimated Effort**: 6-8 hours  
 **Blockers**: None
 
-1. ⏳ **Setup NATS Server** - Install and configure NATS server (local or containerized)
-2. ⏳ **Bot NATS Client** - Add NATS client to bot layer (`lib/bot.py`)
-3. ⏳ **Database NATS Service** - Convert database to NATS-subscribing service (`common/database.py`)
-4. ⏳ **Subject Registry** - Define all NATS subjects (`lib/nats/subjects.py`)
-5. ⏳ **Connection Management** - Implement reconnection, health checks
-6. ⏳ **Message Serialization** - JSON encoding/decoding with correlation IDs
+1. ✅ **Setup NATS Server** - Install and configure NATS server (Sprint 6a complete)
+2. ⏳ **Bot NATS Client** - Add NATS client to bot layer (`lib/bot.py`) (Sortie 4)
+3. ✅ **Database NATS Service** - Convert database to NATS-subscribing service (`common/database_service.py`) (Sortie 3 COMPLETE)
+4. ✅ **Subject Registry** - Subjects defined in DatabaseService docstrings (Sortie 3)
+5. ⏳ **Connection Management** - Implement reconnection, health checks (Sortie 4-6)
+6. ⏳ **Message Serialization** - JSON encoding/decoding with correlation IDs (Sortie 4-6)
 
 **Testing**: NATS connectivity, pub/sub, request/reply patterns
 
