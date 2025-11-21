@@ -8,6 +8,7 @@ nats-py>=2.7.0  # NATS client for event-driven messaging
 
 # Plugin system
 watchdog>=3.0.0  # For hot reload file watching
+packaging>=23.0  # For semantic versioning in service registry
 
 # LLM providers (optional but recommended)
 openai>=1.0.0   # For OpenAI API and compatible endpoints (Azure, LocalAI, LM Studio)

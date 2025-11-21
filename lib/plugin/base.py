@@ -472,6 +472,120 @@ class Plugin(ABC):
             )
     
     # =================================================================
+    # Service Registry
+    # =================================================================
+    
+    @property
+    def services(self):
+        """
+        Access service registry for dependency injection.
+        
+        Returns:
+            ServiceRegistry instance from plugin manager or None
+        
+        Example:
+            # Check if service available
+            if self.services.has('weather'):
+                weather = self.services.get('weather')
+        """
+        if hasattr(self.bot, 'plugin_manager'):
+            return self.bot.plugin_manager.service_registry
+        return None
+    
+    def provide_service(self, service, dependencies: Optional[Dict[str, str]] = None) -> None:
+        """
+        Register a service with the service registry.
+        
+        Args:
+            service: Service instance to provide (must inherit from Service ABC)
+            dependencies: Optional mapping of required service names to minimum versions
+        
+        Raises:
+            PluginError: If service registry not available
+            PluginError: If service name already registered
+        
+        Example:
+            class WeatherService(Service):
+                @property
+                def service_name(self) -> str:
+                    return "weather"
+                
+                @property
+                def service_version(self) -> str:
+                    return "1.0.0"
+                
+                def get_weather(self, location: str) -> dict:
+                    return {"temp": 72, "condition": "sunny"}
+            
+            # In plugin setup()
+            weather = WeatherService()
+            self.provide_service(weather)
+        """
+        if not self.services:
+            raise PluginError(
+                f"{self.metadata.display_name}: Service registry not available"
+            )
+        
+        self.services.register(
+            service,
+            provider=self.metadata.name,
+            dependencies=dependencies
+        )
+        self.logger.info(
+            f"Provided service '{service.service_name}' v{service.service_version}"
+        )
+    
+    def get_service(self, service_name: str, min_version: Optional[str] = None):
+        """
+        Get a service from the service registry.
+        
+        Args:
+            service_name: Name of the service to retrieve
+            min_version: Optional minimum version requirement
+        
+        Returns:
+            Service instance if found and version compatible, None otherwise
+        
+        Example:
+            # Get service if available
+            weather = self.get_service('weather', min_version='1.0.0')
+            if weather:
+                data = weather.get_weather('Seattle')
+        """
+        if not self.services:
+            self.logger.warning("Service registry not available")
+            return None
+        
+        return self.services.get(service_name, min_version)
+    
+    def require_service(self, service_name: str, min_version: Optional[str] = None):
+        """
+        Get a service from the registry, raising error if not available.
+        
+        Args:
+            service_name: Name of the service to retrieve
+            min_version: Optional minimum version requirement
+        
+        Returns:
+            Service instance
+        
+        Raises:
+            PluginError: If service registry not available
+            PluginError: If service not registered or version incompatible
+        
+        Example:
+            # Require service (raises error if unavailable)
+            weather = self.require_service('weather', min_version='1.0.0')
+            data = weather.get_weather('Seattle')
+        """
+        if not self.services:
+            raise PluginError(
+                f"{self.metadata.display_name}: Service registry not available"
+            )
+        
+        return self.services.require(service_name, min_version)
+    
+    # =================================================================
     # Utility
     # =================================================================
     

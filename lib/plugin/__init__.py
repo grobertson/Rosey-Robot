@@ -40,6 +40,8 @@ from .metadata import PluginMetadata
 from .manager import PluginManager, PluginState, PluginInfo
 from .event import Event, EventPriority
 from .event_bus import EventBus
+from .service import Service, ServiceRegistration
+from .service_registry import ServiceRegistry
 from .errors import (
     PluginError,
     PluginLoadError,
@@ -64,6 +66,9 @@ try:
         "Event",
         "EventPriority",
         "EventBus",
+        "Service",
+        "ServiceRegistration",
+        "ServiceRegistry",
         "HotReloadWatcher",
         "ReloadHandler",
         "PluginError",
@@ -86,6 +91,9 @@ except ImportError:
         "Event",
         "EventPriority",
         "EventBus",
+        "Service",
+        "ServiceRegistration",
+        "ServiceRegistry",
         "PluginError",
         "PluginLoadError",
         "PluginSetupError",

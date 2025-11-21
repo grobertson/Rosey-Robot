@@ -21,6 +21,7 @@ from .errors import (
     PluginDependencyError,
 )
 from .event_bus import EventBus
+from .service_registry import ServiceRegistry
 
 
 class PluginState(Enum):
@@ -154,6 +155,9 @@ class PluginManager:
 
         # Event bus for inter-plugin communication
         self.event_bus = EventBus(logger=self.logger)
+
+        # Service registry for dependency injection
+        self.service_registry = ServiceRegistry(logger=self.logger)
 
         # Plugin registry: name -> PluginInfo
         self._plugins: Dict[str, PluginInfo] = {}
