@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, Callable, List
 import logging
 from .metadata import PluginMetadata
 from .errors import PluginError
+from .event import Event, EventPriority
 
 
 class Plugin(ABC):
@@ -71,6 +72,7 @@ class Plugin(ABC):
         self.logger = logging.getLogger(f"plugin.{self.metadata.name}")
         self._is_enabled = False
         self._event_handlers: Dict[str, List[Callable]] = {}
+        self._event_subscriptions: List[str] = []  # Track subscriptions for cleanup
     
     @property
     @abstractmethod
@@ -111,6 +113,25 @@ class Plugin(ABC):
         """
         return getattr(self.bot, 'storage', None)
     
+    @property
+    def event_bus(self):
+        """
+        Access event bus for inter-plugin communication.
+        
+        Returns:
+            EventBus instance from plugin manager
+        
+        Example:
+            # Subscribe to events
+            self.subscribe('trivia.started', self.on_trivia)
+            
+            # Publish events
+            await self.publish('quote.added', {'quote': 'Hello!', 'author': 'Alice'})
+        """
+        if hasattr(self.bot, 'plugin_manager'):
+            return self.bot.plugin_manager.event_bus
+        return None
+    
     # =================================================================
     # Lifecycle Hooks
     # =================================================================
@@ -147,6 +168,11 @@ class Plugin(ABC):
         Should not raise exceptions (best effort cleanup).
         Always runs even if plugin crashes.
         """
+        # Auto-unsubscribe from all event bus subscriptions
+        if self.event_bus:
+            for pattern in self._event_subscriptions:
+                self.event_bus.unsubscribe(pattern, self.metadata.name)
+            self._event_subscriptions.clear()
     
     async def on_enable(self) -> None:
         """
@@ -291,6 +317,78 @@ class Plugin(ABC):
         
         self.on('message', wrapper)
         return handler
+    
+    # =================================================================
+    # Inter-Plugin Communication (Event Bus)
+    # =================================================================
+    
+    def subscribe(self, event_pattern: str, handler: Callable) -> None:
+        """
+        Subscribe to event bus events matching pattern.
+        
+        Enables inter-plugin communication via pub/sub.
+        Automatically unsubscribed when plugin is torn down.
+        
+        Args:
+            event_pattern: Event name or pattern (supports * wildcard)
+            handler: Async function(event) to call
+        
+        Examples:
+            # Subscribe to specific event
+            self.subscribe('trivia.started', self.on_trivia_start)
+            
+            # Subscribe to all trivia events
+            self.subscribe('trivia.*', self.on_trivia_event)
+            
+            # Subscribe to all events
+            self.subscribe('*', self.on_any_event)
+        """
+        if not self.event_bus:
+            self.logger.warning("Event bus not available")
+            return
+        
+        self.event_bus.subscribe(event_pattern, handler, self.metadata.name)
+        self._event_subscriptions.append(event_pattern)
+    
+    async def publish(
+        self,
+        event_name: str,
+        data: Dict[str, Any],
+        priority: EventPriority = EventPriority.NORMAL,
+    ) -> None:
+        """
+        Publish event to event bus.
+        
+        Other plugins can subscribe to these events for inter-plugin communication.
+        
+        Args:
+            event_name: Event name (recommend: plugin.action format)
+            data: Event data (any JSON-serializable dict)
+            priority: Event priority (HIGH, NORMAL, or LOW)
+        
+        Examples:
+            # Publish trivia started event
+            await self.publish('trivia.started', {
+                'question': 'What is 2+2?',
+                'timeout': 30
+            })
+            
+            # Publish high-priority event
+            await self.publish('alert.critical', {
+                'message': 'System overload!'
+            }, priority=EventPriority.HIGH)
+        """
+        if not self.event_bus:
+            self.logger.warning("Event bus not available")
+            return
+        
+        event = Event(
+            name=event_name,
+            data=data,
+            source=self.metadata.name,
+            priority=priority,
+        )
+        await self.event_bus.publish(event)
     
     # =================================================================
     # Bot Interaction

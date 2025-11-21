@@ -20,6 +20,7 @@ from .errors import (
     PluginSetupError,
     PluginDependencyError,
 )
+from .event_bus import EventBus
 
 
 class PluginState(Enum):
@@ -150,6 +151,9 @@ class PluginManager:
         self.bot = bot
         self.plugin_dir = Path(plugin_dir)
         self.logger = logger or logging.getLogger("plugin.manager")
+
+        # Event bus for inter-plugin communication
+        self.event_bus = EventBus(logger=self.logger)
 
         # Plugin registry: name -> PluginInfo
         self._plugins: Dict[str, PluginInfo] = {}

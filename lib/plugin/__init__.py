@@ -38,6 +38,8 @@ Example:
 from .base import Plugin
 from .metadata import PluginMetadata
 from .manager import PluginManager, PluginState, PluginInfo
+from .event import Event, EventPriority
+from .event_bus import EventBus
 from .errors import (
     PluginError,
     PluginLoadError,
@@ -59,6 +61,9 @@ try:
         "PluginManager",
         "PluginState",
         "PluginInfo",
+        "Event",
+        "EventPriority",
+        "EventBus",
         "HotReloadWatcher",
         "ReloadHandler",
         "PluginError",
@@ -78,6 +83,9 @@ except ImportError:
         "PluginManager",
         "PluginState",
         "PluginInfo",
+        "Event",
+        "EventPriority",
+        "EventBus",
         "PluginError",
         "PluginLoadError",
         "PluginSetupError",
