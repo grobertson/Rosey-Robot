@@ -1,5 +1,7 @@
 # Rosey - A Python CyTube Bot Framework
 
+![Rosey Robot Logo](assets/Rosey-Robot-Logo.webp)
+
 **Fair warning: This implementation is over-engineered. I may do crazy things here at any time. If you're not a person who likes reading documentation, this may not be the project for you. With that said, welcome! As with most of my hobby projects this is MIT licensed, keep FOSS fun and open!**
 
 [![Version](https://img.shields.io/badge/version-0.6.1-blue.svg)](https://github.com/grobertson/Rosey-Robot/releases)
@@ -10,36 +12,54 @@
 
 ## 🎯 Architecture: Event-Driven Microservices
 
-Rosey uses **NATS** as a lightweight message bus to connect independent services:
+Rosey uses **NATS** as a lightweight message bus to connect independent services. The architecture strictly separates **Core Services** (stability) from **Plugins** (extensibility):
 
 ```mermaid
 graph LR
-    subgraph Core
+    subgraph Infrastructure
         N((NATS Message Bus))
     end
 
-    subgraph Services
+    subgraph "Core Services (Stable)"
         C[CyTube Connection]
         D[Database Service]
-        L[LLM/AI Service]
+        R[Rosey Core Logic]
     end
 
-    C <-->|Events & Commands| N
-    D <-->|Queries & Data| N
-    L <-->|Prompts & Responses| N
+    subgraph "Plugins (Flexible)"
+        L[LLM Connector]
+        P[Playlist Manager]
+        W[Web Dashboard]
+        X[Custom Plugins...]
+    end
 
-    style N fill:#2980b9,stroke:#fff,stroke-width:2px,color:#fff
+    C <-->|Events| N
+    D <-->|Data| N
+    R <-->|Commands| N
+    
+    L <-->|AI| N
+    P <-->|Media| N
+    W <-->|Metrics| N
+    X <-->|Extensions| N
+
+    style N fill:#2980b9,stroke:#fff,stroke-width:4px,color:#fff
+    
     style C fill:#27ae60,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#8e44ad,stroke:#fff,stroke-width:2px,color:#fff
-    style L fill:#c0392b,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#27ae60,stroke:#fff,stroke-width:2px,color:#fff
+    style R fill:#27ae60,stroke:#fff,stroke-width:2px,color:#fff
+
+    style L fill:#e67e22,stroke:#fff,stroke-width:2px,color:#fff
+    style P fill:#e67e22,stroke:#fff,stroke-width:2px,color:#fff
+    style W fill:#e67e22,stroke:#fff,stroke-width:2px,color:#fff
+    style X fill:#e67e22,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 **Benefits:**
 
-- **Loose Coupling**: Services don't know about each other, only events
-- **Independent Scaling**: Add LLM servers, database replicas independently
-- **Hot Reload**: Restart services without dropping connections
-- **Observability**: Monitor all events flowing through the bus
+- **Core Stability**: Plugins run in separate processes and cannot crash the bot core
+- **Limitless Extensibility**: Add any feature (logging, search, games) as a new plugin
+- **Language Agnostic**: Write plugins in Python, Go, Node.js, or anything that speaks NATS
+- **Hot Pluggable**: Start/stop plugins without restarting the main connection
 
 ## ✨ Features
 
