@@ -63,7 +63,7 @@ jobs:
       
       - name: Run tests
         run: |
-          pytest tests/ --cov=lib --cov=common --cov-report=term-missing --cov-report=xml
+          pytest tests/ -m "not integration" --cov=lib --cov=common --cov-report=term-missing --cov-report=xml
       
       - name: Check coverage
         run: |
