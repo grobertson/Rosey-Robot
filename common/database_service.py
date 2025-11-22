@@ -23,7 +23,7 @@ import logging
 import sys
 
 try:
-    from nats.aio.client import Client as NATS
+    from nats.aio.client import Client as NATS  # noqa: N814 (NATS convention)
 except ImportError:
     NATS = None
 
@@ -32,10 +32,10 @@ from common.database import BotDatabase
 
 class DatabaseService:
     """NATS-enabled wrapper around BotDatabase for process isolation.
-    
+
     This service subscribes to NATS subjects and forwards database operations
     to the underlying BotDatabase. Enables running database in separate process.
-    
+
     NATS Subject Design:
         rosey.db.user.joined           - User joined channel (pub/sub)
         rosey.db.user.left             - User left channel (pub/sub)
@@ -46,20 +46,20 @@ class DatabaseService:
         rosey.db.messages.outbound.mark_sent - Mark message sent (pub/sub)
         rosey.db.messages.outbound.get - Query outbound messages (request/reply)
         rosey.db.stats.recent_chat.get - Get recent chat (request/reply)
-    
+
     Example:
         # Start database service
         nats = await nats.connect("nats://localhost:4222")
         db_service = DatabaseService(nats, "bot_data.db")
         await db_service.start()
-        
+
         # Service now handles all database operations via NATS
         # Can run in separate process from bot
     """
 
     def __init__(self, nats_client, db_path: str = 'bot_data.db'):
         """Initialize database service.
-        
+
         Args:
             nats_client: Connected NATS client instance
             db_path: Path to SQLite database file
@@ -75,7 +75,7 @@ class DatabaseService:
 
     async def start(self):
         """Subscribe to all database subjects and start handling events.
-        
+
         Sets up both pub/sub (fire-and-forget) and request/reply subscriptions.
         """
         if self._running:
@@ -124,7 +124,7 @@ class DatabaseService:
 
     async def stop(self):
         """Unsubscribe from all subjects and stop service.
-        
+
         Performs graceful shutdown by unsubscribing from all NATS subjects.
         """
         if not self._running and not self._subscriptions:
@@ -148,7 +148,7 @@ class DatabaseService:
 
     async def _handle_user_joined(self, msg):
         """Handle user joined event.
-        
+
         NATS Subject: rosey.db.user.joined
         Payload: {'username': str}
         """
@@ -169,7 +169,7 @@ class DatabaseService:
 
     async def _handle_user_left(self, msg):
         """Handle user left event.
-        
+
         NATS Subject: rosey.db.user.left
         Payload: {'username': str}
         """
@@ -190,7 +190,7 @@ class DatabaseService:
 
     async def _handle_message_log(self, msg):
         """Handle chat message logging.
-        
+
         NATS Subject: rosey.db.message.log
         Payload: {'username': str, 'message': str}
         """
@@ -216,7 +216,7 @@ class DatabaseService:
 
     async def _handle_user_count(self, msg):
         """Handle user count statistics update.
-        
+
         NATS Subject: rosey.db.stats.user_count
         Payload: {'chat_count': int, 'connected_count': int}
         """
@@ -239,7 +239,7 @@ class DatabaseService:
 
     async def _handle_high_water(self, msg):
         """Handle high water mark update.
-        
+
         NATS Subject: rosey.db.stats.high_water
         Payload: {'chat_count': int, 'connected_count': int}
         """
@@ -261,7 +261,7 @@ class DatabaseService:
 
     async def _handle_status_update(self, msg):
         """Handle bot status update.
-        
+
         NATS Subject: rosey.db.status.update
         Payload: {'status_data': dict} - any fields for update_current_status()
         """
@@ -282,7 +282,7 @@ class DatabaseService:
 
     async def _handle_mark_sent(self, msg):
         """Handle marking outbound message as sent.
-        
+
         NATS Subject: rosey.db.messages.outbound.mark_sent
         Payload: {'message_id': int}
         """
@@ -307,7 +307,7 @@ class DatabaseService:
 
     async def _handle_outbound_query(self, msg):
         """Handle query for outbound messages (request/reply).
-        
+
         NATS Subject: rosey.db.messages.outbound.get
         Payload: {'limit': int, 'max_retries': int}
         Reply: List of message dicts
@@ -339,7 +339,7 @@ class DatabaseService:
 
     async def _handle_recent_chat_query(self, msg):
         """Handle query for recent chat messages (request/reply).
-        
+
         NATS Subject: rosey.db.stats.recent_chat.get
         Payload: {'limit': int}
         Reply: List of message dicts with timestamp, username, message
@@ -366,7 +366,7 @@ class DatabaseService:
 
 async def main():
     """Standalone database service entry point.
-    
+
     Run this file directly to start database service as separate process:
         python -m common.database_service [--db-path PATH] [--nats-url URL]
     """

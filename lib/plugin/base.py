@@ -16,10 +16,10 @@ from .metadata import PluginMetadata
 class Plugin(ABC):
     """
     Abstract base class for bot plugins.
-    
+
     Plugins extend bot functionality with modular, reloadable code.
     All plugins must inherit from this class and implement required methods.
-    
+
     Lifecycle:
         1. __init__() - Construct plugin (fast, no I/O)
         2. setup() - Initialize plugin (async, can do I/O)
@@ -27,13 +27,13 @@ class Plugin(ABC):
         4. [plugin runs, handles events]
         5. on_disable() - Called when plugin disabled
         6. teardown() - Cleanup plugin (async)
-    
+
     Attributes:
         bot: Bot instance (access to send_message, channel, etc.)
         config: Plugin configuration dict
         logger: Logger instance for this plugin
         is_enabled: Whether plugin is currently enabled
-        
+
     Example:
         class MyPlugin(Plugin):
             @property
@@ -45,10 +45,10 @@ class Plugin(ABC):
                     description='Does something cool',
                     author='Me'
                 )
-            
+
             async def setup(self):
                 self.on('message', self.handle_message)
-            
+
             async def handle_message(self, event, data):
                 if not self.is_enabled:
                     return
@@ -60,10 +60,10 @@ class Plugin(ABC):
     def __init__(self, bot, config: Optional[Dict[str, Any]] = None):
         """
         Initialize plugin.
-        
+
         IMPORTANT: This should be fast (no I/O, no blocking operations).
         Do heavy initialization in setup().
-        
+
         Args:
             bot: Bot instance providing services and API
             config: Plugin configuration dict (from config file)
@@ -80,13 +80,13 @@ class Plugin(ABC):
     def metadata(self) -> PluginMetadata:
         """
         Plugin metadata (name, version, description, etc.).
-        
+
         This should return a constant PluginMetadata instance.
         Do not compute this dynamically.
-        
+
         Returns:
             PluginMetadata instance with plugin information
-        
+
         Example:
             @property
             def metadata(self):
@@ -108,7 +108,7 @@ class Plugin(ABC):
     def storage(self):
         """
         Access bot's storage adapter (may be None).
-        
+
         Returns:
             StorageAdapter instance or None if database disabled
         """
@@ -118,14 +118,14 @@ class Plugin(ABC):
     def event_bus(self):
         """
         Access event bus for inter-plugin communication.
-        
+
         Returns:
             EventBus instance from plugin manager
-        
+
         Example:
             # Subscribe to events
             self.subscribe('trivia.started', self.on_trivia)
-            
+
             # Publish events
             await self.publish('quote.added', {'quote': 'Hello!', 'author': 'Alice'})
         """
@@ -140,17 +140,17 @@ class Plugin(ABC):
     async def setup(self) -> None:
         """
         Initialize plugin (called once on load).
-        
+
         Use this for:
         - Validating configuration
         - Creating database tables
         - Loading persistent state
         - Registering event handlers
         - Starting background tasks
-        
+
         This is called once when plugin is first loaded.
         If this raises an exception, the plugin will not be loaded.
-        
+
         Raises:
             PluginError: If setup fails (plugin will not load)
         """
@@ -158,13 +158,13 @@ class Plugin(ABC):
     async def teardown(self) -> None:
         """
         Cleanup plugin (called once on unload).
-        
+
         Use this for:
         - Saving persistent state
         - Closing connections
         - Canceling background tasks
         - Releasing resources
-        
+
         This is called once when plugin is unloaded.
         Should not raise exceptions (best effort cleanup).
         Always runs even if plugin crashes.
@@ -178,12 +178,12 @@ class Plugin(ABC):
     async def on_enable(self) -> None:
         """
         Called when plugin is enabled.
-        
+
         Use this for:
         - Re-registering event handlers (if needed)
         - Resuming background tasks
         - Logging enable event
-        
+
         Called after setup() on initial load.
         Also called when user manually enables a disabled plugin.
         """
@@ -193,12 +193,12 @@ class Plugin(ABC):
     async def on_disable(self) -> None:
         """
         Called when plugin is disabled.
-        
+
         Use this for:
         - Unregistering event handlers (optional)
         - Pausing background tasks
         - Logging disable event
-        
+
         Called when user manually disables the plugin.
         Plugin remains loaded but inactive (is_enabled = False).
         Event handlers should check is_enabled before processing.
@@ -213,14 +213,14 @@ class Plugin(ABC):
     def on(self, event_name: str, handler: Callable) -> None:
         """
         Register event handler.
-        
+
         Handlers are called when the bot triggers the event.
         Multiple handlers can be registered for the same event.
-        
+
         Args:
             event_name: Event name ('message', 'user_join', 'user_leave', etc.)
             handler: Async function to call: async def handler(event, data)
-        
+
         Example:
             self.on('message', self.handle_message)
             self.on('user_join', self.handle_user_join)
@@ -233,15 +233,15 @@ class Plugin(ABC):
     def on_message(self, handler: Callable) -> Callable:
         """
         Decorator to register message handler.
-        
+
         Handler signature: async def handler(event, data)
-        
+
         Data contains:
             - user: Username
             - content: Message text
             - timestamp: Message time
             - platform_data: Platform-specific fields
-        
+
         Example:
             @plugin.on_message
             async def handle_message(self, event, data):
@@ -249,7 +249,7 @@ class Plugin(ABC):
                 message = data.get('content', '')
                 if message.startswith('!hello'):
                     await self.send_message(f'Hello {username}!')
-        
+
         Returns:
             The handler (for chaining)
         """
@@ -259,9 +259,9 @@ class Plugin(ABC):
     def on_user_join(self, handler: Callable) -> Callable:
         """
         Decorator to register user join handler.
-        
+
         Handler signature: async def handler(event, data)
-        
+
         Data contains:
             - user: Username
             - platform_data: Platform-specific user info
@@ -272,9 +272,9 @@ class Plugin(ABC):
     def on_user_leave(self, handler: Callable) -> Callable:
         """
         Decorator to register user leave handler.
-        
+
         Handler signature: async def handler(event, data)
-        
+
         Data contains:
             - user: Username
         """
@@ -284,15 +284,15 @@ class Plugin(ABC):
     def on_command(self, command: str, handler: Callable) -> Callable:
         """
         Decorator to register command handler.
-        
+
         Automatically parses commands starting with ! prefix.
-        
+
         Args:
             command: Command name (without ! prefix)
             handler: Async function(username, args) to call
-        
+
         Handler signature: async def handler(username: str, args: List[str])
-        
+
         Example:
             @plugin.on_command('roll')
             async def handle_roll(self, username, args):
@@ -300,7 +300,7 @@ class Plugin(ABC):
                 dice = args[0] if args else '1d6'
                 result = roll_dice(dice)
                 await self.send_message(f'{username} rolled {result}')
-        
+
         Returns:
             The handler (for chaining)
         """
@@ -326,21 +326,21 @@ class Plugin(ABC):
     def subscribe(self, event_pattern: str, handler: Callable) -> None:
         """
         Subscribe to event bus events matching pattern.
-        
+
         Enables inter-plugin communication via pub/sub.
         Automatically unsubscribed when plugin is torn down.
-        
+
         Args:
             event_pattern: Event name or pattern (supports * wildcard)
             handler: Async function(event) to call
-        
+
         Examples:
             # Subscribe to specific event
             self.subscribe('trivia.started', self.on_trivia_start)
-            
+
             # Subscribe to all trivia events
             self.subscribe('trivia.*', self.on_trivia_event)
-            
+
             # Subscribe to all events
             self.subscribe('*', self.on_any_event)
         """
@@ -359,21 +359,21 @@ class Plugin(ABC):
     ) -> None:
         """
         Publish event to event bus.
-        
+
         Other plugins can subscribe to these events for inter-plugin communication.
-        
+
         Args:
             event_name: Event name (recommend: plugin.action format)
             data: Event data (any JSON-serializable dict)
             priority: Event priority (HIGH, NORMAL, or LOW)
-        
+
         Examples:
             # Publish trivia started event
             await self.publish('trivia.started', {
                 'question': 'What is 2+2?',
                 'timeout': 30
             })
-            
+
             # Publish high-priority event
             await self.publish('alert.critical', {
                 'message': 'System overload!'
@@ -398,12 +398,12 @@ class Plugin(ABC):
     async def send_message(self, message: str) -> None:
         """
         Send message to channel.
-        
+
         Convenience wrapper around bot.send_message().
-        
+
         Args:
             message: Message text to send
-        
+
         Example:
             await self.send_message('Hello from plugin!')
         """
@@ -419,16 +419,16 @@ class Plugin(ABC):
     def get_config(self, key: str, default: Any = None) -> Any:
         """
         Get configuration value.
-        
+
         Supports dot notation for nested configuration.
-        
+
         Args:
             key: Configuration key (supports 'nested.key' format)
             default: Default value if key not found
-        
+
         Returns:
             Configuration value or default
-        
+
         Example:
             # Config: {'max_dice': 10, 'api': {'key': 'secret'}}
             max_dice = self.get_config('max_dice', 6)  # Returns 10
@@ -450,13 +450,13 @@ class Plugin(ABC):
     def validate_config(self, required_keys: List[str]) -> None:
         """
         Validate that required configuration keys exist.
-        
+
         Args:
             required_keys: List of required config keys (supports dot notation)
-        
+
         Raises:
             PluginError: If any required key is missing
-        
+
         Example:
             def setup(self):
                 self.validate_config(['api_key', 'server.host'])
@@ -480,10 +480,10 @@ class Plugin(ABC):
     def services(self):
         """
         Access service registry for dependency injection.
-        
+
         Returns:
             ServiceRegistry instance from plugin manager or None
-        
+
         Example:
             # Check if service available
             if self.services.has('weather'):
@@ -496,28 +496,28 @@ class Plugin(ABC):
     def provide_service(self, service, dependencies: Optional[Dict[str, str]] = None) -> None:
         """
         Register a service with the service registry.
-        
+
         Args:
             service: Service instance to provide (must inherit from Service ABC)
             dependencies: Optional mapping of required service names to minimum versions
-        
+
         Raises:
             PluginError: If service registry not available
             PluginError: If service name already registered
-        
+
         Example:
             class WeatherService(Service):
                 @property
                 def service_name(self) -> str:
                     return "weather"
-                
+
                 @property
                 def service_version(self) -> str:
                     return "1.0.0"
-                
+
                 def get_weather(self, location: str) -> dict:
                     return {"temp": 72, "condition": "sunny"}
-            
+
             # In plugin setup()
             weather = WeatherService()
             self.provide_service(weather)
@@ -539,14 +539,14 @@ class Plugin(ABC):
     def get_service(self, service_name: str, min_version: Optional[str] = None):
         """
         Get a service from the service registry.
-        
+
         Args:
             service_name: Name of the service to retrieve
             min_version: Optional minimum version requirement
-        
+
         Returns:
             Service instance if found and version compatible, None otherwise
-        
+
         Example:
             # Get service if available
             weather = self.get_service('weather', min_version='1.0.0')
@@ -562,18 +562,18 @@ class Plugin(ABC):
     def require_service(self, service_name: str, min_version: Optional[str] = None):
         """
         Get a service from the registry, raising error if not available.
-        
+
         Args:
             service_name: Name of the service to retrieve
             min_version: Optional minimum version requirement
-        
+
         Returns:
             Service instance
-        
+
         Raises:
             PluginError: If service registry not available
             PluginError: If service not registered or version incompatible
-        
+
         Example:
             # Require service (raises error if unavailable)
             weather = self.require_service('weather', min_version='1.0.0')

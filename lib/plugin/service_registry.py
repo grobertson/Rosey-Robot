@@ -9,24 +9,24 @@ Example:
     ...     @property
     ...     def service_name(self) -> str:
     ...         return "weather"
-    ...     
+    ...
     ...     @property
     ...     def service_version(self) -> str:
     ...         return "1.0.0"
-    ...     
+    ...
     ...     async def start(self):
     ...         # Initialize API connections
     ...         pass
-    ...     
+    ...
     ...     def get_weather(self, location: str) -> dict:
     ...         # Fetch weather data
     ...         return {"temp": 72, "condition": "sunny"}
-    >>> 
+    >>>
     >>> # Register the service
     >>> registry = ServiceRegistry(logger)
     >>> weather = WeatherService()
     >>> registry.register(weather, provider="weather_plugin")
-    >>> 
+    >>>
     >>> # Plugin consuming a service
     >>> weather_service = registry.require("weather", min_version="1.0.0")
     >>> data = weather_service.get_weather("Seattle")
@@ -43,17 +43,17 @@ from .service import Service, ServiceRegistration
 
 class ServiceRegistry:
     """Registry for managing plugin services with dependency injection.
-    
+
     The service registry enables plugins to provide and consume services without
     tight coupling. Services are versioned using semantic versioning, and the
     registry handles dependency resolution and lifecycle management.
-    
+
     Features:
     - Semantic versioning for service compatibility
     - Dependency resolution with cycle detection
     - Lifecycle management (start/stop hooks)
     - Service discovery
-    
+
     Attributes:
         _services: Mapping of service names to their registrations
         _started: Set of started service names
@@ -62,7 +62,7 @@ class ServiceRegistry:
 
     def __init__(self, logger: Optional[logging.Logger] = None):
         """Initialize the service registry.
-        
+
         Args:
             logger: Optional logger instance. If not provided, uses module logger.
         """
@@ -77,16 +77,16 @@ class ServiceRegistry:
         dependencies: Optional[Dict[str, str]] = None
     ) -> None:
         """Register a service with the registry.
-        
+
         Args:
             service: Service instance to register
             provider: Name of the plugin providing the service
             dependencies: Optional mapping of required service names to minimum versions
-        
+
         Raises:
             PluginError: If service name is already registered
             PluginError: If service version is invalid
-        
+
         Example:
             >>> weather = WeatherService()
             >>> registry.register(
@@ -136,14 +136,14 @@ class ServiceRegistry:
 
     def unregister(self, service_name: str) -> None:
         """Unregister a service from the registry.
-        
+
         Args:
             service_name: Name of the service to unregister
-        
+
         Raises:
             PluginError: If service is not registered
             PluginError: If service is still started
-        
+
         Example:
             >>> registry.unregister("weather")
         """
@@ -165,14 +165,14 @@ class ServiceRegistry:
 
     def get(self, service_name: str, min_version: Optional[str] = None) -> Optional[Service]:
         """Get a service by name with optional version constraint.
-        
+
         Args:
             service_name: Name of the service to retrieve
             min_version: Optional minimum version requirement (semantic version)
-        
+
         Returns:
             Service instance if found and version compatible, None otherwise
-        
+
         Example:
             >>> weather = registry.get("weather", min_version="1.0.0")
             >>> if weather:
@@ -205,18 +205,18 @@ class ServiceRegistry:
 
     def require(self, service_name: str, min_version: Optional[str] = None) -> Service:
         """Get a service by name, raising an error if not available.
-        
+
         Args:
             service_name: Name of the service to retrieve
             min_version: Optional minimum version requirement
-        
+
         Returns:
             Service instance
-        
+
         Raises:
             PluginError: If service is not registered
             PluginError: If service version is incompatible
-        
+
         Example:
             >>> weather = registry.require("weather", min_version="1.0.0")
             >>> data = weather.get_weather("Seattle")
@@ -237,13 +237,13 @@ class ServiceRegistry:
 
     def has(self, service_name: str) -> bool:
         """Check if a service is registered.
-        
+
         Args:
             service_name: Name of the service to check
-        
+
         Returns:
             True if service is registered, False otherwise
-        
+
         Example:
             >>> if registry.has("weather"):
             ...     weather = registry.get("weather")
@@ -252,19 +252,19 @@ class ServiceRegistry:
 
     async def start(self, service_name: str) -> None:
         """Start a service and its dependencies.
-        
+
         Services are started in dependency order. If a service has dependencies,
         they will be started first. Circular dependencies are detected and raise
         an error.
-        
+
         Args:
             service_name: Name of the service to start
-        
+
         Raises:
             PluginError: If service is not registered
             PluginError: If dependencies cannot be resolved (circular or missing)
             PluginError: If service start() method fails
-        
+
         Example:
             >>> await registry.start("weather")
         """
@@ -318,14 +318,14 @@ class ServiceRegistry:
 
     async def stop(self, service_name: str) -> None:
         """Stop a service.
-        
+
         Args:
             service_name: Name of the service to stop
-        
+
         Raises:
             PluginError: If service is not registered
             PluginError: If service stop() method fails
-        
+
         Example:
             >>> await registry.stop("weather")
         """
@@ -352,14 +352,14 @@ class ServiceRegistry:
 
     async def start_all(self) -> None:
         """Start all registered services in dependency order.
-        
+
         Uses topological sort to determine the correct start order and detect
         circular dependencies.
-        
+
         Raises:
             PluginError: If circular dependencies are detected
             PluginError: If any service fails to start
-        
+
         Example:
             >>> await registry.start_all()
         """
@@ -377,10 +377,10 @@ class ServiceRegistry:
 
     async def stop_all(self) -> None:
         """Stop all started services in reverse dependency order.
-        
+
         Services are stopped in reverse order to ensure dependents are stopped
         before their dependencies.
-        
+
         Example:
             >>> await registry.stop_all()
         """
@@ -401,12 +401,12 @@ class ServiceRegistry:
                     self._logger.error(f"Error stopping service '{service_name}': {e}")
                     # Continue stopping other services
 
-    def _resolve_dependencies(self) -> List[str]:
+    def _resolve_dependencies(self) -> List[str]:  # noqa: C901 (dependency resolution)
         """Resolve service dependencies using topological sort.
-        
+
         Returns:
             List of service names in dependency order (dependencies first)
-        
+
         Raises:
             PluginError: If circular dependencies are detected
         """
@@ -459,7 +459,7 @@ class ServiceRegistry:
 
     def list_services(self) -> List[Dict[str, any]]:
         """List all registered services with their metadata.
-        
+
         Returns:
             List of service information dictionaries containing:
             - name: Service name
@@ -467,7 +467,7 @@ class ServiceRegistry:
             - provider: Plugin providing the service
             - started: Whether service is started
             - dependencies: Dict of required services and versions
-        
+
         Example:
             >>> services = registry.list_services()
             >>> for svc in services:
@@ -486,13 +486,13 @@ class ServiceRegistry:
 
     def get_providers(self, plugin_name: str) -> List[str]:
         """Get list of services provided by a specific plugin.
-        
+
         Args:
             plugin_name: Name of the plugin
-        
+
         Returns:
             List of service names provided by the plugin
-        
+
         Example:
             >>> weather_services = registry.get_providers("weather_plugin")
             >>> print(f"Weather plugin provides: {weather_services}")
@@ -505,7 +505,7 @@ class ServiceRegistry:
 
     def __repr__(self) -> str:
         """Return string representation of the registry.
-        
+
         Returns:
             String showing number of services and started count
         """

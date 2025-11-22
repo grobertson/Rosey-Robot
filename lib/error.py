@@ -27,7 +27,7 @@ class SocketIOError(Exception):
 class ConnectionFailed(SocketIOError):  # noqa: N818 (legacy exception name)
     ''' Exception raised when the connection to the server fails '''
 
-class ConnectionClosed(SocketIOError):
+class ConnectionClosed(SocketIOError):  # noqa: N818 (legacy exception name)
     ''' Exception raised when the connection to the server is closed '''
 
 class PingTimeout(ConnectionClosed):

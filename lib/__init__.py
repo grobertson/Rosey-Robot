@@ -13,4 +13,18 @@ from .user import User
 from .util import MessageParser
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from __version__ import __version__
+from __version__ import __version__  # noqa: E402 (version import after sys.path)
+
+__all__ = [
+    'Bot',
+    'Channel',
+    'ConnectionAdapter',
+    'MediaLink',
+    'set_proxy',
+    'SocketIO',
+    'SQLiteStorage',
+    'StorageAdapter',
+    'User',
+    'MessageParser',
+    '__version__',
+]

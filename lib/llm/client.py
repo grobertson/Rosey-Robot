@@ -13,7 +13,7 @@ from .providers import OllamaProvider, OpenAIProvider, OpenRouterProvider
 class LLMClient:
     """
     Main LLM client for Rosey.
-    
+
     Handles:
     - Provider abstraction
     - Conversation context
@@ -23,7 +23,7 @@ class LLMClient:
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize LLM client.
-        
+
         Config structure:
         {
             'provider': 'openai' | 'ollama' | 'openrouter',
@@ -119,13 +119,13 @@ class LLMClient:
     ) -> str:
         """
         Chat with the LLM maintaining conversation context.
-        
+
         Args:
             user: Username for conversation tracking
             message: User's message
             temperature: Override default temperature
             max_tokens: Override default max_tokens
-            
+
         Returns:
             LLM response
         """
@@ -162,12 +162,12 @@ class LLMClient:
     ) -> str:
         """
         Generate a one-off response without conversation context.
-        
+
         Args:
             prompt: The prompt
             temperature: Override default temperature
             max_tokens: Override default max_tokens
-            
+
         Returns:
             LLM response
         """

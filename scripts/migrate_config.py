@@ -15,10 +15,10 @@ from pathlib import Path
 
 def migrate_config_v1_to_v2(old_config: dict) -> dict:
     """Convert v1 config to v2 format.
-    
+
     Args:
         old_config: Configuration in v1 format
-        
+
     Returns:
         Configuration in v2 format
     """

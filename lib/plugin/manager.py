@@ -27,7 +27,7 @@ from .service_registry import ServiceRegistry
 class PluginState(Enum):
     """
     Plugin lifecycle states.
-    
+
     States:
         UNLOADED: Initial state, plugin not loaded
         LOADED: Module imported, Plugin() instantiated
@@ -50,15 +50,15 @@ class PluginState(Enum):
 class PluginInfo:
     """
     Plugin information and state tracking.
-    
+
     Tracks plugin instance, current state, errors, and file path.
-    
+
     Attributes:
         plugin: Plugin instance (None if not loaded)
         state: Current plugin state
         error: Error message if state == FAILED
         file_path: Path to plugin file
-    
+
     Example:
         info = PluginInfo(Path('plugins/example.py'))
         info.plugin = ExamplePlugin(bot)
@@ -68,7 +68,7 @@ class PluginInfo:
     def __init__(self, file_path: Path):
         """
         Initialize plugin info.
-        
+
         Args:
             file_path: Path to plugin file
         """
@@ -103,7 +103,7 @@ class PluginInfo:
 class PluginManager:
     """
     Manage plugin discovery, loading, and lifecycle.
-    
+
     Features:
         - Discover plugins from directory
         - Load plugins dynamically
@@ -111,22 +111,22 @@ class PluginManager:
         - Manage lifecycle (setup, enable, disable, teardown)
         - Isolate errors (one plugin failure doesn't crash others)
         - Track plugin state
-    
+
     Args:
         bot: Bot instance
         plugin_dir: Directory containing plugin files (default: plugins/)
         logger: Optional logger instance
-    
+
     Example:
         manager = PluginManager(bot, 'plugins')
         await manager.load_all()
-        
+
         # Get plugin
         my_plugin = manager.get('my_plugin')
-        
+
         # Disable plugin
         await manager.disable('my_plugin')
-        
+
         # Reload plugin
         await manager.reload('my_plugin')
     """
@@ -141,7 +141,7 @@ class PluginManager:
     ):
         """
         Initialize plugin manager.
-        
+
         Args:
             bot: Bot instance
             plugin_dir: Directory containing plugin files
@@ -177,15 +177,15 @@ class PluginManager:
     def discover(self) -> List[Path]:
         """
         Discover plugin files in plugin directory.
-        
+
         Scans plugin directory for .py files (excluding __init__.py).
-        
+
         Returns:
             List of plugin file paths
-        
+
         Raises:
             PluginError: If plugin directory doesn't exist
-        
+
         Example:
             files = manager.discover()
             print(f"Found {len(files)} plugin files")
@@ -205,20 +205,20 @@ class PluginManager:
     # Loading
     # =================================================================
 
-    async def load_all(self) -> None:
+    async def load_all(self) -> None:  # noqa: C901 (plugin loading complexity)
         """
         Discover and load all plugins.
-        
+
         This performs a complete plugin initialization:
             1. Discovers plugin files
             2. Loads each plugin module
             3. Resolves dependencies
             4. Sets up plugins in dependency order
             5. Enables all plugins
-        
+
         Continues on errors - one plugin failure doesn't prevent
         loading others.
-        
+
         Example:
             await manager.load_all()
             enabled = manager.get_enabled()
@@ -285,13 +285,13 @@ class PluginManager:
     async def _load_plugin_file(self, file_path: Path) -> None:
         """
         Load plugin from file.
-        
+
         Dynamically imports module, finds Plugin subclass,
         instantiates plugin, and registers it.
-        
+
         Args:
             file_path: Path to plugin .py file
-        
+
         Raises:
             PluginLoadError: If load fails
         """
@@ -349,19 +349,19 @@ class PluginManager:
     # Dependency Resolution
     # =================================================================
 
-    def _resolve_dependencies(self) -> List[str]:
+    def _resolve_dependencies(self) -> List[str]:  # noqa: C901 (dependency resolution)
         """
         Resolve plugin dependencies using topological sort.
-        
+
         Uses Kahn's algorithm to determine load order that
         respects dependencies (dependencies loaded first).
-        
+
         Returns:
             List of plugin names in load order (dependencies first)
-        
+
         Raises:
             PluginDependencyError: If circular dependency or missing dependency
-        
+
         Example:
             # Plugin A depends on B, B depends on C
             order = manager._resolve_dependencies()
@@ -414,12 +414,12 @@ class PluginManager:
     async def _setup_plugin(self, name: str) -> None:
         """
         Run plugin setup.
-        
+
         Calls plugin.setup() and transitions to SETUP state.
-        
+
         Args:
             name: Plugin name
-        
+
         Raises:
             PluginSetupError: If setup fails
         """
@@ -440,12 +440,12 @@ class PluginManager:
     async def _enable_plugin(self, name: str) -> None:
         """
         Enable plugin.
-        
+
         Calls plugin.on_enable() and transitions to ENABLED state.
-        
+
         Args:
             name: Plugin name
-        
+
         Raises:
             Exception: If enable fails
         """
@@ -465,9 +465,9 @@ class PluginManager:
     async def _disable_plugin(self, name: str) -> None:
         """
         Disable plugin.
-        
+
         Calls plugin.on_disable() and transitions to DISABLED state.
-        
+
         Args:
             name: Plugin name
         """
@@ -485,9 +485,9 @@ class PluginManager:
     async def _teardown_plugin(self, name: str) -> None:
         """
         Run plugin teardown.
-        
+
         Calls plugin.teardown() and transitions to TORN_DOWN state.
-        
+
         Args:
             name: Plugin name
         """
@@ -509,15 +509,15 @@ class PluginManager:
     async def enable(self, name: str) -> None:
         """
         Enable plugin by name.
-        
+
         Transitions plugin from DISABLED or SETUP to ENABLED.
-        
+
         Args:
             name: Plugin name
-        
+
         Raises:
             PluginError: If plugin not found or not in correct state
-        
+
         Example:
             await manager.enable('my_plugin')
         """
@@ -538,16 +538,16 @@ class PluginManager:
     async def disable(self, name: str) -> None:
         """
         Disable plugin by name.
-        
+
         Transitions plugin from ENABLED to DISABLED.
         Plugin remains loaded but inactive.
-        
+
         Args:
             name: Plugin name
-        
+
         Raises:
             PluginError: If plugin not found
-        
+
         Example:
             await manager.disable('my_plugin')
         """
@@ -565,7 +565,7 @@ class PluginManager:
     async def reload(self, name: str) -> None:
         """
         Reload plugin (disable, teardown, reload module, setup, enable).
-        
+
         Complete plugin reload cycle:
             1. Disable if enabled
             2. Teardown if setup
@@ -573,13 +573,13 @@ class PluginManager:
             4. Reload module from file
             5. Setup
             6. Enable
-        
+
         Args:
             name: Plugin name
-        
+
         Raises:
             PluginError: If reload fails
-        
+
         Example:
             await manager.reload('my_plugin')
         """
@@ -614,13 +614,13 @@ class PluginManager:
     def get(self, name: str) -> Optional[Plugin]:
         """
         Get plugin instance by name.
-        
+
         Args:
             name: Plugin name
-        
+
         Returns:
             Plugin instance or None if not found
-        
+
         Example:
             plugin = manager.get('my_plugin')
             if plugin:
@@ -632,10 +632,10 @@ class PluginManager:
     def list_plugins(self) -> List[PluginInfo]:
         """
         Get list of all plugins.
-        
+
         Returns:
             List of PluginInfo objects
-        
+
         Example:
             for info in manager.list_plugins():
                 print(f"{info.name}: {info.state.value}")
@@ -645,10 +645,10 @@ class PluginManager:
     def get_enabled(self) -> List[Plugin]:
         """
         Get list of enabled plugins.
-        
+
         Returns:
             List of enabled Plugin instances
-        
+
         Example:
             enabled = manager.get_enabled()
             print(f"{len(enabled)} plugins active")
@@ -662,13 +662,13 @@ class PluginManager:
     async def unload_all(self) -> None:
         """
         Unload all plugins (disable, teardown, remove from registry).
-        
+
         Performs graceful shutdown of all plugins:
             1. Stop hot reload watcher
             2. Disable all enabled plugins
             3. Teardown all setup plugins
             4. Clear registry
-        
+
         Example:
             await manager.unload_all()
         """

@@ -29,13 +29,13 @@ class EventBus:
 
     Example:
         bus = EventBus()
-        
+
         # Subscribe to specific event
         async def on_trivia(event):
             print(f"Trivia: {event.data['question']}")
-        
+
         bus.subscribe('trivia.started', on_trivia, 'stats_plugin')
-        
+
         # Publish event
         event = Event('trivia.started', {'question': 'What is 2+2?'}, 'trivia_plugin')
         await bus.publish(event)

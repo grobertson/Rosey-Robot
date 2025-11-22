@@ -216,7 +216,7 @@ def main():
 
     verifier = DeploymentVerifier(args.env, json_output=args.json)
 
-    success = verifier.run_all_verifications()
+    verifier.run_all_verifications()
 
     if args.json:
         verifier.output_json()

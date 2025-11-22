@@ -22,10 +22,10 @@ from .errors import AuthenticationError, ConnectionError, NotConnectedError, Sen
 class CyTubeConnection(ConnectionAdapter):
     """
     CyTube connection implementation.
-    
+
     Manages socket.io connection to CyTube server, handles authentication,
     and normalizes CyTube events to platform-agnostic format.
-    
+
     Attributes:
         domain: CyTube server domain (e.g., 'https://cytu.be')
         channel_name: Channel name
@@ -34,7 +34,7 @@ class CyTubeConnection(ConnectionAdapter):
         user_password: Bot password (None for guest)
         socket: socket.io connection (None when disconnected)
         server_url: socket.io server URL
-    
+
     Example:
         >>> conn = CyTubeConnection('https://cytu.be', 'mychannel')
         >>> await conn.connect()
@@ -59,7 +59,7 @@ class CyTubeConnection(ConnectionAdapter):
                  logger: Optional[logging.Logger] = None):
         """
         Initialize CyTube connection.
-        
+
         Args:
             domain: CyTube server domain (e.g., 'https://cytu.be')
             channel: Channel name
@@ -99,12 +99,12 @@ class CyTubeConnection(ConnectionAdapter):
     async def connect(self) -> None:
         """
         Establish connection to CyTube channel.
-        
+
         Steps:
         1. Fetch socket.io configuration
         2. Connect to socket.io server
         3. Authenticate and join channel
-        
+
         Raises:
             ConnectionError: If connection fails
             AuthenticationError: If login fails
@@ -147,7 +147,7 @@ class CyTubeConnection(ConnectionAdapter):
     async def disconnect(self) -> None:
         """
         Close connection gracefully.
-        
+
         Closes socket.io connection and cleans up resources.
         Does not raise exceptions - makes best effort to clean up.
         """
@@ -171,16 +171,16 @@ class CyTubeConnection(ConnectionAdapter):
     async def send_message(self, content: str, **metadata) -> None:
         """
         Send chat message to channel.
-        
+
         Args:
             content: Message text
             **metadata: Optional 'meta' dict for CyTube formatting
                        (e.g., meta={'italic': True, 'color': '#FF0000'})
-        
+
         Raises:
             NotConnectedError: If not connected
             SendError: If message fails to send
-            
+
         Example:
             >>> await conn.send_message("Hello world")
             >>> await conn.send_message("Styled", meta={'bold': True})
@@ -200,15 +200,15 @@ class CyTubeConnection(ConnectionAdapter):
     async def send_pm(self, user: str, content: str) -> None:
         """
         Send private message to user.
-        
+
         Args:
             user: Username to PM
             content: Message text
-        
+
         Raises:
             NotConnectedError: If not connected
             SendError: If PM fails to send
-            
+
         Example:
             >>> await conn.send_pm("alice", "Private message")
         """
@@ -238,7 +238,7 @@ class CyTubeConnection(ConnectionAdapter):
     def on_event(self, event: str, callback: Callable) -> None:
         """
         Register callback for normalized event.
-        
+
         Args:
             event: Normalized event name (e.g., 'message', 'user_join')
             callback: Callback function(event: str, data: dict)
@@ -251,7 +251,7 @@ class CyTubeConnection(ConnectionAdapter):
     def off_event(self, event: str, callback: Callable) -> None:
         """
         Unregister callback for event.
-        
+
         Args:
             event: Normalized event name
             callback: Previously registered callback
@@ -265,13 +265,13 @@ class CyTubeConnection(ConnectionAdapter):
     async def recv_events(self) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:
         """
         Async iterator yielding normalized events.
-        
+
         Yields:
             Tuple of (event_name, event_data)
-        
+
         Raises:
             NotConnectedError: If not connected
-            
+
         Example:
             >>> async for event, data in conn.recv_events():
             ...     if event == 'message':
@@ -305,10 +305,10 @@ class CyTubeConnection(ConnectionAdapter):
     async def reconnect(self) -> None:
         """
         Reconnect with exponential backoff.
-        
+
         Calculates backoff delay using formula:
         delay = min(initial_delay * 2^(attempts-1), max_delay)
-        
+
         Raises:
             ConnectionError: If reconnection fails
         """
@@ -331,7 +331,7 @@ class CyTubeConnection(ConnectionAdapter):
     async def _get_socket_config(self) -> None:
         """
         Fetch socket.io server URL from CyTube.
-        
+
         Raises:
             ConnectionError: If config fetch fails
             SocketConfigError: If config is invalid
@@ -382,10 +382,10 @@ class CyTubeConnection(ConnectionAdapter):
         self.server_url = self.SOCKET_IO_URL % data
         self.logger.info(f"Socket.io server: {self.server_url}")
 
-    async def _login(self) -> None:
+    async def _login(self) -> None:  # noqa: C901 (authentication complexity)
         """
         Authenticate and join channel.
-        
+
         Raises:
             AuthenticationError: If login fails
             SocketIOError: If socket communication fails
@@ -461,13 +461,13 @@ class CyTubeConnection(ConnectionAdapter):
 
     def _normalize_cytube_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize CyTube user object to platform-agnostic structure.
-        
+
         Converts CyTube-specific user fields to normalized format that works
         across platforms. This enables platform-agnostic user handling.
-        
+
         Args:
             user_data: Raw CyTube user object
-            
+
         Returns:
             Normalized user dictionary with standard fields:
             - username: User's name
@@ -489,11 +489,11 @@ class CyTubeConnection(ConnectionAdapter):
                         data: Dict[str, Any]) -> Optional[Tuple[str, Dict[str, Any]]]:
         """
         Normalize CyTube event to platform-agnostic format.
-        
+
         Args:
             event: CyTube event name
             data: CyTube event data
-        
+
         Returns:
             Tuple of (normalized_event, normalized_data) or None to skip
         """
@@ -566,7 +566,7 @@ class CyTubeConnection(ConnectionAdapter):
     async def _emit_normalized_event(self, event: str, data: Dict[str, Any]) -> None:
         """
         Emit normalized event to registered callbacks.
-        
+
         Args:
             event: Normalized event name
             data: Event data
@@ -576,7 +576,7 @@ class CyTubeConnection(ConnectionAdapter):
     async def _trigger_callbacks(self, event: str, data: Dict[str, Any]) -> None:
         """
         Trigger all callbacks for event.
-        
+
         Args:
             event: Event name
             data: Event data

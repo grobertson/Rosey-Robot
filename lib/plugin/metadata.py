@@ -12,10 +12,10 @@ from typing import List, Optional
 class PluginMetadata:
     """
     Plugin metadata and requirements.
-    
+
     Defines plugin identity, version, dependencies, and requirements.
     Used by PluginManager for discovery and dependency resolution.
-    
+
     Attributes:
         name: Plugin identifier (lowercase, alphanumeric + underscores)
         display_name: Human-readable name for UI/logs
@@ -25,7 +25,7 @@ class PluginMetadata:
         dependencies: List of required plugin names (loaded before this)
         min_bot_version: Minimum bot version required (optional)
         config_schema: Optional JSON schema for config validation
-    
+
     Example:
         metadata = PluginMetadata(
             name='dice_roller',

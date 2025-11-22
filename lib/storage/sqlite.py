@@ -18,15 +18,15 @@ from .errors import MigrationError, QueryError, StorageConnectionError
 class SQLiteStorage(StorageAdapter):
     """
     SQLite implementation of the StorageAdapter interface.
-    
+
     This adapter provides persistent storage using SQLite, suitable for
     single-instance bot deployments. It maintains compatibility with the
     existing database schema from common/database.py.
-    
+
     Attributes:
         db_path: Path to the SQLite database file
         conn: SQLite connection object
-        
+
     Example:
         >>> storage = SQLiteStorage('bot_data.db')
         >>> await storage.connect()
@@ -39,7 +39,7 @@ class SQLiteStorage(StorageAdapter):
                  logger: Optional[logging.Logger] = None):
         """
         Initialize SQLite storage adapter.
-        
+
         Args:
             db_path: Path to SQLite database file
             logger: Optional logger instance
@@ -51,10 +51,10 @@ class SQLiteStorage(StorageAdapter):
     async def connect(self) -> None:
         """
         Connect to SQLite database and run migrations.
-        
+
         Creates database file if it doesn't exist and initializes
         all required tables and indices.
-        
+
         Raises:
             StorageConnectionError: If connection fails
             MigrationError: If schema creation/migration fails
@@ -74,9 +74,9 @@ class SQLiteStorage(StorageAdapter):
     async def close(self) -> None:
         """
         Close database connection gracefully.
-        
+
         Commits any pending transactions before closing.
-        
+
         Raises:
             StorageConnectionError: If close operation fails
         """
@@ -93,10 +93,10 @@ class SQLiteStorage(StorageAdapter):
     async def _run_migrations(self) -> None:
         """
         Run database schema migrations.
-        
+
         Creates all necessary tables and indices if they don't exist.
         Performs schema migrations for existing databases.
-        
+
         Raises:
             MigrationError: If migration fails
         """
@@ -205,7 +205,7 @@ class SQLiteStorage(StorageAdapter):
                              session_start: Optional[int] = None) -> None:
         """
         Save or update user statistics.
-        
+
         Args:
             username: Username to update
             first_seen: Unix timestamp of first appearance (for new users)
@@ -213,7 +213,7 @@ class SQLiteStorage(StorageAdapter):
             chat_lines: Number of chat lines to add to total
             time_connected: Seconds connected to add to total
             session_start: Unix timestamp when current session started
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -258,7 +258,7 @@ class SQLiteStorage(StorageAdapter):
                 # Insert new user
                 cursor.execute('''
                     INSERT INTO user_stats
-                    (username, first_seen, last_seen, total_chat_lines, 
+                    (username, first_seen, last_seen, total_chat_lines,
                      total_time_connected, current_session_start)
                     VALUES (?, ?, ?, ?, ?, ?)
                 ''', (username, first_seen or now, last_seen or now,
@@ -276,15 +276,15 @@ class SQLiteStorage(StorageAdapter):
     async def get_user_stats(self, username: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve statistics for a single user.
-        
+
         Args:
             username: Username to look up
-            
+
         Returns:
             Dictionary with user stats, or None if user not found.
             Keys: username, first_seen, last_seen, total_chat_lines,
                   total_time_connected, current_session_start
-                  
+
         Raises:
             QueryError: If database operation fails
         """
@@ -312,14 +312,14 @@ class SQLiteStorage(StorageAdapter):
                                  offset: int = 0) -> List[Dict[str, Any]]:
         """
         Retrieve statistics for all users.
-        
+
         Args:
             limit: Maximum number of records to return (None for all)
             offset: Number of records to skip
-            
+
         Returns:
             List of user stat dictionaries, sorted by last_seen descending
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -352,13 +352,13 @@ class SQLiteStorage(StorageAdapter):
                              timestamp: Optional[int] = None) -> None:
         """
         Log a user action (join, leave, PM, kick, etc.).
-        
+
         Args:
             username: User who performed the action
             action_type: Type of action (join, leave, pm, kick, etc.)
             details: Optional additional details about the action
             timestamp: Unix timestamp (defaults to current time)
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -383,17 +383,17 @@ class SQLiteStorage(StorageAdapter):
                               limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         """
         Retrieve user action logs with optional filtering.
-        
+
         Args:
             username: Filter by username (None for all users)
             action_type: Filter by action type (None for all types)
             limit: Maximum number of records to return
             offset: Number of records to skip
-            
+
         Returns:
             List of action log dictionaries, sorted by timestamp descending.
             Keys: id, timestamp, username, action_type, details
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -432,14 +432,14 @@ class SQLiteStorage(StorageAdapter):
                                    timestamp: Optional[int] = None) -> None:
         """
         Update channel-level statistics (high water marks).
-        
+
         Only updates maximums if new values exceed current values.
-        
+
         Args:
             max_users: New maximum user count (updates if greater than current)
             max_connected: New maximum connected count (updates if greater)
             timestamp: Unix timestamp for the maximum (defaults to current time)
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -483,11 +483,11 @@ class SQLiteStorage(StorageAdapter):
     async def get_channel_stats(self) -> Dict[str, Any]:
         """
         Retrieve channel-level statistics.
-        
+
         Returns:
             Dictionary with keys: max_users, max_users_timestamp,
             max_connected, max_connected_timestamp, last_updated
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -523,12 +523,12 @@ class SQLiteStorage(StorageAdapter):
                             timestamp: Optional[int] = None) -> None:
         """
         Log a snapshot of user counts for historical tracking.
-        
+
         Args:
             chat_users: Number of users in chat
             connected_users: Number of connected users
             timestamp: Unix timestamp (defaults to current time)
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -553,16 +553,16 @@ class SQLiteStorage(StorageAdapter):
                                      limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Retrieve historical user count data.
-        
+
         Args:
             start_time: Unix timestamp for range start (None for all)
             end_time: Unix timestamp for range end (None for all)
             limit: Maximum number of records to return
-            
+
         Returns:
             List of user count records, sorted by timestamp ascending.
             Keys: id, timestamp, chat_users, connected_users
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -603,12 +603,12 @@ class SQLiteStorage(StorageAdapter):
                           timestamp: Optional[int] = None) -> None:
         """
         Save a chat message to the recent messages cache.
-        
+
         Args:
             username: User who sent the message
             message: Message content
             timestamp: Unix timestamp (defaults to current time)
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -632,15 +632,15 @@ class SQLiteStorage(StorageAdapter):
                                   offset: int = 0) -> List[Dict[str, Any]]:
         """
         Retrieve recent chat messages.
-        
+
         Args:
             limit: Maximum number of messages to return
             offset: Number of messages to skip
-            
+
         Returns:
             List of message dictionaries, sorted by timestamp descending.
             Keys: id, timestamp, username, message
-            
+
         Raises:
             QueryError: If database operation fails
         """
@@ -665,13 +665,13 @@ class SQLiteStorage(StorageAdapter):
     async def clear_old_messages(self, keep_count: int = 1000) -> int:
         """
         Delete old messages, keeping only the most recent N.
-        
+
         Args:
             keep_count: Number of most recent messages to keep
-            
+
         Returns:
             Number of messages deleted
-            
+
         Raises:
             QueryError: If database operation fails
         """

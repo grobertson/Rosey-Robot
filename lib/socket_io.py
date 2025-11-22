@@ -232,7 +232,7 @@ class SocketIO:
             raise self.error  # pylint:disable=raising-bad-type
         return ev
 
-    async def emit(self, event, data, match_response=None, response_timeout=None):
+    async def emit(self, event, data, match_response=None, response_timeout=None):  # noqa: C901 (socket.io protocol)
         """Send an event.
 
         Parameters
@@ -346,7 +346,7 @@ class SocketIO:
             self.logger.error('ping error: %r', ex)
             self.error = ConnectionClosed(ex)
 
-    async def _recv(self):
+    async def _recv(self):  # noqa: C901 (socket.io protocol complexity)
         """Read task."""
         try:
             while self.error is None:

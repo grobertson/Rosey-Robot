@@ -12,7 +12,7 @@ This module provides:
 
 Example:
     from lib.plugin import Plugin, PluginMetadata, PluginManager
-    
+
     class MyPlugin(Plugin):
         @property
         def metadata(self):
@@ -23,13 +23,13 @@ Example:
                 description='Does cool stuff',
                 author='Me'
             )
-        
+
         async def setup(self):
             self.on_command('hello', self.say_hello)
-        
+
         async def say_hello(self, username, args):
             await self.send_message(f'Hello {username}!')
-    
+
     # Use PluginManager with hot reload
     manager = PluginManager(bot, 'plugins', hot_reload=True)
     await manager.load_all()

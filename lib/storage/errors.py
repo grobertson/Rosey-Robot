@@ -9,7 +9,7 @@ enabling precise error handling at different layers of the application.
 class StorageError(Exception):
     """
     Base exception for storage errors.
-    
+
     All storage-related exceptions inherit from this base class,
     allowing catch-all error handling when needed.
     """
@@ -19,7 +19,7 @@ class StorageError(Exception):
 class StorageConnectionError(StorageError):
     """
     Storage connection failed.
-    
+
     Raised when:
     - Unable to establish database connection
     - Connection is lost unexpectedly
@@ -31,7 +31,7 @@ class StorageConnectionError(StorageError):
 class QueryError(StorageError):
     """
     Query execution failed.
-    
+
     Raised when:
     - SQL syntax error
     - Query timeout
@@ -43,7 +43,7 @@ class QueryError(StorageError):
 class MigrationError(StorageError):
     """
     Schema migration failed.
-    
+
     Raised when:
     - Migration script fails
     - Schema version mismatch
@@ -55,7 +55,7 @@ class MigrationError(StorageError):
 class IntegrityError(StorageError):
     """
     Data integrity violation.
-    
+
     Raised when:
     - Foreign key constraint violated
     - Unique constraint violated

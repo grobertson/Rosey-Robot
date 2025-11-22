@@ -15,7 +15,7 @@ class LLMProvider(ABC):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize the provider with configuration.
-        
+
         Args:
             config: Provider-specific configuration
         """
@@ -43,14 +43,14 @@ class LLMProvider(ABC):
     ) -> str:
         """
         Generate a response from the LLM.
-        
+
         Args:
             prompt: The user prompt
             system_prompt: Optional system prompt for context
             temperature: Sampling temperature (0.0 to 1.0)
             max_tokens: Maximum tokens to generate
             **kwargs: Provider-specific parameters
-            
+
         Returns:
             Generated text response
         """
@@ -66,13 +66,13 @@ class LLMProvider(ABC):
     ) -> str:
         """
         Chat completion with message history.
-        
+
         Args:
             messages: List of message dicts with 'role' and 'content'
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
             **kwargs: Provider-specific parameters
-            
+
         Returns:
             Generated response
         """
@@ -85,7 +85,7 @@ class OllamaProvider(LLMProvider):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize Ollama provider.
-        
+
         Config keys:
             - base_url: Ollama server URL (default: http://localhost:11434)
             - model: Model name (e.g., 'llama3', 'mistral')
@@ -168,7 +168,7 @@ class OpenRouterProvider(LLMProvider):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize OpenRouter provider.
-        
+
         Config keys:
             - api_key: OpenRouter API key (required)
             - model: Model identifier (e.g., 'anthropic/claude-3-haiku')
@@ -255,7 +255,7 @@ class OpenAIProvider(LLMProvider):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize OpenAI provider.
-        
+
         Config keys:
             - api_key: OpenAI API key (required)
             - model: Model identifier (e.g., 'gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo')
@@ -263,19 +263,19 @@ class OpenAIProvider(LLMProvider):
                        Can be overridden for Azure OpenAI, LocalAI, LM Studio, etc.
             - organization: OpenAI organization ID (optional)
             - timeout: Request timeout in seconds (default: 30)
-        
+
         Examples:
             # Standard OpenAI
             {'api_key': 'sk-...', 'model': 'gpt-4o-mini'}
-            
+
             # Azure OpenAI
-            {'api_key': '...', 'model': 'gpt-4', 
+            {'api_key': '...', 'model': 'gpt-4',
              'base_url': 'https://YOUR-RESOURCE.openai.azure.com/openai/deployments/YOUR-DEPLOYMENT'}
-            
+
             # LocalAI
             {'api_key': 'not-needed', 'model': 'llama-3',
              'base_url': 'http://localhost:8080/v1'}
-            
+
             # LM Studio
             {'api_key': 'not-needed', 'model': 'local-model',
              'base_url': 'http://localhost:1234/v1'}

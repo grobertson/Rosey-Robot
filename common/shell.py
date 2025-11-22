@@ -8,7 +8,7 @@ from lib import MediaLink
 
 class Shell:
     '''PM command interface for bot control.
-    
+
     Handles moderator commands sent via private messages.
     TCP/telnet server functionality has been removed - use REST API instead.
     '''
@@ -89,7 +89,7 @@ Examples:
         if addr is None:
             self.logger.info('PM command interface disabled')
 
-    async def handle_pm_command(self, event, data):
+    async def handle_pm_command(self, event, data):  # noqa: C901 (complex PM routing)
         """Handle commands sent via PM from moderators
 
         Args:

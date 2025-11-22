@@ -192,7 +192,7 @@ def api_create_deployment():
 
     db = get_db()
     cursor = db.execute(
-        '''INSERT INTO deployments 
+        '''INSERT INTO deployments
            (environment, version, status, started_at, deployed_by, reason)
            VALUES (?, ?, 'in_progress', ?, ?, ?)''',
         (data['environment'], data['version'], datetime.utcnow().isoformat(),
@@ -250,7 +250,7 @@ def api_add_check(deployment_id: int):
 
     db = get_db()
     db.execute(
-        '''INSERT INTO deployment_checks 
+        '''INSERT INTO deployment_checks
            (deployment_id, check_name, passed, message, checked_at)
            VALUES (?, ?, ?, ?, ?)''',
         (deployment_id, data['check_name'], data['passed'],
@@ -282,8 +282,8 @@ def api_stats():
 
     # Recent deployments (last 7 days)
     recent = db.execute(
-        '''SELECT environment, COUNT(*) as count 
-           FROM deployments 
+        '''SELECT environment, COUNT(*) as count
+           FROM deployments
            WHERE started_at >= datetime('now', '-7 days')
            GROUP BY environment'''
     ).fetchall()
@@ -293,7 +293,7 @@ def api_stats():
         '''SELECT AVG(
                (julianday(completed_at) - julianday(started_at)) * 86400
            ) as avg_seconds
-           FROM deployments 
+           FROM deployments
            WHERE completed_at IS NOT NULL'''
     ).fetchone()['avg_seconds']
 

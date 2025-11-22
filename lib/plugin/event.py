@@ -29,7 +29,7 @@ class Event:
         source: Name of plugin that published event
         priority: Event priority (affects dispatch order)
         timestamp: When event was created
-    
+
     Example:
         event = Event(
             name='trivia.started',

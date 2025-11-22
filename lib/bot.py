@@ -80,7 +80,7 @@ class Bot:
                     **kwargs):
         """
         Create Bot with CyTube connection (backward compatibility helper).
-        
+
         Parameters
         ----------
         domain : str
@@ -95,12 +95,12 @@ class Bot:
             Optional user password (for registered users)
         **kwargs : optional
             Additional Bot options (restart_delay, db_path, enable_db)
-        
+
         Returns
         -------
         Bot
             Bot instance configured for CyTube
-        
+
         Example
         -------
         >>> bot = Bot.from_cytube('https://cytu.be', 'mychannel',
@@ -130,13 +130,13 @@ class Bot:
                  restart_delay: float = 5.0):
         """
         Initialize bot with connection adapter and NATS event bus.
-        
+
         ⚠️ BREAKING CHANGE (Sprint 9 Sortie 5):
         - The `db`, `db_path`, and `enable_db` parameters have been REMOVED
         - `nats_client` is now REQUIRED (second parameter, not optional)
         - All database operations now go through NATS event bus
         - DatabaseService must be started separately
-        
+
         Parameters
         ----------
         connection : ConnectionAdapter
@@ -148,27 +148,27 @@ class Bot:
         restart_delay : float, optional
             Delay in seconds before reconnection.
             0 or negative - do not reconnect.
-            
+
         Raises
         ------
         ValueError
             If nats_client is None. NATS is mandatory in Sprint 9+.
-            
+
         See Also
         --------
         docs/sprints/active/9-The-Accountant/MIGRATION.md : Migration guide
         common.database_service.DatabaseService : Database event bus subscriber
-        
+
         Notes
         -----
         Migration from pre-Sprint 9:
-        
+
         Old (v1)::
-        
+
             bot = Bot(connection, db=database, nats_client=nats)
-            
+
         New (v2)::
-        
+
             bot = Bot(connection, nats_client=nats)
             # DatabaseService runs separately
         """
@@ -216,10 +216,10 @@ class Bot:
     def socket(self):
         """
         Access underlying socket for CyTube-specific operations.
-        
+
         This property provides backward compatibility for CyTube-specific
         methods that need direct socket access (playlist control, etc.).
-        
+
         Returns None if connection is not a CyTubeConnection.
         """
         if isinstance(self.connection, CyTubeConnection):
@@ -236,23 +236,23 @@ class Bot:
     def _on_rank(self, _, data):
         self.user.rank = data
 
-    def _on_setMotd(self, _, data):
+    def _on_setMotd(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.motd = data
 
-    def _on_channelCSSJS(self, _, data):
+    def _on_channelCSSJS(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.css = data.get('css', '')
         self.channel.js = data.get('js', '')
 
-    def _on_channelOpts(self, _, data):
+    def _on_channelOpts(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.options = data
 
-    def _on_setPermissions(self, _, data):
+    def _on_setPermissions(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.permissions = data
 
-    def _on_emoteList(self, _, data):
+    def _on_emoteList(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.emotes = data
 
-    def _on_drinkCount(self, _, data):
+    def _on_drinkCount(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.drink_count = data
 
     async def _on_usercount(self, _, data):
@@ -270,7 +270,7 @@ class Bot:
         self.logger.debug(f"[NATS] Published high_water: {user_count}/{connected_count}")
 
     @staticmethod
-    def _on_needPassword(_, data):
+    def _on_needPassword(_, data):  # noqa: N802 (CyTube API naming)
         if data:
             raise LoginError('invalid channel password')
 
@@ -289,10 +289,10 @@ class Bot:
 
     def _add_user(self, data):
         """Add user from normalized or platform-specific data.
-        
+
         Accepts both normalized format (username, rank, is_afk, is_moderator)
         and CyTube format (name, rank, afk) for backward compatibility.
-        
+
         Args:
             data: User data dict with either 'username' or 'name' field
         """
@@ -319,10 +319,10 @@ class Bot:
 
     def _on_user_list(self, _, data):
         """Handle normalized user_list event.
-        
+
         Uses normalized 'users' field which contains array of user objects
         with platform-agnostic structure (username, rank, is_moderator, etc).
-        
+
         ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'users' array
         """
         self.channel.userlist.clear()
@@ -338,10 +338,10 @@ class Bot:
 
     async def _on_user_join(self, _, data):
         """Handle normalized user_join event.
-        
+
         Uses normalized 'user_data' field which contains full user object
         with platform-agnostic structure.
-        
+
         ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'user_data' field
         """
         # ✅ Use normalized 'user_data' field (Sortie 1 provides full object)
@@ -373,9 +373,9 @@ class Bot:
 
     async def _on_user_leave(self, _, data):
         """Handle normalized user_leave event.
-        
+
         Optionally uses 'user_data' field if available for enhanced logging.
-        
+
         ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'user' field,
         optionally 'user_data' for enhanced logging
         """
@@ -403,7 +403,7 @@ class Bot:
         except KeyError:
             self.logger.error('userLeave: %s not found', username)
 
-    def _on_setUserMeta(self, _, data):
+    def _on_setUserMeta(self, _, data):  # noqa: N802 (CyTube API naming)
         # Check if user exists before updating metadata
         user_name = data.get('name', '')
         # Ignore blank usernames (server sometimes sends these)
@@ -415,7 +415,7 @@ class Bot:
             self.logger.warning(
                 'setUserMeta: user %s not in userlist yet', user_name)
 
-    def _on_setUserRank(self, _, data):
+    def _on_setUserRank(self, _, data):  # noqa: N802 (CyTube API naming)
         # Check if user exists before updating rank
         user_name = data.get('name', '')
         # Ignore blank usernames (server sometimes sends these)
@@ -427,7 +427,7 @@ class Bot:
             self.logger.warning(
                 'setUserRank: user %s not in userlist yet', user_name)
 
-    def _on_setAFK(self, _, data):
+    def _on_setAFK(self, _, data):  # noqa: N802 (CyTube API naming)
         # Check if user exists before updating AFK status
         user_name = data.get('name', '')
         # Ignore blank usernames (server sometimes sends these)
@@ -439,14 +439,14 @@ class Bot:
             self.logger.warning(
                 'setAFK: user %s not in userlist yet', user_name)
 
-    def _on_setLeader(self, _, data):
+    def _on_setLeader(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.userlist.leader = data
         self.logger.info('leader %r', self.channel.userlist.leader)
 
-    def _on_setPlaylistMeta(self, _, data):
+    def _on_setPlaylistMeta(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.playlist.time = data.get('rawTime', 0)
 
-    def _on_mediaUpdate(self, _, data):
+    def _on_mediaUpdate(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.playlist.paused = data.get('paused', True)
         self.channel.playlist.current_time = data.get('currentTime', 0)
 
@@ -459,7 +459,7 @@ class Bot:
             self.channel.voteskip_need
         )
 
-    def _on_setCurrent(self, _, data):
+    def _on_setCurrent(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.playlist.current = data
         self.logger.info('setCurrent %s', self.channel.playlist.current)
 
@@ -471,10 +471,10 @@ class Bot:
         self.channel.playlist.remove(data['uid'])
         self.logger.info('delete %s', self.channel.playlist.queue)
 
-    def _on_setTemp(self, _, data):
+    def _on_setTemp(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.playlist.get(data['uid']).temp = data['temp']
 
-    def _on_moveVideo(self, _, data):
+    def _on_moveVideo(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.playlist.move(data['from'], data['after'])
         self.logger.info('move %s', self.channel.playlist.queue)
 
@@ -484,7 +484,7 @@ class Bot:
             self.channel.playlist.add(None, item)
         self.logger.info('playlist %s', self.channel.playlist.queue)
 
-    def _on_setPlaylistLocked(self, _, data):
+    def _on_setPlaylistLocked(self, _, data):  # noqa: N802 (CyTube API naming)
         self.channel.playlist.locked = data
         self.logger.info('playlist locked %s', data)
 
@@ -575,7 +575,7 @@ class Bot:
         except asyncio.CancelledError:
             self.logger.debug('Status update task cancelled')
 
-    async def _process_outbound_messages_periodically(self):
+    async def _process_outbound_messages_periodically(self):  # noqa: C901 (NATS message processing)
         """Background task to send outbound messages queued by web UI.
 
         Implements gentle retry logic with exponential backoff:
@@ -707,7 +707,7 @@ class Bot:
         except asyncio.CancelledError:
             self.logger.debug('Maintenance task cancelled')
 
-    async def run(self):
+    async def run(self):  # noqa: C901 (main event loop complexity)
         """Main event loop.
         """
         import time

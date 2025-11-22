@@ -140,7 +140,7 @@ class ProductionVerifier:
                 time.sleep(0.3)  # Small delay between samples
 
             avg_time = sum(times) / len(times)
-            min_time = min(times)
+            min(times)
             max_time = max(times)
             p95_time = sorted(times)[int(len(times) * 0.95)]
 
@@ -304,7 +304,7 @@ def main():
         json_output=args.json
     )
 
-    success = verifier.run_verification()
+    verifier.run_verification()
 
     if args.json:
         verifier.output_json()

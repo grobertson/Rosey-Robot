@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Optional, Set
 
 try:
-    from watchdog.events import FileModifiedEvent, FileSystemEventHandler
+    from watchdog.events import FileModifiedEvent, FileSystemEventHandler  # noqa: F401
     from watchdog.observers import Observer
 
     WATCHDOG_AVAILABLE = True
@@ -26,17 +26,17 @@ from .manager import PluginManager
 class ReloadHandler(FileSystemEventHandler):
     """
     Handle file system events for plugin hot reload.
-    
+
     Features:
         - Debouncing (wait for quiet period after changes)
         - Queue reloads (avoid duplicate reloads)
         - Error isolation (reload failure doesn't crash watcher)
-    
+
     Args:
         manager: PluginManager instance
         debounce_delay: Seconds to wait after last change (default: 0.5)
         logger: Optional logger instance
-    
+
     Example:
         handler = ReloadHandler(manager, debounce_delay=0.5)
         await handler.start()
@@ -52,7 +52,7 @@ class ReloadHandler(FileSystemEventHandler):
     ):
         """
         Initialize reload handler.
-        
+
         Args:
             manager: PluginManager to reload plugins
             debounce_delay: Seconds to wait after last change
@@ -76,10 +76,10 @@ class ReloadHandler(FileSystemEventHandler):
     def on_modified(self, event):
         """
         Handle file modification event.
-        
+
         Called by watchdog when file changes detected.
         Queues plugin for reload after debounce delay.
-        
+
         Args:
             event: FileSystemEvent from watchdog
         """
@@ -110,7 +110,7 @@ class ReloadHandler(FileSystemEventHandler):
     async def start(self):
         """
         Start background reload task.
-        
+
         Begins processing the reload queue with debouncing.
         """
         if self._reload_task and not self._reload_task.done():
@@ -124,7 +124,7 @@ class ReloadHandler(FileSystemEventHandler):
     async def stop(self):
         """
         Stop background reload task.
-        
+
         Waits for current reloads to complete.
         """
         self._stop_event.set()
@@ -136,7 +136,7 @@ class ReloadHandler(FileSystemEventHandler):
     async def _reload_loop(self):
         """
         Background task that processes reload queue.
-        
+
         Waits for debounce delay after last change,
         then reloads the plugin.
         """
@@ -186,28 +186,28 @@ class ReloadHandler(FileSystemEventHandler):
 class HotReloadWatcher:
     """
     File system watcher for plugin hot reload.
-    
+
     Uses watchdog to monitor plugin directory and trigger
     automatic reloads when files change.
-    
+
     Features:
         - Automatic plugin reload on file save
         - Debouncing (wait for quiet period)
         - Can be enabled/disabled
         - Error isolation
-    
+
     Args:
         manager: PluginManager instance
         enabled: Start watching immediately (default: False)
         debounce_delay: Seconds to wait after last change (default: 0.5)
         logger: Optional logger instance
-    
+
     Example:
         watcher = HotReloadWatcher(manager)
         watcher.start()
         # ... plugins reload automatically on file changes ...
         watcher.stop()
-    
+
     Note:
         Requires watchdog package: pip install watchdog
     """
@@ -221,13 +221,13 @@ class HotReloadWatcher:
     ):
         """
         Initialize hot reload watcher.
-        
+
         Args:
             manager: PluginManager to reload plugins
             enabled: Start immediately (default: False)
             debounce_delay: Seconds to wait after changes
             logger: Optional logger
-        
+
         Raises:
             ImportError: If watchdog not installed
         """
@@ -256,9 +256,9 @@ class HotReloadWatcher:
     def start(self):
         """
         Start watching plugin directory.
-        
+
         Begins monitoring for file changes and automatic reloads.
-        
+
         Raises:
             RuntimeError: If already started
         """
@@ -294,7 +294,7 @@ class HotReloadWatcher:
     def stop(self):
         """
         Stop watching plugin directory.
-        
+
         Stops monitoring for file changes.
         """
         if not self._enabled:
@@ -318,7 +318,7 @@ class HotReloadWatcher:
     def is_enabled(self) -> bool:
         """
         Check if hot reload is enabled.
-        
+
         Returns:
             True if watching for changes, False otherwise
         """

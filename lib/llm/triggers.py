@@ -21,7 +21,7 @@ class TriggerConfig:
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize trigger config.
-        
+
         Config structure:
         {
             'enabled': True/False,
@@ -98,7 +98,7 @@ class TriggerManager:
     def __init__(self, config: TriggerConfig, bot_username: str):
         """
         Initialize trigger manager.
-        
+
         Args:
             config: TriggerConfig instance
             bot_username: Bot's CyTube username (e.g., "CynthiaRothbot", "SaveTheRobots")
@@ -125,7 +125,7 @@ class TriggerManager:
             return random.randint(base - variance, base + variance)
         return base
 
-    def should_respond_to_chat(
+    def should_respond_to_chat(  # noqa: C901 (trigger decision complexity)
         self,
         username: str,
         message: str,
@@ -133,12 +133,12 @@ class TriggerManager:
     ) -> tuple[bool, str]:
         """
         Check if bot should respond to a chat message.
-        
+
         Args:
             username: Username who sent message
             message: The message text
             user_rank: User's rank (for moderator checks)
-            
+
         Returns:
             (should_respond, reason) tuple
         """
@@ -195,7 +195,7 @@ class TriggerManager:
 
         return False, "no_trigger"
 
-    def should_greet_user(
+    def should_greet_user(  # noqa: C901 (greeting decision complexity)
         self,
         username: str,
         user_rank: float = 0.0,
@@ -203,12 +203,12 @@ class TriggerManager:
     ) -> tuple[bool, str]:
         """
         Check if bot should greet a user on join or status change.
-        
+
         Args:
             username: Username
             user_rank: User's rank
             is_join: True for join event, False for status change
-            
+
         Returns:
             (should_greet, reason) tuple
         """
@@ -264,15 +264,15 @@ class TriggerManager:
     def extract_prompt(self, message: str) -> str:
         """
         Extract the actual prompt from a message, removing commands and bot name.
-        
+
         Examples:
             "!ai tell me a joke" -> "tell me a joke"
             "CynthiaRothbot what's playing?" -> "what's playing?"
             "hey SaveTheRobots explain this" -> "hey explain this"
-        
+
         Args:
             message: Original message
-            
+
         Returns:
             Cleaned prompt text
         """
