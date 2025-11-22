@@ -6,24 +6,32 @@
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Database](https://img.shields.io/badge/database-SQLite%20%7C%20PostgreSQL-green.svg)](docs/DATABASE_SETUP.md)
 
-**Rosey** is an event-driven Python bot framework for [CyTube](https://github.com/calzoneman/sync) channels, built on a **microservices-on-a-bus** architecture. Services communicate through [NATS](https://nats.io/) messaging, enabling loosely-coupled components that can scale independently while staying simple to develop and deploy.
+**Rosey** is an event-driven Python bot framework for [CyTube](https://github.com/calzoneman/sync) channels, built on an **Event-Driven Microservices** architecture. Services communicate through [NATS](https://nats.io/) messaging, enabling loosely-coupled components that can scale independently while staying simple to develop and deploy.
 
-## 🎯 Architecture: Microservices on a Bus
+## 🎯 Architecture: Event-Driven Microservices
 
 Rosey uses **NATS** as a lightweight message bus to connect independent services:
 
-```text
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   CyTube    │────▶│  NATS Bus   │◀────│  Database   │
-│ Connection  │     │   (pub/sub  │     │   Service   │
-└─────────────┘     │  req/reply) │     └─────────────┘
-                    └─────────────┘
-                          ▲ │
-                          │ ▼
-                    ┌─────────────┐
-                    │   LLM/AI    │
-                    │   Service   │
-                    └─────────────┘
+```mermaid
+graph LR
+    subgraph Core
+        N((NATS Message Bus))
+    end
+
+    subgraph Services
+        C[CyTube Connection]
+        D[Database Service]
+        L[LLM/AI Service]
+    end
+
+    C <-->|Events & Commands| N
+    D <-->|Queries & Data| N
+    L <-->|Prompts & Responses| N
+
+    style N fill:#2980b9,stroke:#fff,stroke-width:2px,color:#fff
+    style C fill:#27ae60,stroke:#fff,stroke-width:2px,color:#fff
+    style D fill:#8e44ad,stroke:#fff,stroke-width:2px,color:#fff
+    style L fill:#c0392b,stroke:#fff,stroke-width:2px,color:#fff
 ```
 
 **Benefits:**
