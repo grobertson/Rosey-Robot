@@ -1,16 +1,13 @@
 name: CI
 
-# DISABLED: GitHub Actions temporarily disabled for cost reasons
-# Uncomment the 'on:' section below to re-enable
-# on:
-#   push:
-#     branches:
-#       - main
-#       - 'nano-sprint/**'
-#   pull_request:
-#     branches:
-#       - main
 on:
+  push:
+    branches:
+      - main
+      - 'nano-sprint/**'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:

@@ -375,7 +375,7 @@ class TestBackgroundTasks:
         
         # Run task briefly
         task = asyncio.create_task(bot_with_nats._log_user_counts_periodically())
-        await asyncio.sleep(300.5)  # Just past one cycle
+        await asyncio.sleep(2.5)  # Just past one cycle (matches other tests)
         task.cancel()
         
         try:
