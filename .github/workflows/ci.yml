@@ -102,7 +102,7 @@ jobs:
       
       - name: Run tests
         run: |
-          pytest tests/ --cov=lib --cov=common --cov-report=term-missing --cov-report=xml --ignore=tests/unit/test_database.py --ignore=tests/unit/test_database_service.py --ignore=tests/unit/test_database_lifecycle.py --ignore=tests/integration/test_database_persistence.py
+          pytest tests/unit tests/integration/test_nats_integration.py --cov=lib --cov=common --cov-report=term-missing --cov-report=xml --ignore=tests/unit/test_database.py --ignore=tests/unit/test_database_service.py --ignore=tests/unit/test_database_lifecycle.py --ignore=tests/integration/test_database_persistence.py
         env:
           NATS_URL: nats://localhost:4222
       
