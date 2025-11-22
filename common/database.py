@@ -118,14 +118,20 @@ class BotDatabase:
             }
 
         # Create async engine with connection pooling
+        # Note: SQLite uses NullPool (no pooling), so pool args only for PostgreSQL
         engine_kwargs = {
             'echo': False,  # Set True to log all SQL queries
             'pool_pre_ping': True,  # Verify connections before use
-            'pool_size': pool_size,
-            'max_overflow': max_overflow,
-            'pool_timeout': 30,  # Wait 30s for connection
-            'pool_recycle': 3600,  # Recycle connections every hour
         }
+
+        # Add pooling args only for PostgreSQL (SQLite uses NullPool)
+        if self.is_postgresql:
+            engine_kwargs.update({
+                'pool_size': pool_size,
+                'max_overflow': max_overflow,
+                'pool_timeout': 30,  # Wait 30s for connection
+                'pool_recycle': 3600,  # Recycle connections every hour
+            })
 
         # Add PostgreSQL-specific args
         if connect_args:
