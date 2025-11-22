@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 import json
 import logging
+import os
 import sys
 
 from lib import SocketIO, set_proxy
@@ -102,6 +103,60 @@ def configure_proxy(conf):
 
     # Set the global proxy configuration
     set_proxy(addr, port)
+
+
+def get_database_url(config: dict) -> str:
+    """
+    Get database URL with priority:
+    1. Environment variable DATABASE_URL
+    2. Config file database_url field
+    3. Config file database field (legacy, converted)
+    4. Default SQLite
+
+    Args:
+        config: Loaded configuration dict
+
+    Returns:
+        SQLAlchemy database URL
+
+    Examples:
+        >>> os.environ['DATABASE_URL'] = 'postgresql://...'
+        >>> get_database_url({})
+        'postgresql+asyncpg://...'
+
+        >>> get_database_url({'database_url': 'sqlite+aiosqlite:///db.db'})
+        'sqlite+aiosqlite:///db.db'
+
+        >>> get_database_url({'database': 'bot_data.db'})
+        'sqlite+aiosqlite:///bot_data.db'
+    """
+    # 1. Environment variable (highest priority)
+    if 'DATABASE_URL' in os.environ:
+        url = os.environ['DATABASE_URL']
+
+        # Ensure async drivers
+        if url.startswith('sqlite:///'):
+            url = url.replace('sqlite:///', 'sqlite+aiosqlite:///')
+        elif url.startswith('postgresql://'):
+            url = url.replace('postgresql://', 'postgresql+asyncpg://')
+
+        return url
+
+    # 2. Config file database_url field
+    if 'database_url' in config:
+        return config['database_url']
+
+    # 3. Legacy database field (v0.5.0 compatibility)
+    if 'database' in config:
+        db_path = config['database']
+        # Convert path to URL
+        if db_path == ':memory:':
+            return 'sqlite+aiosqlite:///:memory:'
+        else:
+            return f'sqlite+aiosqlite:///{db_path}'
+
+    # 4. Default
+    return 'sqlite+aiosqlite:///bot_data.db'
 
 
 def get_config():
