@@ -50,63 +50,54 @@ def mock_database():
 @pytest.fixture
 def bot_with_nats(mock_connection, mock_nats):
     """Bot with NATS client enabled."""
-    with patch('lib.bot.BotDatabase'):
-        bot = Bot(
-            connection=mock_connection,
-            enable_db=False,  # Don't create real database
-            nats_client=mock_nats
-        )
-        return bot
+    bot = Bot(
+        connection=mock_connection,
+        nats_client=mock_nats
+    )
+    return bot
 
 
 @pytest.fixture
 def bot_with_both(mock_connection, mock_nats, mock_database):
-    """Bot with both NATS and database (for fallback testing)."""
-    with patch('lib.bot.BotDatabase', return_value=mock_database):
-        bot = Bot(
-            connection=mock_connection,
-            enable_db=True,
-            nats_client=mock_nats
-        )
-        bot.db = mock_database  # Ensure mock is set
-        return bot
+    """Bot with NATS (database layer is now separate service)."""
+    bot = Bot(
+        connection=mock_connection,
+        nats_client=mock_nats
+    )
+    # In Sprint 9, db attribute is removed - using NATS only
+    return bot
 
 
 @pytest.fixture
-def bot_db_only(mock_connection, mock_database):
-    """Bot with database only (no NATS)."""
-    with patch('lib.bot.BotDatabase', return_value=mock_database):
-        bot = Bot(
-            connection=mock_connection,
-            enable_db=True,
-            nats_client=None  # No NATS
-        )
-        bot.db = mock_database
-        return bot
+def bot_db_only(mock_connection):
+    """Bot with NATS (no separate database in Sprint 9)."""
+    # In Sprint 9, there's no db_only mode - NATS is required
+    # This fixture now creates a bot without NATS for legacy test compatibility
+    bot = Bot(
+        connection=mock_connection,
+        nats_client=None  # No NATS (will fail for operations requiring it)
+    )
+    return bot
 
 
 class TestBotInitialization:
     """Test Bot initialization with NATS."""
     
     def test_bot_accepts_nats_client(self, mock_connection, mock_nats):
-        """Verify Bot accepts and stores nats_client parameter."""
-        with patch('lib.bot.BotDatabase'):
-            bot = Bot(
-                connection=mock_connection,
-                enable_db=False,
-                nats_client=mock_nats
-            )
-            assert bot.nats is mock_nats
+        """Verify Bot accepts NATS client parameter."""
+        bot = Bot(
+            connection=mock_connection,
+            nats_client=mock_nats
+        )
+        assert bot.nats is mock_nats
     
     def test_bot_without_nats(self, mock_connection):
-        """Verify Bot works without NATS client."""
-        with patch('lib.bot.BotDatabase'):
-            bot = Bot(
-                connection=mock_connection,
-                enable_db=False,
-                nats_client=None
-            )
-            assert bot.nats is None
+        """Verify Bot works without NATS client (degraded mode)."""
+        bot = Bot(
+            connection=mock_connection,
+            nats_client=None
+        )
+        assert bot.nats is None
 
 
 class TestUserJoinNATS:

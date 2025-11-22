@@ -45,11 +45,11 @@ def mock_get():
 
 
 @pytest.fixture
-def bot_simple(mock_connection):
-    """Simple bot instance without DB"""
+def bot_simple(mock_connection, mock_nats_client):
+    """Simple bot instance with mocked NATS"""
     bot = Bot(
         connection=mock_connection,
-        enable_db=False
+        nats_client=mock_nats_client
     )
     # Set channel and user for backward compatibility
     bot.channel.name = 'testchannel'
@@ -58,12 +58,12 @@ def bot_simple(mock_connection):
 
 
 @pytest.fixture
-def bot_with_mocks(mock_connection):
+def bot_with_mocks(mock_connection, mock_nats_client):
     """Bot with mocked dependencies"""
     bot = Bot(
         connection=mock_connection,
-        restart_delay=5,
-        enable_db=False
+        nats_client=mock_nats_client,
+        restart_delay=5
     )
     bot.channel.name = 'testchannel'
     bot.user.name = 'testbot'
@@ -73,72 +73,72 @@ def bot_with_mocks(mock_connection):
 class TestBotInit:
     """Test Bot initialization"""
 
-    def test_init_minimal(self, mock_connection):
+    def test_init_minimal(self, mock_connection, mock_nats_client):
         """Create bot with minimal parameters"""
-        bot = Bot.from_cytube('http://test.com', 'testchannel', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'testchannel', nats_client=mock_nats_client)
         assert bot.channel.name == 'testchannel'
         assert bot.channel.password == ''
         assert bot.user.name == ''
         assert bot.user.password is None  # Default is None, not empty string
 
-    def test_init_with_channel_password(self, mock_connection):
+    def test_init_with_channel_password(self, mock_connection, mock_nats_client):
         """Create bot with channel password"""
-        bot = Bot.from_cytube('http://test.com', 'channel', channel_password='pass123', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', channel_password='pass123', nats_client=mock_nats_client)
         assert bot.channel.name == 'channel'
         assert bot.channel.password == 'pass123'
 
-    def test_init_with_user_guest(self, mock_connection):
+    def test_init_with_user_guest(self, mock_connection, mock_nats_client):
         """Create bot with guest username"""
-        bot = Bot.from_cytube('http://test.com', 'channel', user='guestuser', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', user='guestuser', nats_client=mock_nats_client)
         assert bot.user.name == 'guestuser'
         assert bot.user.password == ''
 
-    def test_init_with_user_registered(self, mock_connection):
+    def test_init_with_user_registered(self, mock_connection, mock_nats_client):
         """Create bot with registered user credentials"""
-        bot = Bot.from_cytube('http://test.com', 'channel', user='botuser', password='secret', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', user='botuser', password='secret', nats_client=mock_nats_client)
         assert bot.user.name == 'botuser'
         assert bot.user.password == 'secret'
 
-    def test_init_restart_delay(self, mock_connection):
+    def test_init_restart_delay(self, mock_connection, mock_nats_client):
         """Create bot with custom restart_delay"""
-        bot = Bot.from_cytube('http://test.com', 'channel', restart_delay=10, enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', restart_delay=10, nats_client=mock_nats_client)
         assert bot.restart_delay == 10
 
-    def test_init_no_restart(self, mock_connection):
+    def test_init_no_restart(self, mock_connection, mock_nats_client):
         """Create bot with restart disabled (None)"""
-        bot = Bot.from_cytube('http://test.com', 'channel', restart_delay=0, enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', restart_delay=0, nats_client=mock_nats_client)
         assert bot.restart_delay == 0
 
-    def test_init_response_timeout(self, mock_connection):
+    def test_init_response_timeout(self, mock_connection, mock_nats_client):
         """Create bot with custom response_timeout (deprecated - now on connection)"""
-        bot = Bot.from_cytube('http://test.com', 'channel', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', nats_client=mock_nats_client)
         # response_timeout is now on the connection, not the bot
         assert isinstance(bot.connection, CyTubeConnection)
 
-    def test_init_channel_instance(self, mock_connection):
+    def test_init_channel_instance(self, mock_connection, mock_nats_client):
         """Bot creates Channel instance"""
-        bot = Bot.from_cytube('http://test.com', 'channel', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', nats_client=mock_nats_client)
         assert isinstance(bot.channel, Channel)
         assert isinstance(bot.channel, Channel)
         assert bot.channel.name == 'channel'
 
-    def test_init_user_instance(self, mock_connection):
+    def test_init_user_instance(self, mock_connection, mock_nats_client):
         """Bot creates User instance"""
-        bot = Bot.from_cytube('http://test.com', 'channel', user='test', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', user='test', nats_client=mock_nats_client)
         assert isinstance(bot.user, User)
         assert bot.user.name == 'test'
 
-    def test_init_default_values(self, mock_connection):
+    def test_init_default_values(self, mock_connection, mock_nats_client):
         """Bot has correct default values"""
-        bot = Bot.from_cytube('http://test.com', 'channel', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', nats_client=mock_nats_client)
         assert bot.socket is None  # socket property returns None for non-CyTube connections
         assert bot.connect_time is None
         assert isinstance(bot.handlers, dict)
         assert bot.start_time is not None
 
-    def test_init_auto_registers_event_handlers(self, mock_connection):
+    def test_init_auto_registers_event_handlers(self, mock_connection, mock_nats_client):
         """Bot auto-registers _on_* methods as event handlers"""
-        bot = Bot.from_cytube('http://test.com', 'channel', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', nats_client=mock_nats_client)
         # Check that some _on_* methods are registered
         assert 'rank' in bot.handlers
         assert 'user_list' in bot.handlers
@@ -648,31 +648,27 @@ class TestBotEdgeCases:
         assert 'user3' in bot_simple.channel.userlist
         assert 'user1' not in bot_simple.channel.userlist
 
-    def test_to_sequence_channel_conversion(self):
+    def test_to_sequence_channel_conversion(self, mock_nats_client):
         """Bot converts channel tuple to Channel with password"""
-        bot = Bot('http://test.com', ('channel', 'pass'), enable_db=False)
-        assert bot.channel.name == 'channel'
-    def test_to_sequence_channel_conversion(self, mock_connection):
-        """Bot converts channel tuple to Channel with password"""
-        bot = Bot.from_cytube('http://test.com', 'channel', channel_password='pass', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', channel_password='pass', nats_client=mock_nats_client)
         assert bot.channel.name == 'channel'
         assert bot.channel.password == 'pass'
 
-    def test_to_sequence_user_conversion(self, mock_connection):
+    def test_to_sequence_user_conversion(self, mock_nats_client):
         """Bot converts user tuple to User with password"""
-        bot = Bot.from_cytube('http://test.com', 'channel', user='user', password='pass', enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', user='user', password='pass', nats_client=mock_nats_client)
         assert bot.user.name == 'user'
         assert bot.user.password == 'pass'
 
-    def test_restart_delay_negative(self, mock_connection):
+    def test_restart_delay_negative(self, mock_nats_client):
         """Bot with negative restart_delay doesn't reconnect"""
-        bot = Bot.from_cytube('http://test.com', 'channel', restart_delay=-1, enable_db=False)
+        bot = Bot.from_cytube('http://test.com', 'channel', restart_delay=-1, nats_client=mock_nats_client)
         assert bot.restart_delay == -1
 
-    def test_multiple_bots_independent(self, mock_connection):
+    def test_multiple_bots_independent(self, mock_nats_client):
         """Multiple Bot instances are independent"""
-        bot1 = Bot.from_cytube('http://test1.com', 'channel1', enable_db=False)
-        bot2 = Bot.from_cytube('http://test2.com', 'channel2', enable_db=False)
+        bot1 = Bot.from_cytube('http://test1.com', 'channel1', nats_client=mock_nats_client)
+        bot2 = Bot.from_cytube('http://test2.com', 'channel2', nats_client=mock_nats_client)
         
         assert bot1.channel.name != bot2.channel.name
         assert bot1.channel is not bot2.channel
@@ -709,3 +705,6 @@ class TestBotEdgeCases:
         """_on_setPlaylistMeta handles missing rawTime"""
         await bot_simple.trigger('setPlaylistMeta', {})
         assert bot_simple.channel.playlist.time == 0
+
+
+

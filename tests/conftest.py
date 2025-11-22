@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, MagicMock
 from lib.connection import ConnectionAdapter
+from nats.aio.client import Client as NATS
 
 
 @pytest.fixture
@@ -116,6 +117,49 @@ def mock_database():
 
 
 @pytest.fixture
+def mock_nats_client():
+    """
+    Mock NATS client for Sprint 9 testing.
+    
+    Returns:
+        Mock: NATS client with publish, request, subscribe methods mocked
+    """
+    nats = Mock(spec=NATS)
+    nats.publish = AsyncMock()
+    nats.request = AsyncMock()
+    nats.subscribe = AsyncMock()
+    nats.is_connected = True
+    nats.connected_url = Mock(return_value='nats://localhost:4222')
+    
+    # Mock response for request/reply pattern
+    mock_response = Mock()
+    mock_response.data = json.dumps({'success': True}).encode()
+    nats.request.return_value = mock_response
+    
+    return nats
+
+
+@pytest.fixture
+async def nats_client():
+    """
+    Real NATS client for integration testing.
+    
+    NOTE: Requires NATS server running on localhost:4222
+    Use mock_nats_client for unit tests instead.
+    
+    Returns:
+        NATS: Connected NATS client
+    """
+    nats = NATS()
+    try:
+        await nats.connect("nats://localhost:4222", connect_timeout=2)
+        yield nats
+    finally:
+        if nats.is_connected:
+            await nats.close()
+
+
+@pytest.fixture
 def sample_chat_event():
     """
     Sample chat event data.
@@ -184,10 +228,10 @@ def temp_config_file(tmp_path, sample_config):
 @pytest.fixture
 def mock_bot():
     """
-    Mock Bot instance with common attributes.
+    Mock Bot instance with common attributes (Sprint 9 - NATS-first).
     
     Returns:
-        Mock: Bot with mocked channel, database, and methods
+        Mock: Bot with mocked channel, NATS client, and methods
     """
     bot = Mock()
     bot.connected = True
@@ -197,7 +241,9 @@ def mock_bot():
     bot.channel.playlist = []
     bot.channel.send_chat = AsyncMock()
     bot.channel.send_pm = AsyncMock()
-    bot.db = None  # Tests can set this if needed
+    bot.nats = Mock(spec=NATS)
+    bot.nats.publish = AsyncMock()
+    bot.nats.request = AsyncMock()
     bot.send_chat_message = AsyncMock()
     bot.pm = AsyncMock()
     return bot
@@ -266,6 +312,7 @@ def pytest_configure(config):
     Registers custom markers.
     """
     config.addinivalue_line("markers", "unit: Unit tests")
-    config.addinivalue_line("markers", "integration: Integration tests")
+    config.addinivalue_line("markers", "integration: Integration tests (requires NATS)")
     config.addinivalue_line("markers", "asyncio: Async tests")
     config.addinivalue_line("markers", "slow: Slow tests (>1s)")
+    config.addinivalue_line("markers", "benchmark: Performance benchmark tests")
