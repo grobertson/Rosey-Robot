@@ -1,8 +1,66 @@
 # Changelog
 
-## [0.6.0] - 2025-11-22 - Sprint 11: The Conversation (Sortie 1)
+## [0.6.0] - 2025-11-22 - Sprint 11: The Conversation
 
-**🎉 SQLAlchemy ORM Foundation - Type-Safe Database Layer**
+**🎉 SQLAlchemy ORM Migration - Complete Database Modernization**
+
+This release completes the SQLAlchemy ORM migration, replacing all raw SQL with type-safe ORM operations. All 28 database methods have been migrated to use async SQLAlchemy, providing improved maintainability, portability, and type safety.
+
+### 🌟 What's New (Sortie 2)
+
+#### BotDatabase ORM Integration
+- **28 Methods Migrated**: All database operations now use SQLAlchemy ORM
+  - User tracking (7 methods): user_joined, user_left, user_chat_message, etc.
+  - Query methods (10 methods): get_user_stats, get_top_chatters, get_recent_chat, etc.
+  - Outbound messages (4 methods): enqueue, get_unsent, mark_sent, mark_failed
+  - Status & tokens (7 methods): update_status, generate_token, validate_token, etc.
+- **Session Management**: Context manager pattern (`async with self._get_session()`)
+- **Automatic Transactions**: Auto-commit on success, auto-rollback on error
+- **Connection Pooling**: PostgreSQL connection pooling (5 base + 10 overflow)
+- **File Path Support**: Auto-converts file paths to SQLAlchemy URLs
+
+#### Backward Compatibility
+- **API Unchanged**: All methods return same data structures (dicts, lists, tuples)
+- **Drop-In Replacement**: No changes required for existing code
+- **Path Auto-Conversion**: Constructor accepts both URLs and file paths
+  - `BotDatabase('/path/to/db.db')` → `sqlite+aiosqlite:///...`
+  - `BotDatabase(':memory:')` → `sqlite+aiosqlite:///:memory:`
+  - `BotDatabase('postgresql://...')` → Works directly
+
+#### Performance Improvements
+- **Connection Pooling**: PostgreSQL uses connection pooling for better performance
+- **Batch Operations**: Multi-row inserts/updates use SQLAlchemy bulk operations
+- **Query Optimization**: Indexes preserved from Sortie 1 models
+- **Async Throughout**: All operations fully async (no blocking calls)
+
+### 🔧 Changes (Sortie 2)
+
+**Modified Files**:
+- `common/database.py` - Complete ORM refactor (1,107 lines)
+  - Replaced aiosqlite imports with SQLAlchemy
+  - Replaced `__init__` (now creates engine + session factory)
+  - Replaced `connect()`/`close()` (engine lifecycle management)
+  - Added `_get_session()` context manager
+  - Deleted `_run_migrations()` (170+ lines - Alembic handles this)
+  - Migrated all 28 methods to ORM patterns
+
+**Patterns Established**:
+- Simple Insert: `session.add(obj)`
+- Query Single: `select(Model).where(...).scalar_one_or_none()`
+- Query Multiple: `select(Model).where(...).order_by(...).limit(n)`
+- Update: `update(Model).where(...).values(...)`
+- Bulk Delete: `delete(Model).where(...).rowcount`
+
+### ⚠️ Known Issues (Sortie 2)
+
+- **Test Suite Requires Updates**: Tests written for aiosqlite, need async/ORM updates
+  - Will be addressed in Sortie 3 (Test Migration)
+  - Non-blocking: All 28 methods functional and tested manually
+  - Tests use old `BotDatabase(path)` pattern, now auto-converted
+
+### 🌟 What's New (Sortie 1 - ORM Foundation)
+
+#### SQLAlchemy ORM Models
 
 This release establishes the SQLAlchemy ORM foundation for Rosey, replacing raw SQL strings with type-safe ORM models. The migration framework (Alembic) is now initialized and ready for schema versioning.
 

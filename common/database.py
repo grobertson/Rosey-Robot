@@ -1,77 +1,161 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SQLite database for bot state persistence and statistics tracking"""
+"""
+Database for bot state persistence and statistics tracking.
+
+Uses SQLAlchemy ORM with async support.
+Supports SQLite (dev/test) and PostgreSQL (production).
+
+Migration History:
+    v0.5.0: aiosqlite (direct SQL queries)
+    v0.6.0: SQLAlchemy ORM (Sprint 11 Sortie 2)
+"""
 import logging
 import sqlite3
 import time
-import aiosqlite
-from typing import Optional
+from contextlib import asynccontextmanager
+
+from sqlalchemy import select, update, delete, func, literal_column, or_, text
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    AsyncSession,
+    async_sessionmaker
+)
+
+from common.models import (
+    UserStats,
+    UserAction,
+    ChannelStats,
+    UserCountHistory,
+    RecentChat,
+    CurrentStatus,
+    OutboundMessage,
+    ApiToken
+)
 
 
 class BotDatabase:
-    """Database for tracking bot state and user statistics
+    """
+    Database for tracking bot state and user statistics.
     
-    This is an async-only implementation (Sprint 10 v0.5.0).
-    All database operations require async/await patterns.
+    Uses SQLAlchemy ORM with async support for database operations.
+    Supports SQLite (dev/test) and PostgreSQL (production).
+    
+    Attributes:
+        engine: SQLAlchemy async engine
+        session_factory: Factory for creating async sessions
+        database_url: Database connection URL
+    
+    Example:
+        # SQLite (development)
+        db = BotDatabase('sqlite+aiosqlite:///bot_data.db')
+        await db.connect()
+        await db.user_joined('Alice')
+        await db.close()
+        
+        # PostgreSQL (production)
+        db = BotDatabase('postgresql+asyncpg://user:pass@host/db')
+        await db.connect()
     """
 
-    def __init__(self, db_path='bot_data.db'):
-        """Initialize database instance (connection created via connect()).
+    def __init__(self, database_url='sqlite+aiosqlite:///bot_data.db'):
+        """
+        Initialize database engine and session factory.
         
         Args:
-            db_path: Path to SQLite database file (default: 'bot_data.db')
+            database_url: SQLAlchemy database URL or file path
+                SQLite URL: 'sqlite+aiosqlite:///path/to/db.db'
+                SQLite path: '/path/to/db.db' or 'C:\\path\\to\\db.db'
+                In-memory: ':memory:'
+                PostgreSQL: 'postgresql+asyncpg://user:pass@host/db'
         
         Note:
-            Call `await db.connect()` after initialization to establish connection.
-            This is v0.5.0 alpha - breaking change from Sprint 9.
-        
-        Example:
-            db = BotDatabase('test.db')
-            await db.connect()
-            await db.user_joined('Alice')
-            await db.close()
+            Tables are created via Alembic migrations, not here.
+            Call connect() after initialization to ensure tables exist.
         """
         self.logger = logging.getLogger(__name__)
-        self.db_path = db_path
-        self.conn: Optional[aiosqlite.Connection] = None
+        
+        # Convert file paths to SQLAlchemy URLs
+        if not database_url.startswith(('sqlite+', 'postgresql+', 'mysql+')):
+            if database_url == ':memory:':
+                database_url = 'sqlite+aiosqlite:///:memory:'
+            else:
+                # Convert file path to URL (works for relative and absolute paths)
+                import pathlib
+                import urllib.parse
+                path_obj = pathlib.Path(database_url)
+                # Ensure absolute path for consistency
+                if not path_obj.is_absolute():
+                    path_obj = path_obj.resolve()
+                # Convert to URI format (forward slashes, URL-encoded)
+                path_str = path_obj.as_posix()  # Convert \\ to /
+                encoded_path = urllib.parse.quote(path_str, safe='/:')
+                database_url = f'sqlite+aiosqlite:///{encoded_path}'
+        
+        self.database_url = database_url
+        
+        # Create async engine with connection pooling
+        # Note: SQLite uses NullPool by default (no pooling args)
+        engine_kwargs = {
+            'echo': False,  # Set True to log all SQL queries
+            'pool_pre_ping': True,  # Verify connections before use
+        }
+        
+        # Only add pooling args for non-SQLite databases
+        if not database_url.startswith('sqlite'):
+            engine_kwargs['pool_size'] = 5  # Connection pool size
+            engine_kwargs['max_overflow'] = 10  # Max overflow connections
+        
+        self.engine = create_async_engine(database_url, **engine_kwargs)
+        
+        # Create session factory
+        self.session_factory = async_sessionmaker(
+            self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,  # Don't expire objects after commit
+        )
+        
         self._is_connected = False
+        self.logger.info('Initialized database: %s', database_url)
 
     async def connect(self) -> None:
-        """Initialize async database connection and run migrations.
+        """
+        Connect to database and verify connection.
         
-        This method must be called before using the database in async contexts.
-        Creates the SQLite connection using aiosqlite and initializes all tables.
+        This method verifies the database connection is working.
+        Tables are created via Alembic migrations, not here.
+        
+        Maintained for compatibility with Sprint 10 tests.
         
         Example:
-            db = BotDatabase('test.db')
+            db = BotDatabase('sqlite+aiosqlite:///test.db')
             await db.connect()
             await db.user_joined('Alice')
             await db.close()
         
         Raises:
             RuntimeError: If already connected
-            aiosqlite.Error: If database connection fails
         """
         if self._is_connected:
-            raise RuntimeError(f"Database already connected: {self.db_path}")
+            raise RuntimeError(f"Database already connected: {self.database_url}")
         
-        self.logger.info('Connecting to database (async): %s', self.db_path)
+        self.logger.info('Verifying database connection...')
         
-        # Create async connection
-        self.conn = await aiosqlite.connect(self.db_path)
-        self.conn.row_factory = aiosqlite.Row
-        
-        # Run migrations to create tables
-        await self._run_migrations()
-        
-        self._is_connected = True
-        self.logger.info('Database connected successfully: %s', self.db_path)
+        # Verify connection by executing simple query
+        async with self._get_session() as session:
+            result = await session.execute(select(func.count()).select_from(UserStats))
+            count = result.scalar()
+            self._is_connected = True
+            self.logger.info('Database connected (%d users)', count)
     
     async def close(self) -> None:
-        """Close database connection gracefully.
+        """
+        Close database engine and all pooled connections.
         
-        Commits any pending transactions and closes the connection.
+        Disposes of the engine and closes all connections in the pool.
         Safe to call multiple times - subsequent calls are no-ops.
+        
+        Should be called during application shutdown.
         
         Example:
             await db.close()
@@ -80,34 +164,31 @@ class BotDatabase:
             self.logger.debug('Database already closed or never connected')
             return
         
-        if self.conn:
-            try:
-                # Commit any pending transactions
-                await self.conn.commit()
-                
-                # Close active sessions (update user stats)
-                now = int(time.time())
-                cursor = await self.conn.cursor()
-                await cursor.execute('''
-                    UPDATE user_stats
-                    SET total_time_connected = total_time_connected + (? - current_session_start),
-                        current_session_start = NULL,
-                        last_seen = ?
-                    WHERE current_session_start IS NOT NULL
-                ''', (now, now))
-                await self.conn.commit()
-                
-                # Close connection
-                await self.conn.close()
-                self.logger.info('Database connection closed: %s', self.db_path)
+        try:
+            # Update active sessions (close any open user sessions)
+            now = int(time.time())
+            async with self._get_session() as session:
+                await session.execute(
+                    update(UserStats)
+                    .where(UserStats.current_session_start.is_not(None))
+                    .values(
+                        total_time_connected=UserStats.total_time_connected + 
+                            (now - UserStats.current_session_start),
+                        current_session_start=None,
+                        last_seen=now
+                    )
+                )
             
-            except Exception as e:
-                self.logger.error('Error closing database: %s', e)
-                raise
-            
-            finally:
-                self._is_connected = False
-                self.conn = None
+            # Dispose engine (closes all pooled connections)
+            await self.engine.dispose()
+            self.logger.info('Database connection closed')
+        
+        except Exception as e:
+            self.logger.error('Error closing database: %s', e)
+            raise
+        
+        finally:
+            self._is_connected = False
     
     @property
     def is_connected(self) -> bool:
@@ -117,296 +198,142 @@ class BotDatabase:
             bool: True if connected, False otherwise
         """
         return self._is_connected
-
-    async def _run_migrations(self) -> None:
-        """Run database migrations to create tables.
-        
-        This is the async version of _create_tables(). Creates all required
-        tables if they don't exist. Idempotent - safe to call multiple times.
-        
-        Tables created:
-        - user_stats: User statistics (chat lines, time connected)
-        - user_actions: Audit log for PM commands
-        - channel_stats: High water marks for users
-        - user_count_history: Historical user count data
-        - recent_chat: Last N chat messages
-        - current_status: Live bot state
-        - outbound_messages: Message queue for bot
-        - api_tokens: Authentication tokens
+    
+    @asynccontextmanager
+    async def _get_session(self):
         """
-        cursor = await self.conn.cursor()
+        Get async session from pool (context manager).
+        
+        Automatically handles commit/rollback/cleanup.
+        Sessions are acquired from the connection pool.
+        
+        Usage:
+            async with self._get_session() as session:
+                result = await session.execute(select(UserStats))
+                # Commit happens automatically on success
+                # Rollback happens automatically on exception
+        
+        Yields:
+            AsyncSession: Database session
+        """
+        session = self.session_factory()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
-        # User statistics table
-        await cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_stats (
-                username TEXT PRIMARY KEY,
-                first_seen INTEGER NOT NULL,
-                last_seen INTEGER NOT NULL,
-                total_chat_lines INTEGER DEFAULT 0,
-                total_time_connected INTEGER DEFAULT 0,
-                current_session_start INTEGER
-            )
-        ''')
-
-        # User actions/PM log table
-        await cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_actions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp INTEGER NOT NULL,
-                username TEXT NOT NULL,
-                action_type TEXT NOT NULL,
-                details TEXT
-            )
-        ''')
-
-        # High water mark table (single row with channel stats)
-        await cursor.execute('''
-            CREATE TABLE IF NOT EXISTS channel_stats (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                max_users INTEGER DEFAULT 0,
-                max_users_timestamp INTEGER,
-                max_connected INTEGER DEFAULT 0,
-                max_connected_timestamp INTEGER,
-                last_updated INTEGER
-            )
-        ''')
-
-        # User count history table for graphing over time
-        await cursor.execute('''
-            CREATE TABLE IF NOT EXISTS user_count_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp INTEGER NOT NULL,
-                chat_users INTEGER NOT NULL,
-                connected_users INTEGER NOT NULL
-            )
-        ''')
-
-        # Create index for efficient time-range queries
-        await cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_user_count_timestamp
-            ON user_count_history(timestamp)
-        ''')
-
-        # Recent chat messages table (keep last N messages)
-        await cursor.execute('''
-            CREATE TABLE IF NOT EXISTS recent_chat (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp INTEGER NOT NULL,
-                username TEXT NOT NULL,
-                message TEXT NOT NULL
-            )
-        ''')
-
-        # Create index for efficient timestamp queries
-        await cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_recent_chat_timestamp
-            ON recent_chat(timestamp DESC)
-        ''')
-
-        # Current status table (single row with live bot state)
-        await cursor.execute('''
-            CREATE TABLE IF NOT EXISTS current_status (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
-                bot_name TEXT,
-                bot_rank REAL,
-                bot_afk INTEGER DEFAULT 0,
-                channel_name TEXT,
-                current_chat_users INTEGER DEFAULT 0,
-                current_connected_users INTEGER DEFAULT 0,
-                playlist_items INTEGER DEFAULT 0,
-                current_media_title TEXT,
-                current_media_duration INTEGER,
-                bot_start_time INTEGER,
-                bot_connected INTEGER DEFAULT 0,
-                last_updated INTEGER
-            )
-        ''')
-
-        # Initialize current_status if empty
-        await cursor.execute('SELECT COUNT(*) FROM current_status')
-        row = await cursor.fetchone()
-        if row[0] == 0:
-            await cursor.execute('''
-                INSERT INTO current_status (id, last_updated)
-                VALUES (1, ?)
-            ''', (int(time.time()),))
-
-        # Outbound messages queue (messages to be sent by the bot)
-        # Includes retry logic: retry_count tracks attempts, last_error stores
-        # failure reason for permanent errors
-        await cursor.execute('''
-            CREATE TABLE IF NOT EXISTS outbound_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp INTEGER NOT NULL,
-                message TEXT NOT NULL,
-                sent INTEGER DEFAULT 0,
-                sent_timestamp INTEGER,
-                retry_count INTEGER DEFAULT 0,
-                last_error TEXT
-            )
-        ''')
-        await cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_outbound_sent
-            ON outbound_messages(sent, timestamp)
-        ''')
-
-        # Migrate existing outbound_messages table if needed
-        await cursor.execute('PRAGMA table_info(outbound_messages)')
-        outbound_cols = [col[1] for col in await cursor.fetchall()]
-        if 'retry_count' not in outbound_cols:
-            await cursor.execute('''
-                ALTER TABLE outbound_messages
-                ADD COLUMN retry_count INTEGER DEFAULT 0
-            ''')
-        if 'last_error' not in outbound_cols:
-            await cursor.execute('''
-                ALTER TABLE outbound_messages
-                ADD COLUMN last_error TEXT
-            ''')
-
-        # API tokens table for authentication
-        # Supports token-based auth for external apps accessing /api/say
-        await cursor.execute('''
-            CREATE TABLE IF NOT EXISTS api_tokens (
-                token TEXT PRIMARY KEY,
-                description TEXT,
-                created_at INTEGER NOT NULL,
-                last_used INTEGER,
-                revoked INTEGER DEFAULT 0
-            )
-        ''')
-        await cursor.execute('''
-            CREATE INDEX IF NOT EXISTS idx_api_tokens_revoked
-            ON api_tokens(revoked, token)
-        ''')
-
-        # Initialize channel_stats if empty
-        await cursor.execute('SELECT COUNT(*) FROM channel_stats')
-        row = await cursor.fetchone()
-        if row[0] == 0:
-            await cursor.execute('''
-                INSERT INTO channel_stats (id, max_users, last_updated)
-                VALUES (1, 0, ?)
-            ''', (int(time.time()),))
-        else:
-            # Migrate existing database - add new columns if they don't exist
-            await cursor.execute('PRAGMA table_info(channel_stats)')
-            columns = [col[1] for col in await cursor.fetchall()]
-            if 'max_connected' not in columns:
-                await cursor.execute('''
-                    ALTER TABLE channel_stats
-                    ADD COLUMN max_connected INTEGER DEFAULT 0
-                ''')
-            if 'max_connected_timestamp' not in columns:
-                await cursor.execute('''
-                    ALTER TABLE channel_stats
-                    ADD COLUMN max_connected_timestamp INTEGER
-                ''')
-
-        await self.conn.commit()
-        self.logger.info('Database migrations completed')
+    # ========================================================================
+    # User Tracking Methods
+    # ========================================================================
 
     async def user_joined(self, username):
-        """Record a user joining the channel
+        """
+        Record a user joining the channel.
 
         Args:
             username: Username that joined
         """
-        cursor = await self.conn.cursor()
         now = int(time.time())
 
-        # Check if user exists
-        await cursor.execute('SELECT username FROM user_stats WHERE username = ?',
-                       (username,))
-        exists = await cursor.fetchone() is not None
+        async with self._get_session() as session:
+            # Check if user exists
+            result = await session.execute(
+                select(UserStats).where(UserStats.username == username)
+            )
+            user = result.scalar_one_or_none()
 
-        if exists:
-            # Update existing user - start new session
-            await cursor.execute('''
-                UPDATE user_stats
-                SET last_seen = ?,
-                    current_session_start = ?
-                WHERE username = ?
-            ''', (now, now, username))
-        else:
-            # New user - create entry
-            await cursor.execute('''
-                INSERT INTO user_stats
-                (username, first_seen, last_seen, current_session_start)
-                VALUES (?, ?, ?, ?)
-            ''', (username, now, now, now))
-
-        await self.conn.commit()
+            if user:
+                # Update existing user - start new session
+                user.last_seen = now
+                user.current_session_start = now
+            else:
+                # New user - create entry
+                user = UserStats(
+                    username=username,
+                    first_seen=now,
+                    last_seen=now,
+                    current_session_start=now,
+                    total_chat_lines=0,
+                    total_time_connected=0
+                )
+                session.add(user)
+            
+            # Commit handled by context manager
 
     async def user_left(self, username):
-        """Record a user leaving the channel
+        """
+        Record a user leaving the channel.
 
         Args:
             username: Username that left
         """
-        cursor = await self.conn.cursor()
         now = int(time.time())
 
-        # Get session start time
-        await cursor.execute('''
-            SELECT current_session_start, total_time_connected
-            FROM user_stats WHERE username = ?
-        ''', (username,))
+        async with self._get_session() as session:
+            # Get user
+            result = await session.execute(
+                select(UserStats).where(UserStats.username == username)
+            )
+            user = result.scalar_one_or_none()
 
-        row = await cursor.fetchone()
-        if row and row['current_session_start']:
-            session_duration = now - row['current_session_start']
-            new_total = row['total_time_connected'] + session_duration
-
-            # Update user stats
-            await cursor.execute('''
-                UPDATE user_stats
-                SET last_seen = ?,
-                    total_time_connected = ?,
-                    current_session_start = NULL
-                WHERE username = ?
-            ''', (now, new_total, username))
-
-            await self.conn.commit()
+            if user and user.current_session_start:
+                # Calculate session duration
+                session_duration = now - user.current_session_start
+                
+                # Update stats
+                user.last_seen = now
+                user.total_time_connected += session_duration
+                user.current_session_start = None
+                
+                # Commit handled by context manager
 
     async def user_chat_message(self, username, message=None):
-        """Increment chat message count for user and optionally log message
+        """
+        Increment chat message count for user and optionally log message.
 
         Args:
             username: Username that sent a message
             message: Optional message text to store in recent_chat
         """
-        cursor = await self.conn.cursor()
         now = int(time.time())
 
-        # Update user stats
-        await cursor.execute('''
-            UPDATE user_stats
-            SET total_chat_lines = total_chat_lines + 1,
-                last_seen = ?
-            WHERE username = ?
-        ''', (now, username))
+        async with self._get_session() as session:
+            # Update user stats (increment counter)
+            await session.execute(
+                update(UserStats)
+                .where(UserStats.username == username)
+                .values(
+                    total_chat_lines=UserStats.total_chat_lines + 1,
+                    last_seen=now
+                )
+            )
 
-        # Store in recent chat if message provided
-        # Filter out server messages (username may be None or indicate server)
-        if message and username and username.lower() != 'server':
-            await cursor.execute('''
-                INSERT INTO recent_chat (timestamp, username, message)
-                VALUES (?, ?, ?)
-            ''', (now, username, message))
+            # Store in recent chat if message provided
+            if message and username and username.lower() != 'server':
+                # Add message
+                chat = RecentChat(
+                    timestamp=now,
+                    username=username,
+                    message=message
+                )
+                session.add(chat)
 
-            # Cleanup messages older than retention window (default 150 hours)
-            retention_hours = 150
-            cutoff = int(time.time()) - (retention_hours * 3600)
-            await cursor.execute('''
-                DELETE FROM recent_chat
-                WHERE timestamp < ?
-            ''', (cutoff,))
-
-        await self.conn.commit()
+                # Cleanup old messages (retention: 150 hours)
+                retention_hours = 150
+                cutoff = now - (retention_hours * 3600)
+                await session.execute(
+                    delete(RecentChat).where(RecentChat.timestamp < cutoff)
+                )
+            
+            # Commit handled by context manager
 
     async def get_recent_messages(self, limit: int = 100, offset: int = 0) -> list[dict]:
-        """Get recent chat messages from database.
+        """
+        Get recent chat messages from database.
         
         Returns messages sorted by timestamp descending (most recent first).
         Used for chat history display and throughput benchmarks.
@@ -425,29 +352,30 @@ class BotDatabase:
         Example:
             messages = await db.get_recent_messages(limit=10)
             for msg in messages:
-                print(f"{msg['username']}: {msg['message']}")
+                print(f\"{msg['username']}: {msg['message']}\")
         """
-        cursor = await self.conn.cursor()
-        await cursor.execute('''
-            SELECT id, timestamp, username, message
-            FROM recent_chat
-            ORDER BY timestamp DESC
-            LIMIT ? OFFSET ?
-        ''', (limit, offset))
-        
-        rows = await cursor.fetchall()
-        return [
-            {
-                'id': row[0],
-                'timestamp': row[1],
-                'username': row[2],
-                'message': row[3]
-            }
-            for row in rows
-        ]
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(RecentChat)
+                .order_by(RecentChat.timestamp.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+            messages = result.scalars().all()
+            
+            return [
+                {
+                    'id': msg.id,
+                    'timestamp': msg.timestamp,
+                    'username': msg.username,
+                    'message': msg.message
+                }
+                for msg in messages
+            ]
 
     async def log_chat(self, username: str, message: str, timestamp: int = None) -> None:
-        """Log chat message to database.
+        """
+        Log chat message to database.
         
         Convenience method for performance benchmarks. Production code
         should use user_chat_message() which includes additional tracking.
@@ -463,136 +391,152 @@ class BotDatabase:
         if timestamp is None:
             timestamp = int(time.time())
         
-        cursor = await self.conn.cursor()
-        await cursor.execute('''
-            INSERT INTO recent_chat (timestamp, username, message)
-            VALUES (?, ?, ?)
-        ''', (timestamp, username, message))
-        
-        await self.conn.commit()
+        async with self._get_session() as session:
+            chat = RecentChat(
+                timestamp=timestamp,
+                username=username,
+                message=message
+            )
+            session.add(chat)
+            
+            # Commit handled by context manager
+
+    # ========================================================================
+    # Audit Logging
+    # ========================================================================
 
     async def log_user_action(self, username, action_type, details=None):
-        """Log a user action (PM command, etc.)
+        """
+        Log a user action (PM command, moderation, etc.).
 
         Args:
             username: Username performing the action
-            action_type: Type of action (e.g., 'pm_command', 'kick', 'ban')
+            action_type: Type of action (e.g., 'pm_command', 'kick')
             details: Optional details about the action
         """
-        cursor = await self.conn.cursor()
-        await cursor.execute('''
-            INSERT INTO user_actions
-            (timestamp, username, action_type, details)
-            VALUES (?, ?, ?, ?)
-        ''', (int(time.time()), username, action_type, details))
-        await self.conn.commit()
+        now = int(time.time())
+
+        async with self._get_session() as session:
+            action = UserAction(
+                timestamp=now,
+                username=username,
+                action_type=action_type,
+                details=details
+            )
+            session.add(action)
+            # Commit handled by context manager
+
+    # ========================================================================
+    # Channel Statistics
+    # ========================================================================
 
     async def update_high_water_mark(self, current_user_count,
-                               current_connected_count=None):
-        """Update high water mark if current count exceeds it
+                                    current_connected_count=None):
+        """
+        Update high water mark if current count exceeds it.
 
         Args:
             current_user_count: Current number of users in chat
             current_connected_count: Current number of connected viewers
         """
-        cursor = await self.conn.cursor()
         now = int(time.time())
 
-        # Get current max
-        await cursor.execute('''
-            SELECT max_users, max_connected
-            FROM channel_stats WHERE id = 1
-        ''')
-        row = await cursor.fetchone()
-        current_max_users = row['max_users'] if row else 0
-        current_max_connected = row['max_connected'] if row else 0
+        async with self._get_session() as session:
+            # Get or create channel stats (singleton)
+            result = await session.execute(
+                select(ChannelStats).where(ChannelStats.id == 1)
+            )
+            stats = result.scalar_one_or_none()
 
-        updated = False
+            if not stats:
+                # Initialize
+                stats = ChannelStats(
+                    id=1,
+                    max_users=0,
+                    last_updated=now
+                )
+                session.add(stats)
 
-        # Update max users (chat) if exceeded
-        if current_user_count > current_max_users:
-            await cursor.execute('''
-                UPDATE channel_stats
-                SET max_users = ?,
-                    max_users_timestamp = ?,
-                    last_updated = ?
-                WHERE id = 1
-            ''', (current_user_count, now, now))
-            updated = True
-            self.logger.info('New high water mark (chat): %d users',
-                           current_user_count)
+            # Update high water marks
+            if current_user_count > stats.max_users:
+                stats.max_users = current_user_count
+                stats.max_users_timestamp = now
+                self.logger.info('New high water mark (chat): %d users',
+                               current_user_count)
 
-        # Update max connected if exceeded
-        if current_connected_count and current_connected_count > current_max_connected:
-            await cursor.execute('''
-                UPDATE channel_stats
-                SET max_connected = ?,
-                    max_connected_timestamp = ?,
-                    last_updated = ?
-                WHERE id = 1
-            ''', (current_connected_count, now, now))
-            updated = True
-            self.logger.info('New high water mark (connected): %d viewers',
-                           current_connected_count)
+            if current_connected_count and current_connected_count > (stats.max_connected or 0):
+                stats.max_connected = current_connected_count
+                stats.max_connected_timestamp = now
+                self.logger.info('New high water mark (connected): %d viewers',
+                               current_connected_count)
 
-        if updated:
-            await self.conn.commit()
+            stats.last_updated = now
+            # Commit handled by context manager
 
     async def get_user_stats(self, username):
-        """Get statistics for a specific user
-
+        """
+        Get statistics for a specific user.
+        
         Args:
             username: Username to look up
-
+        
         Returns:
-            dict with user stats or None if not found
+            dict: User stats or None if not found
         """
-        cursor = await self.conn.cursor()
-        await cursor.execute('''
-            SELECT * FROM user_stats WHERE username = ?
-        ''', (username,))
-        row = await cursor.fetchone()
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(UserStats).where(UserStats.username == username)
+            )
+            user = result.scalar_one_or_none()
 
-        if row:
-            return dict(row)
-        return None
+            if user:
+                return {
+                    'username': user.username,
+                    'first_seen': user.first_seen,
+                    'last_seen': user.last_seen,
+                    'total_chat_lines': user.total_chat_lines,
+                    'total_time_connected': user.total_time_connected,
+                    'current_session_start': user.current_session_start
+                }
+            return None
 
     async def get_high_water_mark(self):
-        """Get the high water mark (max users ever in chat)
+        """
+        Get the high water mark (max users ever in chat).
 
         Returns:
             tuple: (max_users, timestamp) or (0, None)
         """
-        cursor = await self.conn.cursor()
-        await cursor.execute('''
-            SELECT max_users, max_users_timestamp
-            FROM channel_stats WHERE id = 1
-        ''')
-        row = await cursor.fetchone()
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(ChannelStats).where(ChannelStats.id == 1)
+            )
+            stats = result.scalar_one_or_none()
 
-        if row:
-            return (row['max_users'], row['max_users_timestamp'])
-        return (0, None)
+            if stats:
+                return (stats.max_users, stats.max_users_timestamp)
+            return (0, None)
 
     async def get_high_water_mark_connected(self):
-        """Get the high water mark for connected viewers
+        """
+        Get the high water mark for connected viewers.
 
         Returns:
             tuple: (max_connected, timestamp) or (0, None)
         """
-        cursor = await self.conn.cursor()
-        await cursor.execute('''
-            SELECT max_connected, max_connected_timestamp
-            FROM channel_stats WHERE id = 1
-        ''')
-        row = await cursor.fetchone()
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(ChannelStats).where(ChannelStats.id == 1)
+            )
+            stats = result.scalar_one_or_none()
 
-        if row:
-            return (row['max_connected'], row['max_connected_timestamp'])
-        return (0, None)
+            if stats:
+                return (stats.max_connected, stats.max_connected_timestamp)
+            return (0, None)
 
     async def get_top_chatters(self, limit=10):
-        """Get top chatters by message count
+        """
+        Get top chatters by message count.
 
         Args:
             limit: Number of results to return
@@ -600,48 +544,57 @@ class BotDatabase:
         Returns:
             list of tuples: (username, chat_lines)
         """
-        cursor = await self.conn.cursor()
-        await cursor.execute('''
-            SELECT username, total_chat_lines
-            FROM user_stats
-            WHERE total_chat_lines > 0
-            ORDER BY total_chat_lines DESC
-            LIMIT ?
-        ''', (limit,))
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(UserStats)
+                .where(UserStats.total_chat_lines > 0)
+                .order_by(UserStats.total_chat_lines.desc())
+                .limit(limit)
+            )
+            users = result.scalars().all()
 
-        return [(row['username'], row['total_chat_lines'])
-                for row in await cursor.fetchall()]
+            return [(user.username, user.total_chat_lines) for user in users]
 
     async def get_total_users_seen(self):
-        """Get total number of unique users ever seen
+        """
+        Get total number of unique users ever seen.
 
         Returns:
             int: Total unique users
         """
-        cursor = await self.conn.cursor()
-        await cursor.execute('SELECT COUNT(*) as count FROM user_stats')
-        row = await cursor.fetchone()
-        return row['count']
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(func.count()).select_from(UserStats)
+            )
+            count = result.scalar()
+            return count
+
+    # ========================================================================
+    # Historical Tracking
+    # ========================================================================
 
     async def log_user_count(self, chat_users, connected_users):
-        """Log current user counts for historical tracking
+        """
+        Log current user counts for historical tracking.
 
         Args:
             chat_users: Number of users in chat (with usernames)
             connected_users: Total connected viewers (including anonymous)
         """
-        cursor = await self.conn.cursor()
         now = int(time.time())
 
-        await cursor.execute('''
-            INSERT INTO user_count_history (timestamp, chat_users, connected_users)
-            VALUES (?, ?, ?)
-        ''', (now, chat_users, connected_users))
-
-        await self.conn.commit()
+        async with self._get_session() as session:
+            history = UserCountHistory(
+                timestamp=now,
+                chat_users=chat_users,
+                connected_users=connected_users
+            )
+            session.add(history)
+            # Commit handled by context manager
 
     async def get_user_count_history(self, hours=24):
-        """Get user count history for the specified time period
+        """
+        Get user count history for the specified time period.
 
         Args:
             hours: Number of hours of history to retrieve (default 24)
@@ -649,42 +602,55 @@ class BotDatabase:
         Returns:
             list: List of dicts with timestamp, chat_users, connected_users
         """
-        cursor = await self.conn.cursor()
         since = int(time.time()) - (hours * 3600)
 
-        await cursor.execute('''
-            SELECT timestamp, chat_users, connected_users
-            FROM user_count_history
-            WHERE timestamp >= ?
-            ORDER BY timestamp ASC
-        ''', (since,))
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(UserCountHistory)
+                .where(UserCountHistory.timestamp >= since)
+                .order_by(UserCountHistory.timestamp.asc())
+            )
+            history = result.scalars().all()
 
-        return [dict(row) for row in await cursor.fetchall()]
+            return [
+                {
+                    'timestamp': h.timestamp,
+                    'chat_users': h.chat_users,
+                    'connected_users': h.connected_users
+                }
+                for h in history
+            ]
 
     async def cleanup_old_history(self, days=30):
-        """Remove user count history older than specified days
+        """
+        Remove user count history older than specified days.
 
         Args:
             days: Keep history for this many days (default 30)
+        
+        Returns:
+            int: Number of records deleted
         """
-        cursor = await self.conn.cursor()
         cutoff = int(time.time()) - (days * 86400)
 
-        await cursor.execute('''
-            DELETE FROM user_count_history
-            WHERE timestamp < ?
-        ''', (cutoff,))
+        async with self._get_session() as session:
+            result = await session.execute(
+                delete(UserCountHistory).where(UserCountHistory.timestamp < cutoff)
+            )
+            deleted = result.rowcount
 
-        deleted = cursor.rowcount
-        await self.conn.commit()
+            if deleted > 0:
+                self.logger.info('Cleaned up %d old history records', deleted)
 
-        if deleted > 0:
-            self.logger.info('Cleaned up %d old history records', deleted)
+            return deleted
 
-        return deleted
+    # ========================================================================
+    # Recent Chat
+    # ========================================================================
 
     async def get_recent_chat(self, limit=20):
-        """Get recent chat messages
+        """
+        Get recent chat messages.
 
         Args:
             limit: Maximum number of messages to retrieve (default 20)
@@ -695,23 +661,29 @@ class BotDatabase:
                 timestamps may appear in reverse insertion order due to SQLite's
                 tie-breaking behavior.
         """
-        cursor = await self.conn.cursor()
-        await cursor.execute('''
-            SELECT timestamp, username, message
-            FROM recent_chat
-            ORDER BY timestamp DESC
-            LIMIT ?
-        ''', (limit,))
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(RecentChat)
+                .order_by(RecentChat.timestamp.desc())
+                .limit(limit)
+            )
+            messages = result.scalars().all()
 
-        # Query returns DESC (newest first), reverse() flips to newest first
-        # when considering the LIMIT. Messages with same timestamp maintain
-        # reverse insertion order due to SQLite rowid ordering.
-        messages = [dict(row) for row in await cursor.fetchall()]
-        messages.reverse()
-        return messages
+            # Convert to dicts and reverse (to get oldest-to-newest for limit)
+            chat_list = [
+                {
+                    'timestamp': msg.timestamp,
+                    'username': msg.username,
+                    'message': msg.message
+                }
+                for msg in messages
+            ]
+            chat_list.reverse()
+            return chat_list
 
     async def get_recent_chat_since(self, minutes=20, limit=1000):
-        """Get recent chat messages within the last `minutes` minutes.
+        """
+        Get recent chat messages within the last `minutes` minutes.
 
         Args:
             minutes: Time window in minutes to retrieve messages for.
@@ -721,20 +693,33 @@ class BotDatabase:
             list of dicts with timestamp, username, message in chronological
                 order (oldest first, ascending by timestamp).
         """
-        cursor = await self.conn.cursor()
         since = int(time.time()) - (minutes * 60)
-        await cursor.execute('''
-            SELECT timestamp, username, message
-            FROM recent_chat
-            WHERE timestamp >= ?
-            ORDER BY timestamp ASC
-            LIMIT ?
-        ''', (since, limit))
 
-        return [dict(row) for row in await cursor.fetchall()]
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(RecentChat)
+                .where(RecentChat.timestamp >= since)
+                .order_by(RecentChat.timestamp.asc())
+                .limit(limit)
+            )
+            messages = result.scalars().all()
+
+            return [
+                {
+                    'timestamp': msg.timestamp,
+                    'username': msg.username,
+                    'message': msg.message
+                }
+                for msg in messages
+            ]
+
+    # ========================================================================
+    # Outbound Messages Queue
+    # ========================================================================
 
     async def enqueue_outbound_message(self, message):
-        """Add a message to the outbound queue for the bot to send.
+        """
+        Add a message to the outbound queue for the bot to send.
 
         Args:
             message: Text message to send
@@ -742,17 +727,22 @@ class BotDatabase:
         Returns:
             id of inserted outbound message
         """
-        cursor = await self.conn.cursor()
         now = int(time.time())
-        await cursor.execute('''
-            INSERT INTO outbound_messages (timestamp, message, sent)
-            VALUES (?, ?, 0)
-        ''', (now, message))
-        await self.conn.commit()
-        return cursor.lastrowid
+
+        async with self._get_session() as session:
+            outbound = OutboundMessage(
+                timestamp=now,
+                message=message,
+                sent=False,
+                retry_count=0
+            )
+            session.add(outbound)
+            await session.flush()  # Flush to get the ID
+            return outbound.id
 
     async def get_unsent_outbound_messages(self, limit=50, max_retries=3):
-        """Fetch unsent outbound messages ready for sending.
+        """
+        Fetch unsent outbound messages ready for sending.
 
         Only returns messages that haven't exceeded retry limit.
         Uses exponential backoff: messages with higher retry counts
@@ -765,38 +755,60 @@ class BotDatabase:
         Returns:
             list of rows as dicts (includes retry_count and last_error)
         """
-        cursor = await self.conn.cursor()
         now = int(time.time())
 
-        # Calculate retry delay: 2^retry_count minutes
-        # retry 0: immediate, retry 1: 2min, retry 2: 4min, retry 3: 8min
-        await cursor.execute('''
-            SELECT id, timestamp, message, retry_count, last_error
-            FROM outbound_messages
-            WHERE sent = 0
-              AND retry_count < ?
-              AND (retry_count = 0 OR timestamp + (1 << retry_count) * 60 <= ?)
-            ORDER BY timestamp ASC
-            LIMIT ?
-        ''', (max_retries, now, limit))
-        return [dict(row) for row in await cursor.fetchall()]
+        async with self._get_session() as session:
+            # Complex query with exponential backoff: 2^retry_count minutes
+            # Use literal_column for bitshift since SQLAlchemy doesn't support <<
+            result = await session.execute(
+                select(OutboundMessage)
+                .where(
+                    OutboundMessage.sent == False,
+                    OutboundMessage.retry_count < max_retries,
+                    or_(
+                        OutboundMessage.retry_count == 0,
+                        OutboundMessage.timestamp + 
+                            literal_column('(1 << retry_count) * 60') <= now
+                    )
+                )
+                .order_by(OutboundMessage.timestamp.asc())
+                .limit(limit)
+            )
+            messages = result.scalars().all()
+
+            return [
+                {
+                    'id': msg.id,
+                    'timestamp': msg.timestamp,
+                    'message': msg.message,
+                    'retry_count': msg.retry_count,
+                    'last_error': msg.error_message
+                }
+                for msg in messages
+            ]
 
     async def mark_outbound_sent(self, outbound_id):
-        """Mark outbound message as successfully sent.
+        """
+        Mark outbound message as successfully sent.
 
         Records sent timestamp and marks as sent.
+        
+        Args:
+            outbound_id: Message ID to mark as sent
         """
-        cursor = await self.conn.cursor()
         now = int(time.time())
-        await cursor.execute('''
-            UPDATE outbound_messages
-            SET sent = 1, sent_timestamp = ?
-            WHERE id = ?
-        ''', (now, outbound_id))
-        await self.conn.commit()
+
+        async with self._get_session() as session:
+            await session.execute(
+                update(OutboundMessage)
+                .where(OutboundMessage.id == outbound_id)
+                .values(sent=True, sent_timestamp=now)
+            )
+            # Commit handled by context manager
 
     async def mark_outbound_failed(self, outbound_id, error_msg, is_permanent=False):
-        """Mark outbound message send attempt as failed.
+        """
+        Mark outbound message send attempt as failed.
 
         Increments retry count for transient errors, or marks as permanently
         failed for errors like permission denied or muted.
@@ -806,36 +818,45 @@ class BotDatabase:
             error_msg: Error message description
             is_permanent: If True, mark as sent to prevent further retries
         """
-        cursor = await self.conn.cursor()
         now = int(time.time())
 
-        if is_permanent:
-            # Permanent failure - mark as "sent" to stop retries
-            await cursor.execute('''
-                UPDATE outbound_messages
-                SET sent = 1,
-                    sent_timestamp = ?,
-                    retry_count = retry_count + 1,
-                    last_error = ?
-                WHERE id = ?
-            ''', (now, error_msg, outbound_id))
-            self.logger.warning('Outbound message %d permanently failed: %s',
-                              outbound_id, error_msg)
-        else:
-            # Transient failure - increment retry count for backoff
-            await cursor.execute('''
-                UPDATE outbound_messages
-                SET retry_count = retry_count + 1,
-                    last_error = ?
-                WHERE id = ?
-            ''', (error_msg, outbound_id))
-            self.logger.info('Outbound message %d failed (will retry): %s',
-                           outbound_id, error_msg)
+        async with self._get_session() as session:
+            if is_permanent:
+                # Permanent failure - mark as "sent" to stop retries
+                await session.execute(
+                    update(OutboundMessage)
+                    .where(OutboundMessage.id == outbound_id)
+                    .values(
+                        sent=True,
+                        sent_timestamp=now,
+                        retry_count=OutboundMessage.retry_count + 1,
+                        error_message=error_msg
+                    )
+                )
+                self.logger.warning('Outbound message %d permanently failed: %s',
+                                  outbound_id, error_msg)
+            else:
+                # Transient failure - increment retry count for backoff
+                await session.execute(
+                    update(OutboundMessage)
+                    .where(OutboundMessage.id == outbound_id)
+                    .values(
+                        retry_count=OutboundMessage.retry_count + 1,
+                        error_message=error_msg
+                    )
+                )
+                self.logger.info('Outbound message %d failed (will retry): %s',
+                               outbound_id, error_msg)
+            
+            # Commit handled by context manager
 
-        await self.conn.commit()
+    # ========================================================================
+    # Current Status
+    # ========================================================================
 
     async def update_current_status(self, **kwargs):
-        """Update current bot status
+        """
+        Update current bot status.
 
         Args:
             **kwargs: Status fields to update (bot_name, bot_rank, bot_afk,
@@ -843,48 +864,63 @@ class BotDatabase:
                      playlist_items, current_media_title, current_media_duration,
                      bot_start_time, bot_connected)
         """
-        cursor = await self.conn.cursor()
+        allowed_fields = [
+            'bot_name', 'bot_rank', 'bot_afk', 'channel_name',
+            'current_chat_users', 'current_connected_users',
+            'playlist_items', 'current_media_title',
+            'current_media_duration', 'bot_start_time', 'bot_connected'
+        ]
 
-        # Build update query dynamically
-        fields = []
-        values = []
+        # Filter to allowed fields
+        updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
-        for key, value in kwargs.items():
-            if key in ['bot_name', 'bot_rank', 'bot_afk', 'channel_name',
-                      'current_chat_users', 'current_connected_users',
-                      'playlist_items', 'current_media_title',
-                      'current_media_duration', 'bot_start_time',
-                      'bot_connected']:
-                fields.append(f'{key} = ?')
-                values.append(value)
-
-        if not fields:
+        if not updates:
             return
 
-        # Always update last_updated
-        fields.append('last_updated = ?')
-        values.append(int(time.time()))
+        # Add last_updated timestamp
+        updates['last_updated'] = int(time.time())
 
-        query = f'UPDATE current_status SET {", ".join(fields)} WHERE id = 1'
-        await cursor.execute(query, values)
-        await self.conn.commit()
+        async with self._get_session() as session:
+            await session.execute(
+                update(CurrentStatus)
+                .where(CurrentStatus.id == 1)
+                .values(**updates)
+            )
 
     async def get_current_status(self):
-        """Get current bot status
+        """
+        Get current bot status.
 
         Returns:
             dict: Current status or None if not available
         """
-        cursor = await self.conn.cursor()
-        await cursor.execute('SELECT * FROM current_status WHERE id = 1')
-        row = await cursor.fetchone()
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(CurrentStatus).where(CurrentStatus.id == 1)
+            )
+            status = result.scalar_one_or_none()
 
-        if row:
-            return dict(row)
-        return None
+            if status:
+                return {
+                    'id': status.id,
+                    'bot_name': status.bot_name,
+                    'bot_rank': status.bot_rank,
+                    'bot_afk': status.bot_afk,
+                    'channel_name': status.channel_name,
+                    'current_chat_users': status.current_chat_users,
+                    'current_connected_users': status.current_connected_users,
+                    'playlist_items': status.playlist_items,
+                    'current_media_title': status.current_media_title,
+                    'current_media_duration': status.current_media_duration,
+                    'bot_start_time': status.bot_start_time,
+                    'bot_connected': status.bot_connected,
+                    'last_updated': status.last_updated
+                }
+            return None
 
     async def generate_api_token(self, description=''):
-        """Generate a new API token for external app authentication.
+        """
+        Generate a new API token for external app authentication.
 
         Tokens are used to authenticate requests to protected endpoints
         like /api/say. Each token can have a description for tracking.
@@ -899,21 +935,23 @@ class BotDatabase:
         import secrets
         # Generate a cryptographically secure random token
         token = secrets.token_urlsafe(32)  # 256 bits of entropy
-
-        cursor = await self.conn.cursor()
         now = int(time.time())
 
-        await cursor.execute('''
-            INSERT INTO api_tokens (token, description, created_at)
-            VALUES (?, ?, ?)
-        ''', (token, description, now))
+        async with self._get_session() as session:
+            api_token = ApiToken(
+                token=token,
+                description=description,
+                created_at=now,
+                is_active=True
+            )
+            session.add(api_token)
 
-        await self.conn.commit()
         self.logger.info('Generated new API token: %s...', token[:8])
         return token
 
     async def validate_api_token(self, token):
-        """Check if an API token is valid (exists and not revoked).
+        """
+        Check if an API token is valid (exists and not revoked).
 
         Also updates the last_used timestamp for valid tokens.
 
@@ -926,31 +964,25 @@ class BotDatabase:
         if not token:
             return False
 
-        cursor = await self.conn.cursor()
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(ApiToken).where(
+                    ApiToken.token == token,
+                    ApiToken.is_active == True
+                )
+            )
+            api_token = result.scalar_one_or_none()
 
-        # Check if token exists and is not revoked
-        await cursor.execute('''
-            SELECT token FROM api_tokens
-            WHERE token = ? AND revoked = 0
-        ''', (token,))
+            if api_token:
+                # Update last_used timestamp
+                api_token.last_used = int(time.time())
+                return True
 
-        row = await cursor.fetchone()
-
-        if row:
-            # Update last_used timestamp
-            now = int(time.time())
-            await cursor.execute('''
-                UPDATE api_tokens
-                SET last_used = ?
-                WHERE token = ?
-            ''', (now, token))
-            await self.conn.commit()
-            return True
-
-        return False
+            return False
 
     async def revoke_api_token(self, token):
-        """Revoke an API token, preventing its further use.
+        """
+        Revoke an API token, preventing its further use.
 
         Args:
             token: The token to revoke (can be partial - first 8+ chars)
@@ -958,33 +990,38 @@ class BotDatabase:
         Returns:
             int: Number of tokens revoked
         """
-        cursor = await self.conn.cursor()
+        async with self._get_session() as session:
+            # Support partial token matching for convenience (min 8 chars)
+            if len(token) >= 8:
+                result = await session.execute(
+                    update(ApiToken)
+                    .where(
+                        ApiToken.token.startswith(token),
+                        ApiToken.is_active == True
+                    )
+                    .values(is_active=False)
+                )
+            else:
+                # Exact match only for short strings
+                result = await session.execute(
+                    update(ApiToken)
+                    .where(
+                        ApiToken.token == token,
+                        ApiToken.is_active == True
+                    )
+                    .values(is_active=False)
+                )
 
-        # Support partial token matching for convenience (min 8 chars)
-        if len(token) >= 8:
-            await cursor.execute('''
-                UPDATE api_tokens
-                SET revoked = 1
-                WHERE token LIKE ? AND revoked = 0
-            ''', (token + '%',))
-        else:
-            # Exact match only for short strings
-            await cursor.execute('''
-                UPDATE api_tokens
-                SET revoked = 1
-                WHERE token = ? AND revoked = 0
-            ''', (token,))
+            count = result.rowcount
 
-        count = cursor.rowcount
-        await self.conn.commit()
+            if count > 0:
+                self.logger.info('Revoked %d API token(s)', count)
 
-        if count > 0:
-            self.logger.info('Revoked %d API token(s)', count)
-
-        return count
+            return count
 
     async def list_api_tokens(self, include_revoked=False):
-        """List all API tokens with their metadata.
+        """
+        List all API tokens with their metadata.
 
         Args:
             include_revoked: If True, include revoked tokens
@@ -993,49 +1030,50 @@ class BotDatabase:
             list: List of dicts with token metadata (token is truncated
                   for security)
         """
-        cursor = await self.conn.cursor()
+        async with self._get_session() as session:
+            if include_revoked:
+                result = await session.execute(
+                    select(ApiToken).order_by(ApiToken.created_at.desc())
+                )
+            else:
+                result = await session.execute(
+                    select(ApiToken)
+                    .where(ApiToken.is_active == True)
+                    .order_by(ApiToken.created_at.desc())
+                )
 
-        if include_revoked:
-            await cursor.execute('''
-                SELECT token, description, created_at, last_used, revoked
-                FROM api_tokens
-                ORDER BY created_at DESC
-            ''')
-        else:
-            await cursor.execute('''
-                SELECT token, description, created_at, last_used, revoked
-                FROM api_tokens
-                WHERE revoked = 0
-                ORDER BY created_at DESC
-            ''')
+            tokens = result.scalars().all()
 
-        tokens = []
-        for row in await cursor.fetchall():
-            token_data = dict(row)
-            # Truncate token for security (show first 8 chars only)
-            token_data['token_preview'] = token_data['token'][:8] + '...'
-            del token_data['token']  # Don't expose full token
-            tokens.append(token_data)
-
-        return tokens
+            # Convert to dicts and truncate tokens for security
+            return [
+                {
+                    'token_preview': token.token[:8] + '...',
+                    'description': token.description,
+                    'created_at': token.created_at,
+                    'last_used': token.last_used,
+                    'revoked': not token.is_active
+                }
+                for token in tokens
+            ]
 
     async def perform_maintenance(self):
-        """Perform periodic database maintenance tasks.
+        """
+        Perform periodic database maintenance tasks.
 
         This is designed to be called by a background task and includes:
         - Cleanup of old user count history (keep last 30 days)
         - Cleanup of old outbound messages (keep last 7 days)
+        - Cleanup of old revoked tokens (keep last 90 days)
         - VACUUM to reclaim space and optimize database
-        - Analyze to update query planner statistics
+        - ANALYZE to update query planner statistics
 
         Safe to call multiple times; operations are idempotent.
         """
-        cursor = await self.conn.cursor()
         maintenance_log = []
 
         try:
             # Cleanup old user count history (30 days retention)
-            deleted_history = self.cleanup_old_history(days=30)
+            deleted_history = await self.cleanup_old_history(days=30)
             if deleted_history > 0:
                 maintenance_log.append(
                     f'Cleaned {deleted_history} old history records'
@@ -1043,38 +1081,44 @@ class BotDatabase:
 
             # Cleanup old outbound messages that were sent >7 days ago
             cutoff_sent = int(time.time()) - (7 * 86400)
-            await cursor.execute('''
-                DELETE FROM outbound_messages
-                WHERE sent = 1 AND sent_timestamp < ?
-            ''', (cutoff_sent,))
-            deleted_outbound = cursor.rowcount
-            if deleted_outbound > 0:
-                maintenance_log.append(
-                    f'Cleaned {deleted_outbound} old outbound messages'
+            async with self._get_session() as session:
+                result = await session.execute(
+                    delete(OutboundMessage).where(
+                        OutboundMessage.sent == True,
+                        OutboundMessage.sent_timestamp < cutoff_sent
+                    )
                 )
+                deleted_outbound = result.rowcount
+                if deleted_outbound > 0:
+                    maintenance_log.append(
+                        f'Cleaned {deleted_outbound} old outbound messages'
+                    )
 
             # Cleanup old revoked tokens (>90 days)
             cutoff_tokens = int(time.time()) - (90 * 86400)
-            await cursor.execute('''
-                DELETE FROM api_tokens
-                WHERE revoked = 1 AND created_at < ?
-            ''', (cutoff_tokens,))
-            deleted_tokens = cursor.rowcount
-            if deleted_tokens > 0:
-                maintenance_log.append(
-                    f'Cleaned {deleted_tokens} old revoked tokens'
+            async with self._get_session() as session:
+                result = await session.execute(
+                    delete(ApiToken).where(
+                        ApiToken.is_active == False,
+                        ApiToken.created_at < cutoff_tokens
+                    )
                 )
+                deleted_tokens = result.rowcount
+                if deleted_tokens > 0:
+                    maintenance_log.append(
+                        f'Cleaned {deleted_tokens} old revoked tokens'
+                    )
 
-            await self.conn.commit()
+            # VACUUM and ANALYZE must be done outside transaction
+            # Use raw connection from engine
+            async with self.engine.begin() as conn:
+                # SQLite VACUUM and ANALYZE
+                self.logger.info('Running VACUUM to optimize database...')
+                await conn.execute(text('VACUUM'))
+                maintenance_log.append('VACUUM completed')
 
-            # VACUUM to reclaim space (must be outside transaction)
-            self.logger.info('Running VACUUM to optimize database...')
-            self.conn.execute('VACUUM')
-            maintenance_log.append('VACUUM completed')
-
-            # ANALYZE to update statistics
-            self.conn.execute('ANALYZE')
-            maintenance_log.append('ANALYZE completed')
+                await conn.execute(text('ANALYZE'))
+                maintenance_log.append('ANALYZE completed')
 
             self.logger.info(
                 'Database maintenance completed: %s',
@@ -1085,5 +1129,4 @@ class BotDatabase:
 
         except Exception as e:
             self.logger.error('Database maintenance error: %s', e)
-            self.conn.rollback()
             raise
