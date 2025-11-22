@@ -1210,11 +1210,12 @@ class BotDatabase:
                     )
 
             # VACUUM and ANALYZE must be done outside transaction
-            # Use raw connection from engine
-            async with self.engine.begin() as conn:
-                # SQLite VACUUM and ANALYZE
-                self.logger.info('Running VACUUM to optimize database...')
-                await conn.execute(text('VACUUM'))
+            # PostgreSQL requires autocommit mode, SQLite is fine either way
+            self.logger.info('Running VACUUM to optimize database...')
+            async with self.engine.connect() as conn:
+                # Set autocommit for PostgreSQL (no-op for SQLite)
+                conn_autocommit = await conn.execution_options(isolation_level="AUTOCOMMIT")
+                await conn_autocommit.execute(text('VACUUM'))
                 maintenance_log.append('VACUUM completed')
 
                 await conn.execute(text('ANALYZE'))
