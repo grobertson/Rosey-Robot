@@ -39,10 +39,9 @@ except ImportError:
 
 # Import bot components
 from lib.bot import Bot
-from lib.event_normalization import NormalizedEvent, cytube_to_normalized
-from lib.subjects import Subjects, EventTypes
-from lib.database_service import DatabaseService
 from common.database import BotDatabase
+from common.database_service import DatabaseService
+from unittest.mock import MagicMock
 
 
 @pytest.fixture

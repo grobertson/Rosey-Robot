@@ -46,9 +46,8 @@ import nats
 from nats.aio.client import Client as NATS
 
 from lib.bot import Bot
-from lib.database_service import DatabaseService
+from common.database_service import DatabaseService
 from common.database import BotDatabase
-from common.config import Config
 
 
 # ============================================================================

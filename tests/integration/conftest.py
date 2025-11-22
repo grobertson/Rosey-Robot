@@ -48,13 +48,21 @@ def integration_bot(integration_db):
             yield
     mock_conn.recv_events = mock_recv_events
     
+    # Create mock NATS client (required in Sprint 9+)
+    mock_nats = AsyncMock()
+    mock_nats.publish = AsyncMock()
+    mock_nats.request = AsyncMock()
+    mock_nats.subscribe = AsyncMock()
+    mock_nats.is_connected = True
+    
     bot = Bot(
         connection=mock_conn,
-        restart_delay=5,
-        enable_db=False  # Will manually set db below
+        nats_client=mock_nats,
+        restart_delay=5
     )
     
-    # Connect bot to integration database
+    # Connect bot to integration database for backward compatibility
+    # (Bot will use NATS for new operations, but old tests may check db)
     bot.db = integration_db
     
     # Set up channel and user info for backward compatibility
