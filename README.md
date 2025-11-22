@@ -1,5 +1,7 @@
 # Rosey - A Python CyTube Bot Framework
 
+**Fair warning: This implementation is over-engineered. I may do crazy things here at any time. If you're not a person who likes reading documentation, this may not be the project for you. With that said, welcome! As with most of my hobby projects this is MIT licensed, keep FOSS fun and open!**
+
 [![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/grobertson/Rosey-Robot/releases)
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
