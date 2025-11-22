@@ -1,5 +1,73 @@
 # Changelog
 
+## [0.6.0] - 2025-11-22 - Sprint 11: The Conversation (Sortie 1)
+
+**🎉 SQLAlchemy ORM Foundation - Type-Safe Database Layer**
+
+This release establishes the SQLAlchemy ORM foundation for Rosey, replacing raw SQL strings with type-safe ORM models. The migration framework (Alembic) is now initialized and ready for schema versioning.
+
+### 🌟 What's New
+
+#### SQLAlchemy ORM Models
+- **8 Type-Safe Models**: Complete ORM layer matching v0.5.0 schema
+  - UserStats - User activity tracking
+  - UserAction - Audit log for PM commands
+  - ChannelStats - Channel statistics (singleton)
+  - UserCountHistory - Historical analytics
+  - RecentChat - Message cache
+  - CurrentStatus - Bot status (singleton)
+  - OutboundMessage - Message queue
+  - ApiToken - API authentication
+- **Full Type Hints**: All models use `Mapped[type]` annotations for IDE/mypy support
+- **Comprehensive Docstrings**: Every model, column, and constraint documented
+- **Performance Indexes**: All performance-critical columns indexed
+- **Data Integrity**: Check constraints enforce positive values, singleton patterns
+
+#### Alembic Migration Framework
+- **Initialized Alembic**: Migration framework configured for async operations
+- **Config-Based URL**: Database URL loaded from config.json or environment variable
+- **Async Support**: Full async/await support for migrations
+- **SQLite Batch Mode**: ALTER TABLE support for SQLite
+- **PostgreSQL Ready**: Async driver (asyncpg) configured
+
+#### Testing & Documentation
+- **31 Unit Tests**: Comprehensive model tests (100% passing)
+- **alembic/README.md**: Complete migration workflow guide (350+ lines)
+- **Migration Generated**: Initial schema migration (v0.5.0 → v0.6.0) ready
+
+### 📦 Dependencies Added
+
+```txt
+sqlalchemy[asyncio]==2.0.23    # ORM framework with async support
+alembic==1.13.1                # Database schema migrations
+aiosqlite==0.19.0              # Async SQLite driver
+asyncpg==0.29.0                # Async PostgreSQL driver
+greenlet==3.0.3                # SQLAlchemy async dependency
+psycopg2-binary==2.9.9        # Fallback sync PostgreSQL driver
+```
+
+### 🔧 Changes
+
+**New Files**:
+- `common/models.py` - 8 ORM models (661 lines)
+- `alembic/` - Migration framework directory
+- `alembic.ini` - Alembic configuration
+- `alembic/env.py` - Async migration environment (181 lines)
+- `alembic/README.md` - Migration guide (350 lines)
+- `alembic/versions/45490ea63a06_initial_schema_v0_5_0_to_v0_6_0.py` - Initial migration
+- `tests/unit/test_models.py` - Model unit tests (520 lines, 31 tests)
+
+**Modified Files**:
+- `requirements.txt` - Added 6 SQLAlchemy dependencies
+
+### 🎯 Next Steps (Sprint 11 Remaining Sorties)
+
+- **Sortie 2**: Integrate ORM models into BotDatabase
+- **Sortie 3**: PostgreSQL support and testing
+- **Sortie 4**: Documentation and migration guide
+
+---
+
 ## [0.5.0] - 2025-11-21 - Sprint 9: The Accountant
 
 **🎉 Major Release: NATS Event Bus Architecture**

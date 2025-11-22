@@ -729,3 +729,94 @@ python bot/rosey/rosey.py config.json
 - Docstrings for public APIs
 - Comments for complex logic
 - README for usage instructions
+
+---
+
+## Database Layer (v0.6.0 - Sprint 11 Sortie 1)
+
+### SQLAlchemy ORM Models
+
+**8 Type-Safe Models** (common/models.py):
+- **UserStats** - User activity tracking (username PK, chat lines, time connected)
+- **UserAction** - Audit log for PM commands, moderation (timestamp, username, action_type)
+- **ChannelStats** - Channel metrics (singleton: id=1, max_users)
+- **UserCountHistory** - Historical analytics (timestamp, chat_users, connected_users)
+- **RecentChat** - Message cache (id PK, timestamp, username, message)
+- **CurrentStatus** - Bot status (singleton: id=1, status, current_users)
+- **OutboundMessage** - Message queue (id PK, message, sent, retry_count)
+- **ApiToken** - API authentication (id PK, token unique, permissions)
+
+**Benefits**:
+- ✅ Full type hints (`Mapped[type]` annotations) for IDE/mypy support
+- ✅ Comprehensive docstrings on every model/column
+- ✅ Performance indexes on all frequently-queried columns
+- ✅ Check constraints for data integrity (positive values, singletons)
+- ✅ Database portability (SQLite → PostgreSQL seamless)
+
+**Example**:
+```python
+from common.models import UserStats
+from sqlalchemy import select
+
+# Type-safe query (autocomplete, mypy validation)
+result = await session.execute(
+    select(UserStats).where(UserStats.username == 'Alice')
+)
+user = result.scalar_one_or_none()  # Type: UserStats | None
+```
+
+### Alembic Migration Framework
+
+**Purpose**: Version-controlled database schema changes
+
+**Structure**:
+```
+alembic/
+├── versions/          # Migration files
+│   └── 45490ea63a06_initial_schema_v0_5_0_to_v0_6_0.py
+├── env.py            # Async migration environment
+└── README.md         # Migration workflow guide
+alembic.ini           # Configuration
+```
+
+**Migration Workflow**:
+```bash
+# Generate migration from model changes
+alembic revision --autogenerate -m "Add column"
+
+# Apply migration
+alembic upgrade head
+
+# Rollback migration
+alembic downgrade -1
+
+# View history
+alembic history
+```
+
+**Configuration**: Database URL loaded from config.json or `ROSEY_DATABASE_URL` environment variable
+
+**Version History**:
+- **45490ea63a06** (v0.6.0) - Initial ORM schema (Sprint 11 Sortie 1)
+
+### Database Drivers
+
+**SQLite (Development)**:
+```python
+database_url = 'sqlite+aiosqlite:///bot_data.db'
+```
+
+**PostgreSQL (Production - Sortie 3)**:
+```python
+database_url = 'postgresql+asyncpg://user:pass@host/rosey_bot'
+```
+
+**Dependencies** (requirements.txt):
+```txt
+sqlalchemy[asyncio]==2.0.23    # ORM with async support
+alembic==1.13.1                # Schema migrations
+aiosqlite==0.19.0              # Async SQLite driver
+asyncpg==0.29.0                # Async PostgreSQL driver
+```
+
+---
