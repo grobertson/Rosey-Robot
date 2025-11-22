@@ -14,6 +14,7 @@ Outputs:
 """
 
 import json
+import os
 import re
 import sys
 import platform
@@ -271,6 +272,16 @@ def generate_markdown_report(results: List[Dict[str, Any]], output_file: str):
         f.write('| Concurrent Events | 50+ simultaneous | P1 |\n')
         f.write('| Failure Recovery | <100ms service restart | P1 |\n')
         f.write('\n')
+        
+        # Add CI information if running in GitHub Actions
+        if os.getenv('GITHUB_ACTIONS') == 'true':
+            f.write('---\n\n')
+            f.write('## CI Information\n\n')
+            f.write(f"- **Run ID**: {os.getenv('GITHUB_RUN_ID', 'N/A')}\n")
+            f.write(f"- **Commit**: {os.getenv('GITHUB_SHA', 'N/A')[:7]}\n")
+            f.write(f"- **Branch**: {os.getenv('GITHUB_REF_NAME', 'N/A')}\n")
+            f.write(f"- **Triggered by**: {os.getenv('GITHUB_EVENT_NAME', 'N/A')}\n")
+            f.write('\n')
 
 
 def main():
