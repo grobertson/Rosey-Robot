@@ -698,6 +698,201 @@ Prompt: "Create an ONBOARDING.md guide for new contributors that covers:
 
 ---
 
+## Available Tools and MCPs
+
+### GitHub Copilot Built-in Tools
+
+The agent has access to comprehensive VS Code integration tools:
+
+#### File Operations
+- **read_file** - Read file contents with optional line ranges
+- **create_file** - Create new files with content
+- **replace_string_in_file** - Edit existing files by replacing exact strings
+- **multi_replace_string_in_file** - Batch edit multiple files efficiently
+- **list_dir** - List directory contents
+- **file_search** - Search for files by glob pattern
+- **grep_search** - Fast text search across workspace (supports regex)
+- **semantic_search** - Natural language code search
+
+#### Code Intelligence
+- **list_code_usages** - Find references, definitions, implementations
+- **get_errors** - Get compile/lint errors from VS Code
+- **get_vscode_api** - VS Code extension API documentation
+
+#### Testing & Execution
+- **runTests** - Execute unit tests with coverage
+- **run_in_terminal** - Run PowerShell commands (Windows)
+- **get_terminal_output** - Get output from background terminal commands
+- **terminal_last_command** - Get last terminal command
+- **run_notebook_cell** - Execute Jupyter notebook cells
+
+#### Python Development
+- **configure_python_environment** - Set up Python virtual environment
+- **get_python_environment_details** - Get environment info (packages, version)
+- **get_python_executable_details** - Get Python executable path
+- **install_python_packages** - Install packages via pip
+
+#### Project Setup
+- **create_new_workspace** - Scaffold complete project structures
+- **get_project_setup_info** - Get setup steps for project types
+- **create_and_run_task** - Create VS Code tasks.json and run tasks
+
+### Model Context Protocol (MCP) Servers
+
+#### GitHub MCP (`mcp_github_*`)
+Complete GitHub repository integration:
+
+**Repository Management**
+- `github_create_repository` - Create new repos
+- `github_fork_repository` - Fork repositories
+- `github_create_branch` - Create branches
+- `github_create_or_update_file` - Create/update files remotely
+- `github_push_files` - Push multiple files in single commit
+
+**Pull Requests**
+- `github-pull-request_activePullRequest` - Get active PR details
+- `github-pull-request_openPullRequest` - Get open PR details
+- `github_create_pull_request` - Create new PR
+- `github_update_pull_request` - Update existing PR
+- `github_merge_pull_request` - Merge PR
+- `github_update_pull_request_branch` - Update PR branch
+- `github_request_copilot_review` - Request Copilot code review
+- `github_pull_request_read` - Get PR details, diff, status, files, comments, reviews
+- `github_list_pull_requests` - List PRs with filtering
+- `github_search_pull_requests` - Search PRs with GitHub search syntax
+
+**Issues**
+- `github-pull-request_issue_fetch` - Get issue details
+- `github_issue_write` - Create/update issues
+- `github-pull-request_suggest-fix` - Suggest fix for issue
+- `github-pull-request_renderIssues` - Render issues as markdown table
+- `github_assign_copilot_to_issue` - Assign Copilot to implement issue
+
+**Repository Information**
+- `github_get_teams` - Get user's teams
+- `github_repo` - Search repository code (GitHub)
+
+**Additional GitHub Tools** (activate as needed)
+- Search tools - `activate_github_search_tools`
+- File management - `activate_file_management_tools`
+- Commit/issue tools - `activate_commit_and_issue_tools`
+- Release management - `activate_release_and_tag_management_tools`
+- Branch/commit tools - `activate_branch_and_commit_tools`
+- PR review tools - `activate_pull_request_review_tools`
+- Search/discovery - `activate_search_and_discovery_tools`
+
+#### Hugging Face MCP (`mcp_evalstate_hf-_*`)
+AI model and dataset discovery:
+
+- `mcp_evalstate_hf-_hf_whoami` - Check authenticated user
+- `mcp_evalstate_hf-_paper_search` - Search ML research papers
+- `mcp_evalstate_hf-_space_search` - Find Hugging Face Spaces
+- `mcp_evalstate_hf-_gr1_flux1_schnell_infer` - Generate images with Flux
+- Activate model/dataset tools - `activate_hugging_face_model_and_dataset_tools`
+- Activate documentation tools - `activate_hugging_face_documentation_tools`
+
+#### Web/Documentation MCP
+- `fetch_webpage` - Fetch and summarize web content
+- `mcp_microsoft_mar_convert_to_markdown` - Convert URIs to markdown
+- `open_simple_browser` - Preview URLs in VS Code
+
+#### AI Development Toolkit (`aitk-*`)
+Specialized tools for AI/Agent development:
+
+- `aitk-get_agent_code_gen_best_practices` - Agent development guidance
+- `aitk-get_ai_model_guidance` - Model selection and usage patterns
+- `aitk-evaluation_planner` - Plan evaluation metrics via conversation
+- `aitk-get_evaluation_code_gen_best_practices` - Evaluation code guidance
+- `aitk-evaluation_agent_runner_best_practices` - Agent runner patterns
+- `aitk-convert_declarative_agent_to_code` - Convert specs to code
+- `aitk-get_agent_model_code_sample` - Code samples for agents/models
+- `activate_ai_agent_development_best_practices` - Activate AI dev tools
+
+### Command Line Tools
+
+#### GitHub CLI (`gh`)
+Available via `run_in_terminal`:
+
+```powershell
+# PR Management
+gh pr list
+gh pr view 44
+gh pr create --title "Feature" --body "Description"
+gh pr merge 44 --squash
+
+# Issue Management  
+gh issue list
+gh issue create --title "Bug" --body "Details"
+gh issue view 123
+
+# Repository Operations
+gh repo view
+gh repo clone owner/repo
+gh workflow list
+gh run list
+
+# Release Management
+gh release list
+gh release create v1.0.0
+```
+
+#### Git Operations
+Via `run_in_terminal`:
+
+```powershell
+git status
+git add -A
+git commit -m "Message"
+git push
+git pull
+git branch
+git checkout -b feature-branch
+git log --oneline -10
+```
+
+### VS Code Commands (`run_vscode_command`)
+- Execute VS Code commands programmatically
+- Install extensions (`install_extension`)
+- Manage workspace settings
+
+### Tool Selection Strategy
+
+**For File Operations:**
+- Local edits → `replace_string_in_file` or `multi_replace_string_in_file`
+- Remote GitHub edits → `github_create_or_update_file` or `github_push_files`
+- Reading → `read_file` for local, `github_pull_request_read` for PR files
+
+**For Pull Requests:**
+- Active PR context → `github-pull-request_activePullRequest`
+- PR details/diff → `github_pull_request_read`
+- Create/update → `github_create_pull_request`, `github_update_pull_request`
+- Request review → `github_request_copilot_review`
+
+**For Search:**
+- Code search → `semantic_search` (local), `github_repo` (GitHub)
+- File search → `file_search` (glob), `grep_search` (text/regex)
+- PR/issue search → `github_search_pull_requests`, activate search tools
+
+**For Testing:**
+- Run tests → `runTests` (preferred) or `run_in_terminal` with pytest
+- Get errors → `get_errors` for IDE diagnostics
+
+**For AI Development:**
+- Always call `aitk-get_agent_code_gen_best_practices` before creating AI apps
+- Use `aitk-get_ai_model_guidance` for model selection
+- Use `aitk-evaluation_planner` when evaluation metrics are unclear
+
+### Best Practices
+
+1. **Batch Operations**: Use `multi_replace_string_in_file` for multiple edits
+2. **Parallel Reads**: Read multiple files in parallel when gathering context
+3. **GitHub Integration**: Prefer GitHub MCP tools over `gh` CLI for automation
+4. **Error Checking**: Always use `get_errors` after file edits to validate
+5. **Test Execution**: Use `runTests` over terminal commands when possible
+6. **Tool Discovery**: Activate specialized tool groups only when needed
+
+---
+
 ## Resources
 
 ### Project Documentation
