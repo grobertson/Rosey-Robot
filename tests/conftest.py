@@ -101,13 +101,17 @@ async def db(temp_db_path, database_url):
     
     # Cleanup PostgreSQL tables after test (reset for next test)
     if database_url.startswith('postgresql'):
-        from sqlalchemy import text
-        async with database.engine.begin() as conn:
-            # Drop all tables in public schema
-            await conn.execute(text('DROP SCHEMA public CASCADE'))
-            await conn.execute(text('CREATE SCHEMA public'))
-            await conn.execute(text('GRANT ALL ON SCHEMA public TO rosey'))
-            await conn.execute(text('GRANT ALL ON SCHEMA public TO public'))
+        try:
+            from sqlalchemy import text
+            async with database.engine.begin() as conn:
+                # Drop all tables in public schema
+                await conn.execute(text('DROP SCHEMA public CASCADE'))
+                await conn.execute(text('CREATE SCHEMA public'))
+                await conn.execute(text('GRANT ALL ON SCHEMA public TO rosey'))
+                await conn.execute(text('GRANT ALL ON SCHEMA public TO public'))
+        except Exception:
+            # Cleanup errors are non-fatal (e.g., schema already dropped)
+            pass
 
 
 @pytest.fixture
