@@ -2,41 +2,141 @@
 # -*- coding: utf-8 -*-
 """SQLite database for bot state persistence and statistics tracking"""
 import logging
-import sqlite3
 import time
+import aiosqlite
+from typing import Optional
 
 
 class BotDatabase:
-    """Database for tracking bot state and user statistics"""
+    """Database for tracking bot state and user statistics
+    
+    This is an async-only implementation (Sprint 10 v0.5.0).
+    All database operations require async/await patterns.
+    """
 
     def __init__(self, db_path='bot_data.db'):
-        """Initialize database connection and create tables
-
+        """Initialize database instance (connection created via connect()).
+        
         Args:
-            db_path: Path to SQLite database file
+            db_path: Path to SQLite database file (default: 'bot_data.db')
+        
+        Note:
+            Call `await db.connect()` after initialization to establish connection.
+            This is v0.5.0 alpha - breaking change from Sprint 9.
+        
+        Example:
+            db = BotDatabase('test.db')
+            await db.connect()
+            await db.user_joined('Alice')
+            await db.close()
         """
         self.logger = logging.getLogger(__name__)
         self.db_path = db_path
-        self.conn = None
-        self._connect()
-        self._create_tables()
+        self.conn: Optional[aiosqlite.Connection] = None
+        self._is_connected = False
 
-    def _connect(self):
-        """Establish database connection
-
-        Note: check_same_thread=False is safe here because each request
-        gets its own connection in the web server context.
+    async def connect(self) -> None:
+        """Initialize async database connection and run migrations.
+        
+        This method must be called before using the database in async contexts.
+        Creates the SQLite connection using aiosqlite and initializes all tables.
+        
+        Example:
+            db = BotDatabase('test.db')
+            await db.connect()
+            await db.user_joined('Alice')
+            await db.close()
+        
+        Raises:
+            RuntimeError: If already connected
+            aiosqlite.Error: If database connection fails
         """
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.logger.info('Connected to database: %s', self.db_path)
+        if self._is_connected:
+            raise RuntimeError(f"Database already connected: {self.db_path}")
+        
+        self.logger.info('Connecting to database (async): %s', self.db_path)
+        
+        # Create async connection
+        self.conn = await aiosqlite.connect(self.db_path)
+        self.conn.row_factory = aiosqlite.Row
+        
+        # Run migrations to create tables
+        await self._run_migrations()
+        
+        self._is_connected = True
+        self.logger.info('Database connected successfully: %s', self.db_path)
+    
+    async def close(self) -> None:
+        """Close database connection gracefully.
+        
+        Commits any pending transactions and closes the connection.
+        Safe to call multiple times - subsequent calls are no-ops.
+        
+        Example:
+            await db.close()
+        """
+        if not self._is_connected:
+            self.logger.debug('Database already closed or never connected')
+            return
+        
+        if self.conn:
+            try:
+                # Commit any pending transactions
+                await self.conn.commit()
+                
+                # Close active sessions (update user stats)
+                now = int(time.time())
+                cursor = await self.conn.cursor()
+                await cursor.execute('''
+                    UPDATE user_stats
+                    SET total_time_connected = total_time_connected + (? - current_session_start),
+                        current_session_start = NULL,
+                        last_seen = ?
+                    WHERE current_session_start IS NOT NULL
+                ''', (now, now))
+                await self.conn.commit()
+                
+                # Close connection
+                await self.conn.close()
+                self.logger.info('Database connection closed: %s', self.db_path)
+            
+            except Exception as e:
+                self.logger.error('Error closing database: %s', e)
+                raise
+            
+            finally:
+                self._is_connected = False
+                self.conn = None
+    
+    @property
+    def is_connected(self) -> bool:
+        """Check if database is currently connected.
+        
+        Returns:
+            bool: True if connected, False otherwise
+        """
+        return self._is_connected
 
-    def _create_tables(self):
-        """Create database tables if they don't exist"""
-        cursor = self.conn.cursor()
+    async def _run_migrations(self) -> None:
+        """Run database migrations to create tables.
+        
+        This is the async version of _create_tables(). Creates all required
+        tables if they don't exist. Idempotent - safe to call multiple times.
+        
+        Tables created:
+        - user_stats: User statistics (chat lines, time connected)
+        - user_actions: Audit log for PM commands
+        - channel_stats: High water marks for users
+        - user_count_history: Historical user count data
+        - recent_chat: Last N chat messages
+        - current_status: Live bot state
+        - outbound_messages: Message queue for bot
+        - api_tokens: Authentication tokens
+        """
+        cursor = await self.conn.cursor()
 
         # User statistics table
-        cursor.execute('''
+        await cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_stats (
                 username TEXT PRIMARY KEY,
                 first_seen INTEGER NOT NULL,
@@ -48,7 +148,7 @@ class BotDatabase:
         ''')
 
         # User actions/PM log table
-        cursor.execute('''
+        await cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_actions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp INTEGER NOT NULL,
@@ -59,7 +159,7 @@ class BotDatabase:
         ''')
 
         # High water mark table (single row with channel stats)
-        cursor.execute('''
+        await cursor.execute('''
             CREATE TABLE IF NOT EXISTS channel_stats (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 max_users INTEGER DEFAULT 0,
@@ -71,7 +171,7 @@ class BotDatabase:
         ''')
 
         # User count history table for graphing over time
-        cursor.execute('''
+        await cursor.execute('''
             CREATE TABLE IF NOT EXISTS user_count_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp INTEGER NOT NULL,
@@ -81,13 +181,13 @@ class BotDatabase:
         ''')
 
         # Create index for efficient time-range queries
-        cursor.execute('''
+        await cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_user_count_timestamp
             ON user_count_history(timestamp)
         ''')
 
         # Recent chat messages table (keep last N messages)
-        cursor.execute('''
+        await cursor.execute('''
             CREATE TABLE IF NOT EXISTS recent_chat (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp INTEGER NOT NULL,
@@ -97,13 +197,13 @@ class BotDatabase:
         ''')
 
         # Create index for efficient timestamp queries
-        cursor.execute('''
+        await cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_recent_chat_timestamp
             ON recent_chat(timestamp DESC)
         ''')
 
         # Current status table (single row with live bot state)
-        cursor.execute('''
+        await cursor.execute('''
             CREATE TABLE IF NOT EXISTS current_status (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 bot_name TEXT,
@@ -122,9 +222,10 @@ class BotDatabase:
         ''')
 
         # Initialize current_status if empty
-        cursor.execute('SELECT COUNT(*) FROM current_status')
-        if cursor.fetchone()[0] == 0:
-            cursor.execute('''
+        await cursor.execute('SELECT COUNT(*) FROM current_status')
+        row = await cursor.fetchone()
+        if row[0] == 0:
+            await cursor.execute('''
                 INSERT INTO current_status (id, last_updated)
                 VALUES (1, ?)
             ''', (int(time.time()),))
@@ -132,7 +233,7 @@ class BotDatabase:
         # Outbound messages queue (messages to be sent by the bot)
         # Includes retry logic: retry_count tracks attempts, last_error stores
         # failure reason for permanent errors
-        cursor.execute('''
+        await cursor.execute('''
             CREATE TABLE IF NOT EXISTS outbound_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp INTEGER NOT NULL,
@@ -143,28 +244,28 @@ class BotDatabase:
                 last_error TEXT
             )
         ''')
-        cursor.execute('''
+        await cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_outbound_sent
             ON outbound_messages(sent, timestamp)
         ''')
 
         # Migrate existing outbound_messages table if needed
-        cursor.execute('PRAGMA table_info(outbound_messages)')
-        outbound_cols = [col[1] for col in cursor.fetchall()]
+        await cursor.execute('PRAGMA table_info(outbound_messages)')
+        outbound_cols = [col[1] for col in await cursor.fetchall()]
         if 'retry_count' not in outbound_cols:
-            cursor.execute('''
+            await cursor.execute('''
                 ALTER TABLE outbound_messages
                 ADD COLUMN retry_count INTEGER DEFAULT 0
             ''')
         if 'last_error' not in outbound_cols:
-            cursor.execute('''
+            await cursor.execute('''
                 ALTER TABLE outbound_messages
                 ADD COLUMN last_error TEXT
             ''')
 
         # API tokens table for authentication
         # Supports token-based auth for external apps accessing /api/say
-        cursor.execute('''
+        await cursor.execute('''
             CREATE TABLE IF NOT EXISTS api_tokens (
                 token TEXT PRIMARY KEY,
                 description TEXT,
@@ -173,35 +274,36 @@ class BotDatabase:
                 revoked INTEGER DEFAULT 0
             )
         ''')
-        cursor.execute('''
+        await cursor.execute('''
             CREATE INDEX IF NOT EXISTS idx_api_tokens_revoked
             ON api_tokens(revoked, token)
         ''')
 
         # Initialize channel_stats if empty
-        cursor.execute('SELECT COUNT(*) FROM channel_stats')
-        if cursor.fetchone()[0] == 0:
-            cursor.execute('''
+        await cursor.execute('SELECT COUNT(*) FROM channel_stats')
+        row = await cursor.fetchone()
+        if row[0] == 0:
+            await cursor.execute('''
                 INSERT INTO channel_stats (id, max_users, last_updated)
                 VALUES (1, 0, ?)
             ''', (int(time.time()),))
         else:
             # Migrate existing database - add new columns if they don't exist
-            cursor.execute('PRAGMA table_info(channel_stats)')
-            columns = [col[1] for col in cursor.fetchall()]
+            await cursor.execute('PRAGMA table_info(channel_stats)')
+            columns = [col[1] for col in await cursor.fetchall()]
             if 'max_connected' not in columns:
-                cursor.execute('''
+                await cursor.execute('''
                     ALTER TABLE channel_stats
                     ADD COLUMN max_connected INTEGER DEFAULT 0
                 ''')
             if 'max_connected_timestamp' not in columns:
-                cursor.execute('''
+                await cursor.execute('''
                     ALTER TABLE channel_stats
                     ADD COLUMN max_connected_timestamp INTEGER
                 ''')
 
-        self.conn.commit()
-        self.logger.info('Database tables initialized')
+        await self.conn.commit()
+        self.logger.info('Database migrations completed')
 
     def user_joined(self, username):
         """Record a user joining the channel
@@ -917,21 +1019,3 @@ class BotDatabase:
             self.logger.error('Database maintenance error: %s', e)
             self.conn.rollback()
             raise
-
-    def close(self):
-        """Close database connection"""
-        if self.conn:
-            # Update any active sessions before closing
-            cursor = self.conn.cursor()
-            now = int(time.time())
-            cursor.execute('''
-                UPDATE user_stats
-                SET total_time_connected = total_time_connected + (? - current_session_start),
-                    current_session_start = NULL,
-                    last_seen = ?
-                WHERE current_session_start IS NOT NULL
-            ''', (now, now))
-            self.conn.commit()
-
-            self.conn.close()
-            self.logger.info('Database connection closed')
