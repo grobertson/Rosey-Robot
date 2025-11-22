@@ -44,6 +44,7 @@ class DatabaseService:
         rosey.db.stats.high_water      - Update high water mark (pub/sub)
         rosey.db.status.update         - Bot status update (pub/sub)
         rosey.db.messages.outbound.mark_sent - Mark message sent (pub/sub)
+        rosey.db.action.pm_command     - Log PM command (pub/sub)
         rosey.db.messages.outbound.get - Query outbound messages (request/reply)
         rosey.db.stats.recent_chat.get - Get recent chat (request/reply)
 
@@ -104,6 +105,8 @@ class DatabaseService:
                                         cb=self._handle_status_update),
                 await self.nats.subscribe('rosey.db.messages.outbound.mark_sent',
                                         cb=self._handle_mark_sent),
+                await self.nats.subscribe('rosey.db.action.pm_command',
+                                        cb=self._handle_pm_action),
             ])
 
             # Request/Reply subscriptions (queries)
@@ -512,6 +515,77 @@ class DatabaseService:
                 'error': str(e)
             }
             await self.nats.publish(msg.reply, json.dumps(error_response).encode())
+
+    async def _handle_pm_action(self, msg):
+        """Handle PM command action logging.
+        
+        NATS Subject: rosey.db.action.pm_command
+        Payload: {
+            'timestamp': int,
+            'username': str,
+            'command': str,
+            'args': str,
+            'result': str ('success' | 'error' | 'pending'),
+            'error': str | None
+        }
+        
+        This logs moderator PM commands for audit trail and security compliance.
+        Fire-and-forget semantics - failures are logged but don't affect bot.
+        
+        Example:
+            await bot.nats.publish(
+                'rosey.db.action.pm_command',
+                json.dumps({
+                    'timestamp': time.time(),
+                    'username': 'ModUser',
+                    'command': 'stats',
+                    'args': '',
+                    'result': 'success',
+                    'error': None
+                }).encode()
+            )
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            
+            # Extract fields
+            username = data.get('username', '')
+            command = data.get('command', '')
+            args = data.get('args', '')
+            result = data.get('result', 'unknown')
+            error = data.get('error')
+            
+            if not username or not command:
+                self.logger.warning("[NATS] pm_action: Missing required fields")
+                return
+            
+            # Build details string
+            details_parts = []
+            if args:
+                details_parts.append(f"args: {args}")
+            if result:
+                details_parts.append(f"result: {result}")
+            if error:
+                details_parts.append(f"error: {error}")
+            
+            details = ', '.join(details_parts) if details_parts else None
+            
+            # Log to database (SQL injection safe: uses parameterized queries)
+            await self.db.log_user_action(
+                username=username,
+                action_type='pm_command',
+                details=f"cmd={command}, {details}" if details else f"cmd={command}"
+            )
+            
+            self.logger.debug(
+                "[NATS] PM command logged: %s executed %s",
+                username, command
+            )
+        
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON in pm_action: {e}")
+        except Exception as e:
+            self.logger.error(f"Error handling pm_action: {e}", exc_info=True)
 
 
 async def main():

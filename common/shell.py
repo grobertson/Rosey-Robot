@@ -4,6 +4,7 @@
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 
 from lib import MediaLink
@@ -140,9 +141,32 @@ Examples:
 
         self.logger.info('PM command from %s: %s', username, message)
 
-        # TODO: Log PM commands via NATS (future enhancement)
+        # Parse command for logging
+        command_parts = message.split(None, 1)
+        command_name = command_parts[0].lower() if command_parts else 'unknown'
+        command_args = command_parts[1] if len(command_parts) > 1 else ''
+
+        # Log PM command via NATS (fire-and-forget audit trail)
+        if bot.nats and bot.nats.is_connected:
+            try:
+                await bot.nats.publish(
+                    'rosey.db.action.pm_command',
+                    json.dumps({
+                        'timestamp': time.time(),
+                        'username': username,
+                        'command': command_name,
+                        'args': command_args,  # Log full args for audit trail
+                        'result': 'pending',
+                        'error': None
+                    }).encode()
+                )
+            except Exception as e:
+                # Don't fail command if logging fails (fire-and-forget)
+                self.logger.debug(f"PM command logging failed (non-fatal): {e}")
 
         # Process the command
+        command_result = 'success'
+        command_error = None
         try:
             result = await self.handle_command(message, bot)
 
@@ -172,12 +196,32 @@ Examples:
                     await bot.pm(username, response)
 
         except Exception as e:
+            command_result = 'error'
+            command_error = str(e)
             self.logger.error('Error processing PM command: %s', e,
                             exc_info=True)
             try:
                 await bot.pm(username, f"Error: {e}")
             except Exception:
                 pass  # Don't fail if we can't send error message
+
+        finally:
+            # Log final result (success or error)
+            if bot.nats and bot.nats.is_connected:
+                try:
+                    await bot.nats.publish(
+                        'rosey.db.action.pm_command',
+                        json.dumps({
+                            'timestamp': time.time(),
+                            'username': username,
+                            'command': command_name,
+                            'args': command_args,  # Log full args
+                            'result': command_result,
+                            'error': command_error
+                        }).encode()
+                    )
+                except Exception as e:
+                    self.logger.debug(f"PM result logging failed (non-fatal): {e}")
 
     async def handle_command(self, cmd, bot):  # noqa: C901 (complex function)
         """Handle bot control commands
