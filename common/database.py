@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """SQLite database for bot state persistence and statistics tracking"""
 import logging
+import sqlite3
 import time
 import aiosqlite
 from typing import Optional

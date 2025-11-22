@@ -256,13 +256,11 @@ class Bot:
         self.channel.drink_count = data
 
     async def _on_usercount(self, _, data):
-        # Extract count from data (handle both dict and int formats)
-        count_value = data.get('count', data) if isinstance(data, dict) else data
-        self.channel.userlist.count = count_value
+        self.channel.userlist.count = data
 
         # Update high water mark for connected count when it changes
         user_count = len(self.channel.userlist)
-        connected_count = count_value
+        connected_count = data
 
         # Publish via NATS (REQUIRED)
         await self.nats.publish('rosey.db.stats.high_water', json.dumps({

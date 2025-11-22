@@ -4,8 +4,6 @@
 import asyncio
 import json
 import logging
-import time
-from datetime import datetime
 
 from lib import MediaLink
 
@@ -141,28 +139,7 @@ Examples:
 
         self.logger.info('PM command from %s: %s', username, message)
 
-        # Parse command for logging
-        command_parts = message.split(None, 1)
-        command_name = command_parts[0].lower() if command_parts else 'unknown'
-        command_args = command_parts[1] if len(command_parts) > 1 else ''
-
-        # Log PM command via NATS (fire-and-forget audit trail)
-        if bot.nats and bot.nats.is_connected:
-            try:
-                await bot.nats.publish(
-                    'rosey.db.action.pm_command',
-                    json.dumps({
-                        'timestamp': time.time(),
-                        'username': username,
-                        'command': command_name,
-                        'args': command_args,  # Log full args for audit trail
-                        'result': 'pending',
-                        'error': None
-                    }).encode()
-                )
-            except Exception as e:
-                # Don't fail command if logging fails (fire-and-forget)
-                self.logger.debug(f"PM command logging failed (non-fatal): {e}")
+        # TODO: Log PM commands via NATS (future enhancement)
 
         # Process the command
         command_result = 'success'
@@ -204,24 +181,6 @@ Examples:
                 await bot.pm(username, f"Error: {e}")
             except Exception:
                 pass  # Don't fail if we can't send error message
-
-        finally:
-            # Log final result (success or error)
-            if bot.nats and bot.nats.is_connected:
-                try:
-                    await bot.nats.publish(
-                        'rosey.db.action.pm_command',
-                        json.dumps({
-                            'timestamp': time.time(),
-                            'username': username,
-                            'command': command_name,
-                            'args': command_args,  # Log full args
-                            'result': command_result,
-                            'error': command_error
-                        }).encode()
-                    )
-                except Exception as e:
-                    self.logger.debug(f"PM result logging failed (non-fatal): {e}")
 
     async def handle_command(self, cmd, bot):  # noqa: C901 (complex function)
         """Handle bot control commands
@@ -375,74 +334,14 @@ Examples:
         return '\n'.join(status)
 
     async def cmd_stats(self, bot):
-        """Show database statistics via NATS query.
-        
-        Queries DatabaseService via NATS request/reply for channel statistics
-        including high water marks, top chatters, and total users seen.
-        
-        Returns:
-            str: Formatted statistics or error message
-        """
-        if not bot.nats or not bot.nats.is_connected:
-            return "Stats unavailable (NATS not connected)"
-        
-        try:
-            # Request channel stats from DatabaseService
-            response = await bot.nats.request(
-                'rosey.db.query.channel_stats',
-                b'{}',
-                timeout=1.0
-            )
-            
-            # Parse response
-            stats = json.loads(response.data.decode())
-            
-            if not stats.get('success', False):
-                error = stats.get('error', 'Unknown error')
-                return f"Stats error: {error}"
-            
-            # Format output
-            output = []
-            output.append("=== Channel Statistics ===")
-            
-            # High water mark (chat users)
-            hwm = stats['high_water_mark']
-            if hwm['timestamp']:
-                dt = datetime.fromtimestamp(hwm['timestamp'])
-                output.append(f"Peak chat users: {hwm['users']} ({dt.strftime('%Y-%m-%d %H:%M')})")
-            else:
-                output.append(f"Peak chat users: {hwm['users']}")
-            
-            # High water mark (connected viewers)
-            hwm_connected = stats['high_water_connected']
-            if hwm_connected['timestamp']:
-                dt = datetime.fromtimestamp(hwm_connected['timestamp'])
-                output.append(f"Peak connected viewers: {hwm_connected['users']} ({dt.strftime('%Y-%m-%d %H:%M')})")
-            else:
-                output.append(f"Peak connected viewers: {hwm_connected['users']}")
-            
-            # Total users
-            output.append(f"Total unique users: {stats['total_users_seen']}")
-            
-            # Top chatters
-            top_chatters = stats.get('top_chatters', [])
-            if top_chatters:
-                output.append("\n=== Top Chatters ===")
-                for i, chatter in enumerate(top_chatters[:10], 1):
-                    output.append(f"{i}. {chatter['username']}: {chatter['chat_lines']} messages")
-            
-            return '\n'.join(output)
-        
-        except asyncio.TimeoutError:
-            return "Stats unavailable (DatabaseService timeout - is it running?)"
-        
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid stats response: {e}")
-            return "Stats error: Invalid response from DatabaseService"
-        
-        except Exception as e:
-            self.logger.error(f"Stats command error: {e}", exc_info=True)
-            return f"Stats error: {str(e)}"
+        """Show database statistics"""
+        # TODO(post-v2.0): Implement stats via NATS request/reply to DatabaseService
+        # This requires implementing query endpoints in DatabaseService for:
+        # - get_channel_stats() -> high water marks, current counts
+        # - get_top_chatters(limit) -> leaderboard
+        # - get_total_users_seen() -> unique user count
+        # Target: Sprint 10 (post-NATS migration stabilization)
+        return "Stats command temporarily disabled during NATS migration. Will return in next release."
 
     async def cmd_users(self, bot):
         """List all users in channel"""
@@ -488,52 +387,8 @@ Examples:
         if bot.channel.userlist.leader == user:
             info.append("Status: LEADER")
 
-        # Query database stats via NATS (if available)
-        if bot.nats and bot.nats.is_connected:
-            try:
-                response = await bot.nats.request(
-                    'rosey.db.query.user_stats',
-                    json.dumps({'username': username}).encode(),
-                    timeout=1.0
-                )
-                
-                stats = json.loads(response.data.decode())
-                
-                if stats.get('success') and stats.get('found'):
-                    info.append("\n--- Database Statistics ---")
-                    
-                    # Chat messages
-                    info.append(f"Chat messages: {stats['total_chat_lines']}")
-                    
-                    # Time connected (convert seconds to hours/minutes)
-                    total_seconds = stats['total_time_connected']
-                    hours = total_seconds // 3600
-                    minutes = (total_seconds % 3600) // 60
-                    info.append(f"Time connected: {hours}h {minutes}m")
-                    
-                    # First seen
-                    first_seen = datetime.fromtimestamp(stats['first_seen'])
-                    info.append(f"First seen: {first_seen.strftime('%Y-%m-%d %H:%M')}")
-                    
-                    # Last seen
-                    last_seen = datetime.fromtimestamp(stats['last_seen'])
-                    info.append(f"Last seen: {last_seen.strftime('%Y-%m-%d %H:%M')}")
-                    
-                    # Current session
-                    if stats.get('current_session_start'):
-                        info.append("Status: Currently connected")
-                
-                elif stats.get('success') and not stats.get('found'):
-                    info.append("\n--- Database Statistics ---")
-                    info.append("No database history for this user")
-            
-            except asyncio.TimeoutError:
-                info.append("\n--- Database Statistics ---")
-                info.append("Database stats unavailable (timeout)")
-            
-            except Exception as e:
-                self.logger.debug(f"Could not fetch user stats: {e}")
-                # Don't show error to user - stats are optional
+        # TODO: Add user stats via NATS queries to DatabaseService
+        # (chat messages, time connected, etc.)
 
         return '\n'.join(info)
 

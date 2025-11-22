@@ -76,7 +76,7 @@ async def integration_db(tmp_path):
 
 
 @pytest.fixture
-async def integration_bot(integration_db):
+def integration_bot(integration_db):
     """Bot instance with real database but mocked connection."""
     from lib.connection import ConnectionAdapter
     

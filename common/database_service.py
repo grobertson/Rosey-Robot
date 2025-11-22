@@ -44,7 +44,6 @@ class DatabaseService:
         rosey.db.stats.high_water      - Update high water mark (pub/sub)
         rosey.db.status.update         - Bot status update (pub/sub)
         rosey.db.messages.outbound.mark_sent - Mark message sent (pub/sub)
-        rosey.db.action.pm_command     - Log PM command (pub/sub)
         rosey.db.messages.outbound.get - Query outbound messages (request/reply)
         rosey.db.stats.recent_chat.get - Get recent chat (request/reply)
 
@@ -84,9 +83,6 @@ class DatabaseService:
             return
 
         self.logger.info("Starting DatabaseService...")
-        
-        # Connect database (Sprint 10 - async lifecycle)
-        await self.db.connect()
 
         # Pub/Sub subscriptions (fire-and-forget events)
         try:
@@ -105,8 +101,6 @@ class DatabaseService:
                                         cb=self._handle_status_update),
                 await self.nats.subscribe('rosey.db.messages.outbound.mark_sent',
                                         cb=self._handle_mark_sent),
-                await self.nats.subscribe('rosey.db.action.pm_command',
-                                        cb=self._handle_pm_action),
             ])
 
             # Request/Reply subscriptions (queries)
@@ -115,10 +109,6 @@ class DatabaseService:
                                         cb=self._handle_outbound_query),
                 await self.nats.subscribe('rosey.db.stats.recent_chat.get',
                                         cb=self._handle_recent_chat_query),
-                await self.nats.subscribe('rosey.db.query.channel_stats',
-                                        cb=self._handle_channel_stats_query),
-                await self.nats.subscribe('rosey.db.query.user_stats',
-                                        cb=self._handle_user_stats_query),
             ])
 
             self._running = True
@@ -150,11 +140,6 @@ class DatabaseService:
 
         self._subscriptions = []
         self._running = False
-        
-        # Close database (Sprint 10 - async lifecycle)
-        if self.db.is_connected:
-            await self.db.close()
-        
         self.logger.info("DatabaseService stopped")
 
     # ========================================================================
@@ -172,7 +157,7 @@ class DatabaseService:
             username = data.get('username', '')
 
             if username:
-                await self.db.user_joined(username)
+                self.db.user_joined(username)
                 self.logger.debug(f"[NATS] User joined: {username}")
             else:
                 self.logger.warning("[NATS] user_joined: Missing username")
@@ -193,7 +178,7 @@ class DatabaseService:
             username = data.get('username', '')
 
             if username:
-                await self.db.user_left(username)
+                self.db.user_left(username)
                 self.logger.debug(f"[NATS] User left: {username}")
             else:
                 self.logger.warning("[NATS] user_left: Missing username")
@@ -216,7 +201,7 @@ class DatabaseService:
 
             if username and message:
                 # BotDatabase method is user_chat_message()
-                await self.db.user_chat_message(username, message)
+                self.db.user_chat_message(username, message)
                 self.logger.debug(f"[NATS] Message logged: {username}")
             else:
                 self.logger.warning(
@@ -241,7 +226,7 @@ class DatabaseService:
             connected_count = data.get('connected_count', 0)
 
             # BotDatabase method is log_user_count()
-            await self.db.log_user_count(chat_count, connected_count)
+            self.db.log_user_count(chat_count, connected_count)
             self.logger.debug(
                 f"[NATS] User count logged: chat={chat_count}, "
                 f"connected={connected_count}"
@@ -263,7 +248,7 @@ class DatabaseService:
             chat_count = data.get('chat_count', 0)
             connected_count = data.get('connected_count', None)
 
-            await self.db.update_high_water_mark(chat_count, connected_count)
+            self.db.update_high_water_mark(chat_count, connected_count)
             self.logger.debug(
                 f"[NATS] High water updated: chat={chat_count}, "
                 f"connected={connected_count}"
@@ -285,7 +270,7 @@ class DatabaseService:
             status_data = data.get('status_data', {})
 
             if status_data:
-                await self.db.update_current_status(**status_data)
+                self.db.update_current_status(**status_data)
                 self.logger.debug(f"[NATS] Status updated: {list(status_data.keys())}")
             else:
                 self.logger.warning("[NATS] status_update: No status data")
@@ -306,7 +291,7 @@ class DatabaseService:
             message_id = data.get('message_id')
 
             if message_id is not None:
-                await self.db.mark_outbound_sent(message_id)
+                self.db.mark_outbound_sent(message_id)
                 self.logger.debug(f"[NATS] Marked message sent: {message_id}")
             else:
                 self.logger.warning("[NATS] mark_sent: Missing message_id")
@@ -333,7 +318,7 @@ class DatabaseService:
             max_retries = data.get('max_retries', 3)
 
             # BotDatabase method signature: get_unsent_outbound_messages(limit, max_retries)
-            messages = await self.db.get_unsent_outbound_messages(
+            messages = self.db.get_unsent_outbound_messages(
                 limit=limit,
                 max_retries=max_retries
             )
@@ -363,7 +348,7 @@ class DatabaseService:
             data = json.loads(msg.data.decode())
             limit = data.get('limit', 50)
 
-            messages = await self.db.get_recent_chat(limit=limit)
+            messages = self.db.get_recent_chat(limit=limit)
             response = json.dumps(messages).encode()
 
             await self.nats.publish(msg.reply, response)
@@ -377,215 +362,6 @@ class DatabaseService:
         except Exception as e:
             self.logger.error(f"Error handling recent_chat_query: {e}", exc_info=True)
             await self.nats.publish(msg.reply, json.dumps([]).encode())
-
-    async def _handle_channel_stats_query(self, msg):
-        """Handle channel statistics query (request/reply).
-        
-        NATS Subject: rosey.db.query.channel_stats
-        Request Payload: {} (empty JSON object)
-        Response Payload: {
-            'high_water_mark': {'users': int, 'timestamp': int},
-            'high_water_connected': {'users': int, 'timestamp': int},
-            'top_chatters': [{'username': str, 'chat_lines': int}, ...],
-            'total_users_seen': int,
-            'success': bool
-        }
-        """
-        try:
-            # Get high water mark (max users in chat)
-            max_users, max_users_ts = await self.db.get_high_water_mark()
-            
-            # Get high water mark for connected viewers
-            max_connected, max_connected_ts = await self.db.get_high_water_mark_connected()
-            
-            # Get top chatters (top 10)
-            top_chatters_raw = await self.db.get_top_chatters(limit=10)
-            top_chatters = [
-                {'username': username, 'chat_lines': chat_lines}
-                for username, chat_lines in top_chatters_raw
-            ]
-            
-            # Get total unique users
-            total_users = await self.db.get_total_users_seen()
-            
-            # Build response
-            response_data = {
-                'high_water_mark': {
-                    'users': max_users,
-                    'timestamp': max_users_ts
-                },
-                'high_water_connected': {
-                    'users': max_connected,
-                    'timestamp': max_connected_ts
-                },
-                'top_chatters': top_chatters,
-                'total_users_seen': total_users,
-                'success': True
-            }
-            
-            # Send response back to requester
-            await self.nats.publish(
-                msg.reply,
-                json.dumps(response_data).encode()
-            )
-            
-            self.logger.debug("[NATS] Channel stats query served")
-        
-        except Exception as e:
-            self.logger.error(f"Error handling channel stats query: {e}", exc_info=True)
-            
-            # Send error response
-            error_response = {
-                'success': False,
-                'error': str(e)
-            }
-            await self.nats.publish(
-                msg.reply,
-                json.dumps(error_response).encode()
-            )
-
-    async def _handle_user_stats_query(self, msg):
-        """Handle user statistics query (request/reply).
-        
-        NATS Subject: rosey.db.query.user_stats
-        Request Payload: {'username': str}
-        Response Payload: {
-            'username': str,
-            'first_seen': int,
-            'last_seen': int,
-            'total_chat_lines': int,
-            'total_time_connected': int,
-            'current_session_start': int | None,
-            'success': bool,
-            'found': bool
-        }
-        """
-        try:
-            # Parse request
-            data = json.loads(msg.data.decode())
-            username = data.get('username', '')
-            
-            if not username:
-                raise ValueError("Missing username in request")
-            
-            # Query user stats
-            user_stats = await self.db.get_user_stats(username)
-            
-            if user_stats:
-                # User found - return stats
-                response_data = {
-                    'username': user_stats['username'],
-                    'first_seen': user_stats['first_seen'],
-                    'last_seen': user_stats['last_seen'],
-                    'total_chat_lines': user_stats['total_chat_lines'],
-                    'total_time_connected': user_stats['total_time_connected'],
-                    'current_session_start': user_stats.get('current_session_start'),
-                    'success': True,
-                    'found': True
-                }
-            else:
-                # User not found in database
-                response_data = {
-                    'username': username,
-                    'success': True,
-                    'found': False,
-                    'message': f"No statistics found for user '{username}'"
-                }
-            
-            # Send response
-            await self.nats.publish(
-                msg.reply,
-                json.dumps(response_data).encode()
-            )
-            
-            self.logger.debug(f"[NATS] User stats query for '{username}' served")
-        
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON in user stats query: {e}")
-            error_response = {
-                'success': False,
-                'error': 'Invalid request format'
-            }
-            await self.nats.publish(msg.reply, json.dumps(error_response).encode())
-        
-        except Exception as e:
-            self.logger.error(f"Error handling user stats query: {e}", exc_info=True)
-            error_response = {
-                'success': False,
-                'error': str(e)
-            }
-            await self.nats.publish(msg.reply, json.dumps(error_response).encode())
-
-    async def _handle_pm_action(self, msg):
-        """Handle PM command action logging.
-        
-        NATS Subject: rosey.db.action.pm_command
-        Payload: {
-            'timestamp': int,
-            'username': str,
-            'command': str,
-            'args': str,
-            'result': str ('success' | 'error' | 'pending'),
-            'error': str | None
-        }
-        
-        This logs moderator PM commands for audit trail and security compliance.
-        Fire-and-forget semantics - failures are logged but don't affect bot.
-        
-        Example:
-            await bot.nats.publish(
-                'rosey.db.action.pm_command',
-                json.dumps({
-                    'timestamp': time.time(),
-                    'username': 'ModUser',
-                    'command': 'stats',
-                    'args': '',
-                    'result': 'success',
-                    'error': None
-                }).encode()
-            )
-        """
-        try:
-            data = json.loads(msg.data.decode())
-            
-            # Extract fields
-            username = data.get('username', '')
-            command = data.get('command', '')
-            args = data.get('args', '')
-            result = data.get('result', 'unknown')
-            error = data.get('error')
-            
-            if not username or not command:
-                self.logger.warning("[NATS] pm_action: Missing required fields")
-                return
-            
-            # Build details string
-            details_parts = []
-            if args:
-                details_parts.append(f"args: {args}")
-            if result:
-                details_parts.append(f"result: {result}")
-            if error:
-                details_parts.append(f"error: {error}")
-            
-            details = ', '.join(details_parts) if details_parts else None
-            
-            # Log to database (SQL injection safe: uses parameterized queries)
-            await self.db.log_user_action(
-                username=username,
-                action_type='pm_command',
-                details=f"cmd={command}, {details}" if details else f"cmd={command}"
-            )
-            
-            self.logger.debug(
-                "[NATS] PM command logged: %s executed %s",
-                username, command
-            )
-        
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Invalid JSON in pm_action: {e}")
-        except Exception as e:
-            self.logger.error(f"Error handling pm_action: {e}", exc_info=True)
 
 
 async def main():
