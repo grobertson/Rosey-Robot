@@ -398,8 +398,8 @@ class DatabaseService:
             # Get top chatters (top 10)
             top_chatters_raw = await self.db.get_top_chatters(limit=10)
             top_chatters = [
-                {'username': row['username'], 'chat_lines': row['total_chat_lines']}
-                for row in top_chatters_raw
+                {'username': username, 'chat_lines': chat_lines}
+                for username, chat_lines in top_chatters_raw
             ]
             
             # Get total unique users

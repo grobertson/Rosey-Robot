@@ -553,7 +553,8 @@ class BotDatabase:
         """
         cursor = await self.conn.cursor()
         await cursor.execute('SELECT COUNT(*) as count FROM user_stats')
-        return await cursor.fetchone()['count']
+        row = await cursor.fetchone()
+        return row['count']
 
     async def log_user_count(self, chat_users, connected_users):
         """Log current user counts for historical tracking
