@@ -4,8 +4,7 @@ Unit tests for EventBus and Event
 import pytest
 import asyncio
 import json
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from datetime import datetime
+from unittest.mock import Mock, AsyncMock, patch
 
 from bot.rosey.core.event_bus import (
     Event,

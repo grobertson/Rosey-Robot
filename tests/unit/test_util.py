@@ -4,8 +4,7 @@ Unit tests for lib/util.py
 Tests MessageParser, sequence utilities, async HTTP, and IP cloaking functions.
 """
 import pytest
-import asyncio
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch
 from lib.util import (
     MessageParser,
     to_sequence,

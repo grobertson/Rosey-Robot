@@ -21,7 +21,6 @@ Coverage target: 90% (realistic for database testing)
 import pytest
 import sqlite3
 import time
-from unittest.mock import patch
 
 from common.database import BotDatabase
 

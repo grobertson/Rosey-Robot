@@ -8,10 +8,8 @@ Tests cover:
 """
 
 import asyncio
-import multiprocessing
-import os
 import time
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from bot.rosey.core.plugin_isolation import (
@@ -24,7 +22,7 @@ from bot.rosey.core.plugin_isolation import (
     PluginState,
     PluginProcess
 )
-from bot.rosey.core.event_bus import Event, EventBus, Priority
+from bot.rosey.core.event_bus import EventBus, Priority
 from bot.rosey.core.subjects import EventTypes
 
 

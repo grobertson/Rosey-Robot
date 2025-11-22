@@ -29,30 +29,50 @@ def integration_db(tmp_path):
 
 @pytest.fixture
 def integration_bot(integration_db):
-    """Bot instance with real database but mocked socket."""
+    """Bot instance with real database but mocked connection."""
+    from lib.connection import ConnectionAdapter
+    
+    # Create mock connection adapter
+    mock_conn = AsyncMock(spec=ConnectionAdapter)
+    mock_conn.is_connected = True
+    mock_conn.connect = AsyncMock()
+    mock_conn.disconnect = AsyncMock()
+    mock_conn.send_message = AsyncMock()
+    mock_conn.send_pm = AsyncMock()
+    mock_conn.on_event = MagicMock()
+    
+    # Mock event iterator
+    async def mock_recv_events():
+        if False:
+            yield
+    mock_conn.recv_events = mock_recv_events
+    
+    # Create mock NATS client (required in Sprint 9+)
+    mock_nats = AsyncMock()
+    mock_nats.publish = AsyncMock()
+    mock_nats.request = AsyncMock()
+    mock_nats.subscribe = AsyncMock()
+    mock_nats.is_connected = True
+    
     bot = Bot(
-        domain="cytu.be",
-        channel="test_integration",
-        user="IntegrationTestBot",
-        restart_delay=5,
-        response_timeout=10
+        connection=mock_conn,
+        nats_client=mock_nats,
+        restart_delay=5
     )
     
-    # Connect bot to integration database
+    # Connect bot to integration database for backward compatibility
+    # (Bot will use NATS for new operations, but old tests may check db)
     bot.db = integration_db
     
-    # Mock socket to prevent actual network connection
-    bot.socket = MagicMock()
-    bot.socket.connected = True
+    # Set up channel and user info for backward compatibility
+    bot.channel.name = "test_integration"
+    bot.user.name = "IntegrationTestBot"
+    bot.user.rank = 3.0
+    bot.user.afk = False
     
     # Set up start time for uptime calculations
     bot.start_time = time.time()
     bot.connect_time = time.time()
-    bot.server = "cytu.be"
-    
-    # Create mock channel with userlist and playlist
-    bot.channel = MagicMock()
-    bot.channel.name = "test_integration"
     
     # Create userlist mock with proper attributes
     bot.channel.userlist = MagicMock()
@@ -73,12 +93,6 @@ def integration_bot(integration_db):
     bot.channel.usercount = MagicMock()
     bot.channel.usercount.chatcount = 0
     bot.channel.usercount.usercount = 0
-    
-    # Create bot user
-    bot.user = MagicMock()
-    bot.user.name = "IntegrationTestBot"
-    bot.user.rank = 3.0
-    bot.user.afk = False
     
     yield bot
     

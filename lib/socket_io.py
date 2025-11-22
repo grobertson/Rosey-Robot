@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import re
-import json
-import socket
 import asyncio
+import json
 import logging
+import re
+import socket
 from time import time
 
 import websockets
 
-from .util import Queue, get as default_get, current_task
-from .error import (
-    SocketIOError, ConnectionFailed,
-    ConnectionClosed, PingTimeout
-)
+from .error import ConnectionClosed, ConnectionFailed, PingTimeout, SocketIOError
 from .proxy import ProxyError
+from .util import Queue, current_task
+from .util import get as default_get
 
 
 class SocketIOResponse:
@@ -234,7 +232,7 @@ class SocketIO:
             raise self.error  # pylint:disable=raising-bad-type
         return ev
 
-    async def emit(self, event, data, match_response=None, response_timeout=None):
+    async def emit(self, event, data, match_response=None, response_timeout=None):  # noqa: C901 (socket.io protocol)
         """Send an event.
 
         Parameters
@@ -290,7 +288,7 @@ class SocketIO:
                 except asyncio.CancelledError:
                     self.logger.info('response cancelled %s', event)
                     raise
-                except asyncio.TimeoutError as ex:
+                except asyncio.TimeoutError:
                     self.logger.info('response timeout %s', event)
                     response.cancel()
                     res = None
@@ -348,7 +346,7 @@ class SocketIO:
             self.logger.error('ping error: %r', ex)
             self.error = ConnectionClosed(ex)
 
-    async def _recv(self):
+    async def _recv(self):  # noqa: C901 (socket.io protocol complexity)
         """Read task."""
         try:
             while self.error is None:

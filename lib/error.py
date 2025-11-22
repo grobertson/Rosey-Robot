@@ -12,7 +12,7 @@ class SocketConfigError(CytubeError):
 class LoginError(CytubeError):
     ''' Exception raised when there is an error in the login process '''
 
-class Kicked(CytubeError):
+class Kicked(CytubeError):  # noqa: N818 (legacy exception name)
     ''' Exception raised when the bot is kicked from the channel '''
 
 class ChannelError(CytubeError):
@@ -24,10 +24,10 @@ class ChannelPermissionError(ChannelError):
 class SocketIOError(Exception):
     ''' Base class for all exceptions in the socketio package '''
 
-class ConnectionFailed(SocketIOError):
+class ConnectionFailed(SocketIOError):  # noqa: N818 (legacy exception name)
     ''' Exception raised when the connection to the server fails '''
 
-class ConnectionClosed(SocketIOError):
+class ConnectionClosed(SocketIOError):  # noqa: N818 (legacy exception name)
     ''' Exception raised when the connection to the server is closed '''
 
 class PingTimeout(ConnectionClosed):

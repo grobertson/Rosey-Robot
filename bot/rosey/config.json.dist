@@ -1,15 +1,52 @@
 {
-  "domain": "https://cytu.be",
-  "channel": "YourChannelName",
-  "user": ["YourUsername", "YourPassword"],
-  "response_timeout": 1,
-  "restart_delay": 5,
-  "log_level": "WARNING",
-  "chat_log_file": "chat.log",
-  "media_log_file": "media.log",
-  "shell": "localhost:5555",
-  "db": "bot_data.db",
+  "_note": "All '_comment' fields in this file are for documentation only and are ignored at runtime.",
+  "_comment": "Rosey Configuration v2.0 - Sprint 9 Architecture",
+  "version": "2.0",
+  
+  "nats": {
+    "_comment": "NATS event bus configuration (REQUIRED)",
+    "url": "nats://localhost:4222",
+    "connection_timeout": 5,
+    "max_reconnect_attempts": -1,
+    "reconnect_delay": 2
+  },
+  
+  "database": {
+    "_comment": "Database service configuration",
+    "path": "bot_data.db",
+    "run_as_service": true
+  },
+  
+  "platforms": [
+    {
+      "_comment": "Platform configuration - supports multi-platform (future)",
+      "type": "cytube",
+      "name": "primary",
+      "enabled": true,
+      "domain": "https://cytu.be",
+      "channel": "YourChannelName",
+      "user": ["YourUsername", "YourPassword"],
+      "response_timeout": 1,
+      "restart_delay": 5
+    }
+  ],
+  
+  "shell": {
+    "_comment": "PM command interface for moderators",
+    "enabled": true,
+    "host": "localhost",
+    "port": 5555
+  },
+  
+  "logging": {
+    "_comment": "Logging configuration",
+    "level": "WARNING",
+    "chat_log_file": "chat.log",
+    "media_log_file": "media.log"
+  },
+  
   "llm": {
+    "_comment": "LLM (AI chat) integration - optional",
     "enabled": false,
     "provider": "ollama",
     "system_prompt_file": "prompt.md",
@@ -71,5 +108,12 @@
         }
       }
     }
+  },
+  
+  "plugins": {
+    "_comment": "Plugin system configuration (future)",
+    "enabled": true,
+    "directory": "plugins/",
+    "auto_reload": false
   }
 }

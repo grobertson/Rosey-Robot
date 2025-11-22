@@ -4,7 +4,6 @@ Tests actual NATS pub/sub without full bot stack
 """
 import pytest
 import asyncio
-import json
 from unittest.mock import patch
 
 from bot.rosey.core.event_bus import EventBus, Event

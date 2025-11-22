@@ -8,8 +8,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import AsyncMock, Mock, call
-import re
+from unittest.mock import AsyncMock, Mock
 
 from bot.rosey.core.router import (
     RouteType,
@@ -18,14 +17,12 @@ from bot.rosey.core.router import (
     RouteRule,
     CommandRouter
 )
-from bot.rosey.core.event_bus import Event, EventBus, Priority
+from bot.rosey.core.event_bus import Event, EventBus
 from bot.rosey.core.subjects import Subjects, EventTypes
 from bot.rosey.core.plugin_manager import (
     PluginManager,
-    PluginMetadata,
     PluginEntry
 )
-from bot.rosey.core.plugin_isolation import PluginProcess
 
 
 # ============================================================================

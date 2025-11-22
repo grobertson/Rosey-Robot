@@ -3,13 +3,13 @@
 
 import asyncio
 import logging
-from html.parser import HTMLParser, unescape
-from hashlib import md5
 from base64 import b64encode
-from itertools import islice
 from collections.abc import Sequence
-import requests
+from hashlib import md5
+from html.parser import HTMLParser, unescape
+from itertools import islice
 
+import requests
 
 logger = logging.getLogger(__name__)
 

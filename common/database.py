@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """SQLite database for bot state persistence and statistics tracking"""
-import sqlite3
 import logging
+import sqlite3
 import time
 
 

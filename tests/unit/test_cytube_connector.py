@@ -8,8 +8,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import AsyncMock, Mock, call, MagicMock
-from typing import Dict, Any
+from unittest.mock import AsyncMock, Mock
 
 from bot.rosey.core.cytube_connector import (
     CytubeEventType,

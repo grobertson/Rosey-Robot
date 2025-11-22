@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 """PM command interface for bot control via moderator private messages"""
 import logging
+
 from lib import MediaLink
 
 
 class Shell:
     '''PM command interface for bot control.
-    
+
     Handles moderator commands sent via private messages.
     TCP/telnet server functionality has been removed - use REST API instead.
     '''
@@ -88,7 +89,7 @@ Examples:
         if addr is None:
             self.logger.info('PM command interface disabled')
 
-    async def handle_pm_command(self, event, data):
+    async def handle_pm_command(self, event, data):  # noqa: C901 (complex PM routing)
         """Handle commands sent via PM from moderators
 
         Args:
@@ -98,9 +99,14 @@ Examples:
         Returns:
             None - responses are sent back via PM
         """
-        # Extract data from PM
-        username = data.get('username', '')
-        message = data.get('msg', '').strip()
+        self.logger.debug('handle_pm_command called: event=%s, data=%s', event, data)
+
+        # TODO: NORMALIZATION - Shell should only use normalized fields (user, content)
+        # Platform-specific access to platform_data should be removed once normalization is complete
+        # Extract data from PM - check both normalized and platform_data locations
+        platform_data = data.get('platform_data', {})
+        username = data.get('user', platform_data.get('username', ''))
+        message = data.get('content', platform_data.get('msg', '')).strip()
 
         # Ignore empty messages
         if not message:
@@ -112,25 +118,26 @@ Examples:
             self.logger.debug('Ignoring PM from self')
             return
 
-        # Get the user object
-        if not bot.channel or username not in bot.channel.userlist:
-            self.logger.warning('PM from unknown user: %s', username)
-            return
+        # Get the user object if available
+        if bot.channel and username in bot.channel.userlist:
+            user = bot.channel.userlist[username]
 
-        user = bot.channel.userlist[username]
-
-        # Check if user is a moderator (rank 2.0+)
-        if user.rank < 2.0:
-            self.logger.info('PM command from non-moderator %s: %s',
-                           username, message)
-            # Don't respond to non-moderators to avoid spam
+            # Check if user is a moderator (rank 2.0+)
+            if user.rank < 2.0:
+                self.logger.info('PM command from non-moderator %s: %s',
+                               username, message)
+                # Don't respond to non-moderators to avoid spam
+                return
+        else:
+            # User not in userlist - this can happen if they joined before bot
+            # or if there's a sync issue. Fail closed (reject) to prevent
+            # potential privilege escalation via authorization bypass
+            self.logger.warning('PM from user not in userlist: %s (rejecting command for security)', username)
             return
 
         self.logger.info('PM command from %s: %s', username, message)
 
-        # Log PM command in database
-        if bot.db:
-            bot.db.log_user_action(username, 'pm_command', message)
+        # TODO: Log PM commands via NATS (future enhancement)
 
         # Process the command
         try:
@@ -169,7 +176,7 @@ Examples:
             except Exception:
                 pass  # Don't fail if we can't send error message
 
-    async def handle_command(self, cmd, bot):
+    async def handle_command(self, cmd, bot):  # noqa: C901 (complex function)
         """Handle bot control commands
 
         Args:
@@ -322,51 +329,13 @@ Examples:
 
     async def cmd_stats(self, bot):
         """Show database statistics"""
-        if not bot.db:
-            return "Database tracking is not enabled"
-
-        import datetime
-        stats = []
-
-        # Current viewer stats
-        if bot.channel:
-            chat_users = len(bot.channel.userlist)
-            total_viewers = bot.channel.userlist.count
-            if total_viewers and total_viewers != chat_users:
-                stats.append(f"Current: {chat_users} in chat, "
-                           f"{total_viewers} connected")
-            else:
-                stats.append(f"Current: {chat_users} users")
-
-        # High water marks
-        max_users, max_timestamp = bot.db.get_high_water_mark()
-        if max_timestamp:
-            dt = datetime.datetime.fromtimestamp(max_timestamp)
-            date_str = dt.strftime('%Y-%m-%d %H:%M')
-            stats.append(f"Peak (chat): {max_users} ({date_str})")
-        else:
-            stats.append(f"Peak (chat): {max_users}")
-
-        max_connected, max_conn_timestamp = bot.db.get_high_water_mark_connected()
-        if max_conn_timestamp:
-            dt = datetime.datetime.fromtimestamp(max_conn_timestamp)
-            date_str = dt.strftime('%Y-%m-%d %H:%M')
-            stats.append(f"Peak (connected): {max_connected} ({date_str})")
-        elif max_connected:
-            stats.append(f"Peak (connected): {max_connected}")
-
-        # Total users seen
-        total_users = bot.db.get_total_users_seen()
-        stats.append(f"Total seen: {total_users}")
-
-        # Top chatters
-        top_chatters = bot.db.get_top_chatters(5)
-        if top_chatters:
-            stats.append("\nTop chatters:")
-            for i, (username, count) in enumerate(top_chatters, 1):
-                stats.append(f"  {i}. {username}: {count} msg")
-
-        return '\n'.join(stats)
+        # TODO(post-v2.0): Implement stats via NATS request/reply to DatabaseService
+        # This requires implementing query endpoints in DatabaseService for:
+        # - get_channel_stats() -> high water marks, current counts
+        # - get_top_chatters(limit) -> leaderboard
+        # - get_total_users_seen() -> unique user count
+        # Target: Sprint 10 (post-NATS migration stabilization)
+        return "Stats command temporarily disabled during NATS migration. Will return in next release."
 
     async def cmd_users(self, bot):
         """List all users in channel"""
@@ -412,13 +381,8 @@ Examples:
         if bot.channel.userlist.leader == user:
             info.append("Status: LEADER")
 
-        # Add database stats if available
-        if bot.db:
-            user_stats = bot.db.get_user_stats(username)
-            if user_stats:
-                info.append(f"\nChat msgs: {user_stats['total_chat_lines']}")
-                conn_time = user_stats['total_time_connected']
-                info.append(f"Time: {self.format_duration(conn_time)}")
+        # TODO: Add user stats via NATS queries to DatabaseService
+        # (chat messages, time connected, etc.)
 
         return '\n'.join(info)
 

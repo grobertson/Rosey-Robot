@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import sys
 import json
 import logging
+import sys
 
 from lib import SocketIO, set_proxy
 
@@ -11,6 +11,12 @@ try:
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False
+
+try:
+    from packaging import version
+    HAS_PACKAGING = True
+except ImportError:
+    HAS_PACKAGING = False
 
 
 class RobustFileHandler(logging.FileHandler):
@@ -115,7 +121,7 @@ def get_config():
         sys.exit(1)
 
     config_file = sys.argv[1]
-    
+
     # Determine file format from extension
     if config_file.endswith(('.yaml', '.yml')):
         if not HAS_YAML:
@@ -134,8 +140,32 @@ def get_config():
     retry = conf.get('retry', 0)  # Number of connection retries
     retry_delay = conf.get('retry_delay', 1)  # Seconds between retries
 
+    # Handle config v2 format (platforms array) vs v1 (flat)
+    config_version = conf.get('version', '1.0')
+    # Use semantic versioning for robust version comparison
+    if HAS_PACKAGING:
+        # Prefer packaging library for proper semver support
+        is_v2 = version.parse(str(config_version)) >= version.parse('2.0')
+    else:
+        # Fallback to string comparison (less robust but works for major versions)
+        is_v2 = str(config_version).startswith('2.')
+
+    if is_v2:
+        # Extract from v2 nested structure
+        platforms = conf.get('platforms', [])
+        if not platforms:
+            print('ERROR: No platforms configured in v2 config', file=sys.stderr)
+            sys.exit(1)
+        platform = platforms[0]  # Primary platform
+        logging_config = conf.get('logging', {})
+        log_level_str = logging_config.get('level', 'info')
+    else:
+        # Extract from v1 flat structure
+        platform = conf
+        log_level_str = conf.get('log_level', 'info')
+
     # Parse log level from string to logging constant
-    log_level = getattr(logging, conf.get('log_level', 'info').upper())
+    log_level = getattr(logging, log_level_str.upper())
 
     # Configure root logger with basic settings
     logging.basicConfig(
@@ -148,11 +178,11 @@ def get_config():
 
     # Return full config and extracted bot parameters
     return conf, {
-        'domain': conf['domain'],  # CyTube server domain (required)
-        'user': conf.get('user', None),  # Bot username/credentials (optional)
-        'channel': conf.get('channel', None),  # Channel name/password (optional)
-        'response_timeout': conf.get('response_timeout', 0.1),  # Socket.IO response timeout
-        'restart_delay': conf.get('restart_delay', None),  # Delay before reconnect on error
+        'domain': platform['domain'],  # CyTube server domain (required)
+        'user': platform.get('user', None),  # Bot username/credentials (optional)
+        'channel': platform.get('channel', None),  # Channel name/password (optional)
+        'response_timeout': platform.get('response_timeout', 0.1),  # Socket.IO response timeout
+        'restart_delay': platform.get('restart_delay', None),  # Delay before reconnect on error
         'socket_io': lambda url, loop: SocketIO.connect(
             url,
             retry=retry,

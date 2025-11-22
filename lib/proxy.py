@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import sys
-import socket
 import logging
+import socket
+import sys
 
 # Removed Socks5 support for simplicity, pysocks had resolution issues
 HAS_PYSOCKS = False
@@ -11,13 +11,12 @@ SOCKS5 = None
 class ProxyError(Exception):
     pass
 
-class socksocket: # pylint: disable=invalid-name,too-few-public-methods
+class socksocket:  # noqa: N801 (pysocks compatibility) # pylint: disable=invalid-name,too-few-public-methods
     def __init__(self, *args, **kwargs):
         raise ProxyConfigError('pysocks is not installed')
 
 
-from .error import ProxyConfigError
-
+from .error import ProxyConfigError  # noqa: E402 (conditional import after try/except)
 
 logger = logging.getLogger('socks.getaddrinfo')
 _orig_getaddrinfo = socket.getaddrinfo
@@ -65,7 +64,7 @@ class Socket(socksocket):
 
 # https://web.archive.org/web/20161211104525/http://fitblip.pub/2012/11/13/proxying-dns-with-python/
 def getaddrinfo(host, port, *args, **kwargs):
-    proxy_type, _, _, rdns, _, _ = socks.get_default_proxy()
+    proxy_type, _, _, rdns, _, _ = socks.get_default_proxy()  # noqa: F821 (conditional pysocks)
     if proxy_type is not None and rdns:
         ret = [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (host, port))]
     else:
@@ -108,11 +107,11 @@ def set_proxy(addr, port, proxy_type=SOCKS5, modules=None):
     """
     if not HAS_PYSOCKS:
         raise ProxyConfigError('pysocks is not installed')
-    socks.set_default_proxy(
+    socks.set_default_proxy(  # noqa: F821 (conditional pysocks)
         proxy_type=proxy_type,
         addr=addr,
         port=port,
-        rdns=proxy_type == socks.SOCKS5
+        rdns=proxy_type == socks.SOCKS5  # noqa: F821 (conditional pysocks)
     )
     for module in modules or (sys.modules[__name__],):
         wrap_module(module)

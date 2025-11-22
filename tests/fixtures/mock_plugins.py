@@ -1,8 +1,6 @@
 """
 Mock plugins for testing
 """
-import asyncio
-from typing import Dict, Any, Optional
 
 
 class MockPlugin:

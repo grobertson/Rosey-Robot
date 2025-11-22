@@ -8,7 +8,6 @@ Run this to verify your LLM setup is working before integrating with Rosey.
 import sys
 from pathlib import Path
 import asyncio
-import json
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -43,11 +42,11 @@ async def test_ollama():
             # Test chat with context
             print("\n--- Chat conversation ---")
             resp1 = await client.chat("alice", "What's your name?")
-            print(f"User: What's your name?")
+            print("User: What's your name?")
             print(f"Bot: {resp1}")
             
             resp2 = await client.chat("alice", "What did I just ask you?")
-            print(f"\nUser: What did I just ask you?")
+            print("\nUser: What did I just ask you?")
             print(f"Bot: {resp2}")
             
             print("\n✓ Ollama tests passed!")
@@ -92,11 +91,11 @@ async def test_openrouter():
             # Test chat with context
             print("\n--- Chat conversation ---")
             resp1 = await client.chat("bob", "What's 2+2?")
-            print(f"User: What's 2+2?")
+            print("User: What's 2+2?")
             print(f"Bot: {resp1}")
             
             resp2 = await client.chat("bob", "What did I just ask?")
-            print(f"\nUser: What did I just ask?")
+            print("\nUser: What did I just ask?")
             print(f"Bot: {resp2}")
             
             print("\n✓ OpenRouter tests passed!")

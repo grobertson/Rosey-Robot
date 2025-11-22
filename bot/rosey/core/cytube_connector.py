@@ -16,7 +16,7 @@ import asyncio
 import logging
 from typing import Dict, Any, Optional, Callable, List
 from dataclasses import dataclass, field
-from enum import Enum, auto
+from enum import Enum
 
 from .event_bus import EventBus, Event, Priority
 from .subjects import Subjects, EventTypes, build_platform_subject

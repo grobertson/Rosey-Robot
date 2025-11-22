@@ -9,9 +9,7 @@ Tests cover:
 """
 
 import pytest
-from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
-import asyncio
 
 from bot.rosey.core.plugin_manager import (
     PluginMetadata,
@@ -22,7 +20,6 @@ from bot.rosey.core.plugin_manager import (
 from bot.rosey.core.plugin_isolation import PluginState, PluginProcess
 from bot.rosey.core.plugin_permissions import (
     PermissionProfile,
-    Permission,
     PluginPermissions
 )
 from bot.rosey.core.event_bus import EventBus
