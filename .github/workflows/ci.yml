@@ -46,6 +46,17 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     
+    services:
+      nats:
+        image: nats:2.10-alpine
+        ports:
+          - 4222:4222
+        options: >-
+          --health-cmd "wget --no-verbose --tries=1 --spider http://localhost:8222/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
     steps:
       - uses: actions/checkout@v4
       
@@ -63,7 +74,9 @@ jobs:
       
       - name: Run tests
         run: |
-          pytest tests/ -m "not integration" --cov=lib --cov=common --cov-report=term-missing --cov-report=xml
+          pytest tests/ --cov=lib --cov=common --cov-report=term-missing --cov-report=xml
+        env:
+          NATS_URL: nats://localhost:4222
       
       - name: Check coverage
         run: |
