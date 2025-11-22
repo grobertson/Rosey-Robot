@@ -40,6 +40,7 @@ Requirements:
 """
 
 import asyncio
+import json
 import statistics
 import time
 from typing import List
@@ -51,8 +52,9 @@ import pytest
 from common.database import BotDatabase
 from common.database_service import DatabaseService
 
-# Mark all tests in this module as xfail due to BotDatabase.connect() fixture issue
-pytestmark = pytest.mark.xfail(reason="BotDatabase.connect() not implemented - needs DatabaseService refactor")
+# Performance benchmarks - Sprint 10 Sortie 4
+# These tests measure NATS event bus performance characteristics
+# Run with: pytest tests/performance/test_nats_overhead.py -v -s
 
 
 # ============================================================================
@@ -79,24 +81,25 @@ async def temp_database(tmp_path):
 
 @pytest.fixture
 async def database_service(nats_client, temp_database):
-    """Create DatabaseService instance."""
+    """Create DatabaseService instance for benchmarks.
+    
+    Starts service in background, yields for test execution,
+    then cleans up on teardown. Uses start()/stop() methods
+    from Sprint 10 Sortie 1.
+    """
     service = DatabaseService(
         nats_client=nats_client,
-        database=temp_database
+        db_path=temp_database.db_path
     )
     
-    # Start service
-    task = asyncio.create_task(service.run())
-    await asyncio.sleep(0.2)  # Let service start
+    # Start service (async run loop)
+    await service.start()
+    await asyncio.sleep(0.2)  # Let subscriptions establish
     
     yield service
     
-    # Cleanup
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    # Cleanup - stop service gracefully
+    await service.stop()
 
 
 @pytest.fixture
