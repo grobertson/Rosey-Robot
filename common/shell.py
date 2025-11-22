@@ -135,9 +135,7 @@ Examples:
 
         self.logger.info('PM command from %s: %s', username, message)
 
-        # Log PM command in database
-        if bot.db:
-            bot.db.log_user_action(username, 'pm_command', message)
+        # TODO: Log PM commands via NATS (future enhancement)
 
         # Process the command
         try:
@@ -329,51 +327,8 @@ Examples:
 
     async def cmd_stats(self, bot):
         """Show database statistics"""
-        if not bot.db:
-            return "Database tracking is not enabled"
-
-        import datetime
-        stats = []
-
-        # Current viewer stats
-        if bot.channel:
-            chat_users = len(bot.channel.userlist)
-            total_viewers = bot.channel.userlist.count
-            if total_viewers and total_viewers != chat_users:
-                stats.append(f"Current: {chat_users} in chat, "
-                           f"{total_viewers} connected")
-            else:
-                stats.append(f"Current: {chat_users} users")
-
-        # High water marks
-        max_users, max_timestamp = bot.db.get_high_water_mark()
-        if max_timestamp:
-            dt = datetime.datetime.fromtimestamp(max_timestamp)
-            date_str = dt.strftime('%Y-%m-%d %H:%M')
-            stats.append(f"Peak (chat): {max_users} ({date_str})")
-        else:
-            stats.append(f"Peak (chat): {max_users}")
-
-        max_connected, max_conn_timestamp = bot.db.get_high_water_mark_connected()
-        if max_conn_timestamp:
-            dt = datetime.datetime.fromtimestamp(max_conn_timestamp)
-            date_str = dt.strftime('%Y-%m-%d %H:%M')
-            stats.append(f"Peak (connected): {max_connected} ({date_str})")
-        elif max_connected:
-            stats.append(f"Peak (connected): {max_connected}")
-
-        # Total users seen
-        total_users = bot.db.get_total_users_seen()
-        stats.append(f"Total seen: {total_users}")
-
-        # Top chatters
-        top_chatters = bot.db.get_top_chatters(5)
-        if top_chatters:
-            stats.append("\nTop chatters:")
-            for i, (username, count) in enumerate(top_chatters, 1):
-                stats.append(f"  {i}. {username}: {count} msg")
-
-        return '\n'.join(stats)
+        # TODO: Implement stats via NATS queries to DatabaseService
+        return "Stats command not yet implemented for NATS architecture"
 
     async def cmd_users(self, bot):
         """List all users in channel"""
@@ -419,13 +374,8 @@ Examples:
         if bot.channel.userlist.leader == user:
             info.append("Status: LEADER")
 
-        # Add database stats if available
-        if bot.db:
-            user_stats = bot.db.get_user_stats(username)
-            if user_stats:
-                info.append(f"\nChat msgs: {user_stats['total_chat_lines']}")
-                conn_time = user_stats['total_time_connected']
-                info.append(f"Time: {self.format_duration(conn_time)}")
+        # TODO: Add user stats via NATS queries to DatabaseService
+        # (chat messages, time connected, etc.)
 
         return '\n'.join(info)
 
