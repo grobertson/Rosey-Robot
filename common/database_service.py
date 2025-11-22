@@ -112,6 +112,10 @@ class DatabaseService:
                                         cb=self._handle_outbound_query),
                 await self.nats.subscribe('rosey.db.stats.recent_chat.get',
                                         cb=self._handle_recent_chat_query),
+                await self.nats.subscribe('rosey.db.query.channel_stats',
+                                        cb=self._handle_channel_stats_query),
+                await self.nats.subscribe('rosey.db.query.user_stats',
+                                        cb=self._handle_user_stats_query),
             ])
 
             self._running = True
@@ -370,6 +374,144 @@ class DatabaseService:
         except Exception as e:
             self.logger.error(f"Error handling recent_chat_query: {e}", exc_info=True)
             await self.nats.publish(msg.reply, json.dumps([]).encode())
+
+    async def _handle_channel_stats_query(self, msg):
+        """Handle channel statistics query (request/reply).
+        
+        NATS Subject: rosey.db.query.channel_stats
+        Request Payload: {} (empty JSON object)
+        Response Payload: {
+            'high_water_mark': {'users': int, 'timestamp': int},
+            'high_water_connected': {'users': int, 'timestamp': int},
+            'top_chatters': [{'username': str, 'chat_lines': int}, ...],
+            'total_users_seen': int,
+            'success': bool
+        }
+        """
+        try:
+            # Get high water mark (max users in chat)
+            max_users, max_users_ts = await self.db.get_high_water_mark()
+            
+            # Get high water mark for connected viewers
+            max_connected, max_connected_ts = await self.db.get_high_water_mark_connected()
+            
+            # Get top chatters (top 10)
+            top_chatters_raw = await self.db.get_top_chatters(limit=10)
+            top_chatters = [
+                {'username': row['username'], 'chat_lines': row['total_chat_lines']}
+                for row in top_chatters_raw
+            ]
+            
+            # Get total unique users
+            total_users = await self.db.get_total_users_seen()
+            
+            # Build response
+            response_data = {
+                'high_water_mark': {
+                    'users': max_users,
+                    'timestamp': max_users_ts
+                },
+                'high_water_connected': {
+                    'users': max_connected,
+                    'timestamp': max_connected_ts
+                },
+                'top_chatters': top_chatters,
+                'total_users_seen': total_users,
+                'success': True
+            }
+            
+            # Send response back to requester
+            await self.nats.publish(
+                msg.reply,
+                json.dumps(response_data).encode()
+            )
+            
+            self.logger.debug("[NATS] Channel stats query served")
+        
+        except Exception as e:
+            self.logger.error(f"Error handling channel stats query: {e}", exc_info=True)
+            
+            # Send error response
+            error_response = {
+                'success': False,
+                'error': str(e)
+            }
+            await self.nats.publish(
+                msg.reply,
+                json.dumps(error_response).encode()
+            )
+
+    async def _handle_user_stats_query(self, msg):
+        """Handle user statistics query (request/reply).
+        
+        NATS Subject: rosey.db.query.user_stats
+        Request Payload: {'username': str}
+        Response Payload: {
+            'username': str,
+            'first_seen': int,
+            'last_seen': int,
+            'total_chat_lines': int,
+            'total_time_connected': int,
+            'current_session_start': int | None,
+            'success': bool,
+            'found': bool
+        }
+        """
+        try:
+            # Parse request
+            data = json.loads(msg.data.decode())
+            username = data.get('username', '')
+            
+            if not username:
+                raise ValueError("Missing username in request")
+            
+            # Query user stats
+            user_stats = await self.db.get_user_stats(username)
+            
+            if user_stats:
+                # User found - return stats
+                response_data = {
+                    'username': user_stats['username'],
+                    'first_seen': user_stats['first_seen'],
+                    'last_seen': user_stats['last_seen'],
+                    'total_chat_lines': user_stats['total_chat_lines'],
+                    'total_time_connected': user_stats['total_time_connected'],
+                    'current_session_start': user_stats.get('current_session_start'),
+                    'success': True,
+                    'found': True
+                }
+            else:
+                # User not found in database
+                response_data = {
+                    'username': username,
+                    'success': True,
+                    'found': False,
+                    'message': f"No statistics found for user '{username}'"
+                }
+            
+            # Send response
+            await self.nats.publish(
+                msg.reply,
+                json.dumps(response_data).encode()
+            )
+            
+            self.logger.debug(f"[NATS] User stats query for '{username}' served")
+        
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON in user stats query: {e}")
+            error_response = {
+                'success': False,
+                'error': 'Invalid request format'
+            }
+            await self.nats.publish(msg.reply, json.dumps(error_response).encode())
+        
+        except Exception as e:
+            self.logger.error(f"Error handling user stats query: {e}", exc_info=True)
+            error_response = {
+                'success': False,
+                'error': str(e)
+            }
+            await self.nats.publish(msg.reply, json.dumps(error_response).encode())
 
 
 async def main():
