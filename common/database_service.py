@@ -83,6 +83,9 @@ class DatabaseService:
             return
 
         self.logger.info("Starting DatabaseService...")
+        
+        # Connect database (Sprint 10 - async lifecycle)
+        await self.db.connect()
 
         # Pub/Sub subscriptions (fire-and-forget events)
         try:
@@ -140,6 +143,11 @@ class DatabaseService:
 
         self._subscriptions = []
         self._running = False
+        
+        # Close database (Sprint 10 - async lifecycle)
+        if self.db.is_connected:
+            await self.db.close()
+        
         self.logger.info("DatabaseService stopped")
 
     # ========================================================================
@@ -157,7 +165,7 @@ class DatabaseService:
             username = data.get('username', '')
 
             if username:
-                self.db.user_joined(username)
+                await self.db.user_joined(username)
                 self.logger.debug(f"[NATS] User joined: {username}")
             else:
                 self.logger.warning("[NATS] user_joined: Missing username")
@@ -178,7 +186,7 @@ class DatabaseService:
             username = data.get('username', '')
 
             if username:
-                self.db.user_left(username)
+                await self.db.user_left(username)
                 self.logger.debug(f"[NATS] User left: {username}")
             else:
                 self.logger.warning("[NATS] user_left: Missing username")
@@ -201,7 +209,7 @@ class DatabaseService:
 
             if username and message:
                 # BotDatabase method is user_chat_message()
-                self.db.user_chat_message(username, message)
+                await self.db.user_chat_message(username, message)
                 self.logger.debug(f"[NATS] Message logged: {username}")
             else:
                 self.logger.warning(
@@ -226,7 +234,7 @@ class DatabaseService:
             connected_count = data.get('connected_count', 0)
 
             # BotDatabase method is log_user_count()
-            self.db.log_user_count(chat_count, connected_count)
+            await self.db.log_user_count(chat_count, connected_count)
             self.logger.debug(
                 f"[NATS] User count logged: chat={chat_count}, "
                 f"connected={connected_count}"
@@ -248,7 +256,7 @@ class DatabaseService:
             chat_count = data.get('chat_count', 0)
             connected_count = data.get('connected_count', None)
 
-            self.db.update_high_water_mark(chat_count, connected_count)
+            await self.db.update_high_water_mark(chat_count, connected_count)
             self.logger.debug(
                 f"[NATS] High water updated: chat={chat_count}, "
                 f"connected={connected_count}"
@@ -270,7 +278,7 @@ class DatabaseService:
             status_data = data.get('status_data', {})
 
             if status_data:
-                self.db.update_current_status(**status_data)
+                await self.db.update_current_status(**status_data)
                 self.logger.debug(f"[NATS] Status updated: {list(status_data.keys())}")
             else:
                 self.logger.warning("[NATS] status_update: No status data")
@@ -291,7 +299,7 @@ class DatabaseService:
             message_id = data.get('message_id')
 
             if message_id is not None:
-                self.db.mark_outbound_sent(message_id)
+                await self.db.mark_outbound_sent(message_id)
                 self.logger.debug(f"[NATS] Marked message sent: {message_id}")
             else:
                 self.logger.warning("[NATS] mark_sent: Missing message_id")
@@ -318,7 +326,7 @@ class DatabaseService:
             max_retries = data.get('max_retries', 3)
 
             # BotDatabase method signature: get_unsent_outbound_messages(limit, max_retries)
-            messages = self.db.get_unsent_outbound_messages(
+            messages = await self.db.get_unsent_outbound_messages(
                 limit=limit,
                 max_retries=max_retries
             )
@@ -348,7 +356,7 @@ class DatabaseService:
             data = json.loads(msg.data.decode())
             limit = data.get('limit', 50)
 
-            messages = self.db.get_recent_chat(limit=limit)
+            messages = await self.db.get_recent_chat(limit=limit)
             response = json.dumps(messages).encode()
 
             await self.nats.publish(msg.reply, response)

@@ -81,11 +81,21 @@ async def temp_database():
 
 
 @pytest.fixture
-async def database_service(nats_client, temp_database):
-    """Start DatabaseService for testing."""
-    service = DatabaseService(nats_client, temp_database)
+async def database_service(nats_client):
+    """Start DatabaseService for testing.
     
-    # Start service
+    Creates its own temporary database that DatabaseService manages.
+    This fixture tests DatabaseService's ability to create and connect
+    its own BotDatabase instance (as it does in production).
+    """
+    # Create temp db path
+    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+        db_path = f.name
+    
+    # Create service (it will create BotDatabase internally)
+    service = DatabaseService(nats_client, db_path)
+    
+    # Start service (connects database)
     await service.start()
     
     # Give it a moment to subscribe
@@ -93,8 +103,14 @@ async def database_service(nats_client, temp_database):
     
     yield service
     
-    # Stop service
+    # Stop service (closes database)
     await service.stop()
+    
+    # Cleanup temp file
+    try:
+        Path(db_path).unlink(missing_ok=True)
+    except Exception as e:
+        logging.warning(f'Error removing database_service temp file: {e}')
 
 
 @pytest.fixture
@@ -132,7 +148,7 @@ async def test_bot(mock_connection, nats_client):
 class TestUserJoinedFlow:
     """Test complete user joined event flow."""
     
-    async def test_user_joined_publishes_to_nats(self, test_bot, database_service, temp_database):
+    async def test_user_joined_publishes_to_nats(self, test_bot, database_service):
         """Test that user joined event is published to NATS and stored."""
         # Arrange - Use normalized data structure
         event_data = {
@@ -149,13 +165,13 @@ class TestUserJoinedFlow:
         # Wait for DatabaseService to process
         await asyncio.sleep(0.2)
         
-        # Assert - Check database
-        stats = await temp_database.get_user_stats('TestUser')
+        # Assert - Check database (query DatabaseService's database)
+        stats = await database_service.db.get_user_stats('TestUser')
         assert stats is not None
         assert stats['username'] == 'TestUser'
         assert stats['first_seen'] is not None
     
-    async def test_multiple_users_joined(self, test_bot, database_service, temp_database):
+    async def test_multiple_users_joined(self, test_bot, database_service):
         """Test multiple users joining in sequence."""
         # Arrange - Use normalized data structure
         users = [
@@ -171,7 +187,7 @@ class TestUserJoinedFlow:
         await asyncio.sleep(0.3)
         
         # Assert
-        all_users = await temp_database.get_all_user_stats()
+        all_users = await database_service.db.get_all_user_stats()
         assert len(all_users) >= 3
         usernames = [u['username'] for u in all_users]
         assert 'User1' in usernames
@@ -184,7 +200,7 @@ class TestUserJoinedFlow:
 class TestChatMessageFlow:
     """Test complete chat message event flow."""
     
-    async def test_chat_message_published_and_stored(self, test_bot, database_service, temp_database):
+    async def test_chat_message_published_and_stored(self, test_bot, database_service):
         """Test chat message is published to NATS and stored in database."""
         # Arrange - Use normalized data structure
         msg_data = {
@@ -199,7 +215,7 @@ class TestChatMessageFlow:
         await asyncio.sleep(0.2)
         
         # Assert
-        recent_messages = await temp_database.get_recent_messages(limit=10)
+        recent_messages = await database_service.db.get_recent_messages(limit=10)
         assert len(recent_messages) > 0
         
         # Find our message
@@ -211,7 +227,7 @@ class TestChatMessageFlow:
         
         assert msg_found, "Message not found in database"
     
-    async def test_multiple_messages_ordered(self, test_bot, database_service, temp_database):
+    async def test_multiple_messages_ordered(self, test_bot, database_service):
         """Test multiple messages are stored in order."""
         # Arrange
         messages = [
@@ -234,7 +250,7 @@ class TestChatMessageFlow:
         await asyncio.sleep(0.3)
         
         # Assert
-        recent = await temp_database.get_recent_messages(limit=10)
+        recent = await database_service.db.get_recent_messages(limit=10)
         assert len(recent) >= 3
         
         # Messages should be in reverse chronological order (newest first)
@@ -249,7 +265,7 @@ class TestChatMessageFlow:
 class TestUserCountFlow:
     """Test user count tracking flow."""
     
-    async def test_usercount_published_and_stored(self, test_bot, database_service, temp_database):
+    async def test_usercount_published_and_stored(self, test_bot, database_service):
         """Test user count is published and stored."""
         # Arrange
         usercount_data = {'count': 42}
@@ -260,7 +276,7 @@ class TestUserCountFlow:
         await asyncio.sleep(0.2)
         
         # Assert - Check high water mark
-        stats = await temp_database.get_channel_stats()
+        stats = await database_service.db.get_channel_stats()
         assert stats is not None
         assert stats['chat_users_max'] >= 42
 
@@ -270,7 +286,7 @@ class TestUserCountFlow:
 class TestMediaPlayedFlow:
     """Test media played event flow."""
     
-    async def test_media_played_published(self, test_bot, database_service, temp_database):
+    async def test_media_played_published(self, test_bot, database_service):
         """Test media played event is published to NATS."""
         # Arrange
         media_data = {
@@ -300,10 +316,10 @@ class TestMediaPlayedFlow:
 class TestRequestReplyFlow:
     """Test request/reply pattern for queries."""
     
-    async def test_query_user_stats_via_nats(self, nats_client, database_service, temp_database):
+    async def test_query_user_stats_via_nats(self, nats_client, database_service):
         """Test querying user stats via NATS request/reply."""
         # Arrange - Add user to database
-        await temp_database.save_user_stats('QueryUser', {
+        await database_service.db.save_user_stats('QueryUser', {
             'username': 'QueryUser',
             'chat_messages': 10,
             'first_seen': int(time.time())
@@ -387,10 +403,10 @@ class TestServiceResilience:
         assert True  # If we got here, bot didn't crash
     
     @pytest.mark.xfail(reason="Service resilience tests need fixture updates - see issue #XX")
-    async def test_database_service_recovers_after_restart(self, nats_client, temp_database):
+    async def test_database_service_recovers_after_restart(self, nats_client):
         """Test DatabaseService can be stopped and restarted."""
         # Arrange
-        service1 = DatabaseService(nats_client, temp_database)
+        service1 = DatabaseService(nats_client)
         await service1.start()
         await asyncio.sleep(0.1)
         
@@ -399,7 +415,7 @@ class TestServiceResilience:
         await asyncio.sleep(0.1)
         
         # Start new service instance
-        service2 = DatabaseService(nats_client, temp_database)
+        service2 = DatabaseService(nats_client)
         await service2.start()
         await asyncio.sleep(0.1)
         
@@ -416,7 +432,7 @@ class TestServiceResilience:
         await asyncio.sleep(0.2)
         
         # Assert - Event was processed
-        stats = await temp_database.get_user_stats('RecoveryUser')
+        stats = await database_service.db.get_user_stats('RecoveryUser')
         assert stats is not None
         
         # Cleanup
@@ -428,7 +444,7 @@ class TestServiceResilience:
 class TestPerformance:
     """Test performance characteristics."""
     
-    async def test_high_throughput_messages(self, test_bot, database_service, temp_database):
+    async def test_high_throughput_messages(self, test_bot, database_service):
         """Test system handles high message throughput."""
         # Arrange
         num_messages = 100
@@ -455,7 +471,7 @@ class TestPerformance:
         elapsed = time.time() - start_time
         
         # Assert
-        recent = await temp_database.get_recent_messages(limit=num_messages + 10)
+        recent = await database_service.db.get_recent_messages(limit=num_messages + 10)
         assert len(recent) >= num_messages * 0.95  # At least 95% received
         
         # Performance check - should handle 100+ events/sec
@@ -463,7 +479,7 @@ class TestPerformance:
         assert throughput > 50, f"Throughput too low: {throughput:.2f} events/sec"
     
     @pytest.mark.benchmark
-    async def test_latency_overhead(self, test_bot, database_service, temp_database):
+    async def test_latency_overhead(self, test_bot, database_service):
         """Test NATS adds minimal latency overhead."""
         # Arrange
         num_iterations = 10
