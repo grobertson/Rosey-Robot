@@ -2,8 +2,9 @@
 
 **Fair warning: This implementation is over-engineered. I may do crazy things here at any time. If you're not a person who likes reading documentation, this may not be the project for you. With that said, welcome! As with most of my hobby projects this is MIT licensed, keep FOSS fun and open!**
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](https://github.com/grobertson/Rosey-Robot/releases)
-[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-0.6.1-blue.svg)](https://github.com/grobertson/Rosey-Robot/releases)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Database](https://img.shields.io/badge/database-SQLite%20%7C%20PostgreSQL-green.svg)](docs/DATABASE_SETUP.md)
 
 **Rosey** is a Python-based framework for building bots that interact with [CyTube](https://github.com/calzoneman/sync) channels. Designed as a monolithic application for easier development and customization, Rosey provides a feature-rich main bot along with simple examples to help you get started.
 
@@ -478,7 +479,7 @@ playlist.get(uid)         # Get item by UID
 ### Implemented Features
 
 - ✅ Web Dashboard for monitoring bot status
-- ✅ Database Integration with PostgreSQL for data persistence
+- ✅ **Database Integration** - Dual-database support with SQLite (development) and PostgreSQL (production). Environment-aware connection pooling, async ORM, migrations via Alembic. See [docs/DATABASE_SETUP.md](docs/DATABASE_SETUP.md) and [docs/MIGRATIONS.md](docs/MIGRATIONS.md)
 - ✅ PM Command Interface for administrative control via private messages
 - ✅ **LLM Chat Integration** - AI-powered responses with OpenAI, Ollama, and OpenRouter support. Smart triggers, conversation context, flexible configuration. See [docs/guides/LLM_CONFIGURATION.md](docs/guides/LLM_CONFIGURATION.md)
 
