@@ -2,7 +2,7 @@
 
 **Project:** Rosey-Robot  
 **Workflow:** Nano-Sprint Development with GitHub Copilot  
-**Last Updated:** November 18, 2025  
+**Last Updated:** November 21, 2025  
 
 ---
 
@@ -13,233 +13,43 @@ This document describes the **agent-assisted development workflow** used in the 
 ### Workflow Philosophy
 
 - **Planning First**: Write comprehensive PRDs and specs before coding
-- **Nano-Sprints**: Small, manageable development cycles designed to complete in a single day or less
-- **Sorties**: Logical bundles of changes within a nano-sprint (1 or more commits per sortie)
+- **Nano-Sprints**: Small, manageable development cycles (typically 1-3 days)
+- **Sorties**: Logical bundles of changes within a nano-sprint (1+ commits per sortie)
 - **Agent Collaboration**: Use GitHub Copilot for implementation, testing, and documentation
 - **Documentation-Driven**: Maintain living documentation that evolves with the code
 - **Iterative Refinement**: Each commit builds incrementally on the previous one
-- **Completion**: When each sortie is complete, the nano-sprint is complete
 
 ---
 
-## Development Workflow
+## Quick Reference: Development Phases
 
 ### Phase 1: Product Requirements (PRD)
+Define the feature from a product perspective. Create comprehensive PRD documents covering problem statement, user stories, architecture, and rollout plans.
 
-**Purpose**: Define the feature from a product perspective
-
-**Format**: `docs/{sprint-number}-{sprint-name}/PRD-{feature-name}.md`
-
-**Contents**:
-
-1. **Executive Summary**: High-level feature overview
-2. **Problem Statement**: What problem are we solving?
-3. **Goals and Success Metrics**: Measurable outcomes
-4. **User Stories**: Detailed acceptance criteria
-5. **Technical Architecture**: System design and data flow
-6. **Dependencies**: External services, libraries, system requirements
-7. **Security and Privacy**: Considerations and mitigations
-8. **Rollout Plan**: Deployment phases and monitoring
-9. **Future Enhancements**: Post-release roadmap
-10. **Open Questions**: Unresolved issues to address
-
-**Example**: [`docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md`](docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md)
-
-**Agent Usage**:
-
-```markdown
-Prompt: "Create a PRD for adding LLM chat integration to Rosey. 
-The bot should respond to mentions using OpenAI or Ollama."
-
-Agent generates: Complete PRD with user stories, architecture, 
-security considerations, cost analysis, etc.
-```
-
----
+**Format**: `docs/sprints/{N}-{sprint-name}/PRD-{feature-name}.md`  
+**Example**: [PRD-LLM-Integration.md](docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md)
 
 ### Phase 2: Technical Specifications (SPEC)
+Break down PRD into logical sorties of atomic, implementable commits. Each spec defines scope, requirements, design, implementation steps, tests, and acceptance criteria.
 
-**Purpose**: Break down PRD into a logical sortie of atomic, implementable commits
-
-**Format**: `docs/{sprint-number}-{sprint-name}/SPEC-Sortie-{N}-{sortie-name}.md`
-
-**Contents per Sortie**:
-
-1. **Overview**: What this commit achieves
-2. **Scope and Non-Goals**: What's included/excluded
-3. **Requirements**: Functional and non-functional
-4. **Design**: Architecture diagrams, data structures, API interactions
-5. **Implementation**: Modified files, new methods, code structure
-6. **Testing**: Unit tests, integration tests, manual checklist
-7. **Acceptance Criteria**: Concrete checkboxes for completion
-8. **Rollout**: Deployment steps and monitoring
-9. **Documentation**: Code comments, API docs, user guides
-
-**Example**: [`docs/sprints/completed/2-start-me-up/SPEC-Sortie-1-LLM-Foundation.md`](docs/sprints/completed/2-start-me-up/SPEC-Sortie-1-LLM-Foundation.md)
-
-**Agent Usage**:
-
-```markdown
-Prompt: "Based on the LLM PRD, create specs for a nano-sprint sortie. 
-Break it into logical changes: 1) Foundation, 2) Remote Ollama, 3) Trigger refinement, 
-4) Username correction, 5) Deployment automation, 6) Documentation PR."
-
-Agent generates: Detailed spec files for the sortie with implementation plans
-```
-
----
+**Format**: `docs/sprints/{N}-{sprint-name}/SPEC-Sortie-{N}-{sortie-name}.md`  
+**Example**: [SPEC-Sortie-1-LLM-Foundation.md](docs/sprints/completed/2-start-me-up/SPEC-Sortie-1-LLM-Foundation.md)
 
 ### Phase 3: Implementation (Code)
+Execute specs with agent assistance. Agent reads specs, generates code following project conventions, creates tests, and verifies acceptance criteria.
 
-**Purpose**: Execute the spec with agent assistance
-
-**Approach**: Iterative development with Copilot
-
-**Steps per Sortie**:
-
-1. **Read the Spec**
-
-   ```markdown
-   Prompt: "Read SPEC-Sortie-1-LLM-Foundation.md and implement it"
-   ```
-
-2. **Generate Code**
-   - Agent creates/modifies files based on spec
-   - Follows existing code patterns and conventions
-   - Includes docstrings and inline comments
-
-3. **Write Tests**
-
-   ```markdown
-   Prompt: "Create unit tests for the LLM trigger detection system"
-   ```
-
-4. **Verify Acceptance Criteria**
-   - Agent checks off spec requirements
-   - Runs tests and validates functionality
-
-5. **Commit Changes**
-
-   ```bash
-   git add .
-   git commit -m "LLM Foundation
-
-   - Add LLM provider initialization (OpenAI/Ollama)
-   - Implement message trigger detection
-   - Add in-memory conversation context
-   - Update configuration schema
-   - Add dependencies to requirements.txt
-
-   Implements: SPEC-Sortie-1-LLM-Foundation.md
-   Related: PRD-LLM-Integration.md"
-   ```
-
-**Agent Capabilities**:
-
-- Read multiple files in parallel for context
-- Generate code following project conventions
-- Create tests based on specification
-- Update documentation automatically
-- Suggest improvements and edge cases
-
----
+**Key Actions**: Read specs, generate code, write tests, commit changes  
+**Agent Capabilities**: Parallel file reading, code generation, test creation, documentation updates
 
 ### Phase 4: Documentation (Docs)
+Keep documentation current with implementation. Update code docs (docstrings, type hints), user docs (README, guides), architecture docs, and deployment docs.
 
-**Purpose**: Keep documentation current with implementation
-
-**Types**:
-
-#### 4.1 Code Documentation
-
-- Docstrings for all public methods
-- Inline comments for complex logic
-- Type hints for parameters and returns
-
-**Example**:
-
-```python
-async def _handle_llm_chat(self, username: str, message: str):
-    """Generate and send LLM response.
-    
-    Args:
-        username: Sender's current username
-        message: Trigger message text
-    
-    Side Effects:
-        - Sends response to channel chat
-        - Updates rate limit state
-        - Appends to conversation context
-    """
-```
-
-#### 4.2 User Documentation
-
-- Update README.md with new features
-- Create feature-specific guides (e.g., `LLM_CONFIGURATION.md`)
-- Update quickstart guides
-
-**Agent Usage**:
-
-```markdown
-Prompt: "Update README.md to include LLM integration in the 
-features section, quick start, and configuration examples"
-```
-
-#### 4.3 Architecture Documentation
-
-- Update `ARCHITECTURE.md` with new components
-- Add diagrams for data flow
-- Document extension points
-
-#### 4.4 Deployment Documentation
-
-- Update systemd service files
-- Document environment variables
-- Create deployment checklists
-
----
+**Types**: Code docs, user guides, architecture diagrams, deployment checklists
 
 ### Phase 5: Review and Merge (PR)
+Final review and integration. Perform self-review, create PR with links to PRD/specs, run automated checks (tests, linting), and merge to main.
 
-**Purpose**: Final review and integration
-
-**Steps**:
-
-1. **Self-Review**
-
-   ```markdown
-   Prompt: "Review all changes in this nano-sprint for:
-   - Code quality and consistency
-   - Test coverage
-   - Documentation completeness
-   - Security considerations"
-   ```
-
-2. **Create Pull Request**
-   - Title: `[Sprint Name] Feature Name`
-   - Description: Link to PRD, list of commits, testing notes
-   - Labels: `enhancement`, `documentation`, etc.
-
-3. **Automated Checks**
-   - Run full test suite: `pytest --cov`
-   - Lint code: `flake8`, `mypy`
-   - Check documentation: Verify all TODOs resolved
-
-4. **Agent-Assisted Review**
-
-   ```markdown
-   Prompt: "Act as a code reviewer. Review this PR for:
-   - Architectural consistency
-   - Potential bugs or edge cases
-   - Performance implications
-   - Security vulnerabilities"
-   ```
-
-5. **Merge to Main**
-   - Squash commits if needed
-   - Update CHANGELOG.md
-   - Tag release if applicable
+**Steps**: Self-review → Create PR → Automated checks → Agent-assisted review → Merge
 
 ---
 
@@ -249,157 +59,96 @@ features section, quick start, and configuration examples"
 
 ```text
 docs/
+├── guides/                     # Feature and workflow guides
+│   ├── AGENT_WORKFLOW_DETAILED.md    # Complete workflow reference
+│   ├── AGENT_TOOLS_REFERENCE.md      # All tools and MCPs
+│   ├── AGENT_PROMPTING_GUIDE.md      # Prompt patterns and examples
+│   ├── LLM_CONFIGURATION.md          # LLM setup guide
+│   ├── PM_GUIDE.md                   # Bot control guide
+│   └── NATS_CONFIGURATION.md         # NATS event bus setup
 ├── sprints/
-│   ├── completed/              # Completed sprints
+│   ├── completed/              # Finished sprints
 │   │   ├── 2-start-me-up/     # LLM Integration
-│   │   ├── 5-ship-it/         # Production Deployment
+│   │   ├── 3-rest-assured/    # REST API Migration
+│   │   ├── 4-test-assured/    # Testing Infrastructure
 │   │   └── 6a-quicksilver/    # NATS Event Bus
-│   └── active/                 # Active/planned sprints
-│       ├── 3-rest-assured/    # REST API Migration
-│       ├── 4-test-assured/    # Testing Infrastructure
-│       └── 6-make-it-real/    # Advanced Deployment
-├── guides/                     # Feature guides
-│   ├── LLM_CONFIGURATION.md
-│   ├── PM_GUIDE.md
-│   ├── API_TOKENS.md
-│   └── NATS_CONFIGURATION.md
-├── ARCHITECTURE.md
-├── TESTING.md
-└── SETUP.md
+│   ├── deferred/               # Postponed sprints
+│   │   ├── 5-ship-it/         # Production Deployment
+│   │   └── 6-make-it-real/    # Advanced Deployment
+│   └── active/                 # Current/planned sprints
+├── ARCHITECTURE.md             # System architecture
+├── TESTING.md                  # Testing strategy
+└── SETUP.md                    # Development setup
 
 Top Level:
-├── AGENTS.md                   # This file - workflow guide
-├── README.md                   # Main documentation
+├── AGENTS.md                   # This file - workflow overview
+├── README.md                   # Main project documentation
 ├── QUICKSTART.md               # Quick start guide
 └── CHANGELOG.md                # Version history
 ```
 
-Each sprint directory contains:
-
-```text
-docs/sprints/{completed|active}/{N}-{sprint-name}/
-├── PRD-{Feature}.md           # Product requirements
-├── SPEC-Sortie-{N}-{Name}.md  # Technical specifications
-└── ...                        # Additional documentation
-```
-
 ### Sprint Naming Convention
 
-Format: `{number}-{descriptive-name}` or `{number}-{movie-title}` (6a+)
+Format: `{number}-{descriptive-name}` or `{number}-{movie-title}` (Sprint 6a+)
 
 Examples:
+- `2-start-me-up` - LLM Integration
+- `3-rest-assured` - REST API Migration
+- `6a-quicksilver` - NATS Event Bus
 
-- `2-start-me-up` - LLM Integration sprint
-- `3-rest-assured` - REST API Migration sprint
-- `4-test-assured` - Testing Infrastructure sprint
-- `5-ship-it` - Production Deployment sprint
-- `6-make-it-real` - Advanced Deployment sprint
-- `6a-quicksilver` - NATS Event Bus architecture
-
-See [docs/SPRINT_NAMING.md](docs/SPRINT_NAMING.md) for the complete naming convention guide.
+See [docs/SPRINT_NAMING.md](docs/SPRINT_NAMING.md) for complete naming convention.
 
 ---
 
-## Agent Prompting Patterns
+## Quick Start: Creating a New Feature
 
-### Pattern 1: Feature Planning
-
-```markdown
-**Context**: We want to add [feature] to Rosey
-
-**Task**: Create a comprehensive PRD that includes:
-1. Executive summary and problem statement
-2. User stories with acceptance criteria
-3. Technical architecture with diagrams
-4. Security and privacy considerations
-5. Implementation timeline and rollout plan
-6. Future enhancement roadmap
-
-**Format**: Use the existing PRD template from docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md
-```
-
-### Pattern 2: Specification Breakdown
+### 1. Plan the Feature (PRD)
 
 ```markdown
-**Context**: Given the PRD at docs/X-sprint/PRD-Feature.md
-
-**Task**: Break this into a logical sortie of atomic changes
-
-**Requirements**:
-- Each sortie can contain one or more commits
-- Each commit must be independently testable
-- Follow the SPEC template structure
-- Include detailed implementation steps
-- Define clear acceptance criteria
-
-**Output**: Create SPEC-Sortie-N-Name.md files for the sortie
+Prompt: "Create a PRD for adding [feature] to Rosey. 
+Include user stories, architecture, security considerations, and rollout plan."
 ```
 
-### Pattern 3: Implementation
+Agent generates comprehensive PRD document.
+
+### 2. Break Down into Specs
 
 ```markdown
-**Context**: Implement SPEC-Sortie-1-Foundation.md
-
-**Current State**: Read lib/bot.py, common/config.py, bot/rosey/config.json.dist
-
-**Task**: 
-1. Add the methods defined in section 4.1
-2. Follow existing code style and conventions
-3. Include docstrings and type hints
-4. Update configuration files as specified
-
-**Verification**: Check all items in section 7 (Acceptance Criteria)
+Prompt: "Based on the [feature] PRD, create specs for a nano-sprint sortie.
+Break into logical commits: 1) Foundation, 2) Core feature, 3) Testing, 4) Documentation."
 ```
 
-### Pattern 4: Testing
+Agent generates detailed SPEC files for each commit.
+
+### 3. Implement with Agent
 
 ```markdown
-**Context**: We just implemented [feature]
-
-**Task**: Create comprehensive tests
-
-**Requirements**:
-1. Unit tests for each new method
-2. Integration tests for end-to-end workflows
-3. Edge case coverage
-4. Mock external dependencies (API calls, etc.)
-
-**Location**: tests/unit/test_[module].py and tests/integration/test_[feature].py
+Prompt: "Read SPEC-Sortie-1-Foundation.md and implement it.
+Follow existing code patterns, include docstrings and type hints."
 ```
 
-### Pattern 5: Documentation
+Agent generates code, tests, and documentation.
 
-```markdown
-**Context**: Feature [X] has been implemented
+### 4. Commit and Review
 
-**Task**: Update all documentation
+```bash
+git add .
+git commit -m "Feature Foundation
 
-**Files to Update**:
-1. README.md - Add feature to list, quick start example
-2. docs/ARCHITECTURE.md - Add new components to diagrams
-3. Create docs/guides/[FEATURE]_GUIDE.md - Detailed usage guide
-4. Update CHANGELOG.md - Add entry for this version
+- Add core methods
+- Update configuration
+- Add tests
 
-**Style**: Follow existing documentation patterns and tone
+Implements: SPEC-Sortie-1-Foundation.md
+Related: PRD-Feature.md"
 ```
 
-### Pattern 6: Code Review
+### 5. Create Pull Request
 
-```markdown
-**Context**: Review changes in branch [branch-name]
-
-**Task**: Perform comprehensive code review
-
-**Check for**:
-1. **Correctness**: Does code match specification?
-2. **Quality**: Is code readable, maintainable, idiomatic?
-3. **Testing**: Are there adequate tests? Edge cases covered?
-4. **Security**: Any vulnerabilities or unsafe patterns?
-5. **Performance**: Any obvious bottlenecks?
-6. **Documentation**: Code comments, docstrings, user docs?
-
-**Output**: Detailed review comments with suggestions
-```
+Create PR with:
+- Title: `[Sprint Name] Feature Name`
+- Description: Links to PRD, list of commits, testing notes
+- Labels: `enhancement`, `documentation`, etc.
 
 ---
 
@@ -407,21 +156,19 @@ See [docs/SPRINT_NAMING.md](docs/SPRINT_NAMING.md) for the complete naming conve
 
 ### Working with the Agent
 
-#### ✅ Do's
+**✅ Do:**
+- Provide context (reference files, PRDs, specs)
+- Be specific with requirements
+- Iterate through conversation
+- Verify all generated code
+- Document decisions in comments
 
-- **Provide Context**: Reference related files, PRDs, specs
-- **Be Specific**: Clear requirements lead to better results
-- **Iterate**: Refine outputs through conversation
-- **Verify**: Always review agent-generated code
-- **Document Decisions**: Capture rationale in comments and docs
-
-#### ❌ Don'ts
-
-- **Don't Skip Planning**: Always write PRD/specs first
-- **Don't Assume**: Verify agent's understanding of requirements
-- **Don't Merge Blindly**: Review and test all generated code
-- **Don't Ignore Warnings**: Address security and performance concerns
-- **Don't Skip Tests**: Always generate and run tests
+**❌ Don't:**
+- Skip planning (always write PRD/specs first)
+- Assume agent understanding (verify requirements)
+- Merge blindly (review and test all code)
+- Ignore warnings (address security/performance)
+- Skip tests (always generate and run tests)
 
 ### Code Quality Standards
 
@@ -434,488 +181,58 @@ See [docs/SPRINT_NAMING.md](docs/SPRINT_NAMING.md) for the complete naming conve
 
 ### Git Commit Guidelines
 
-#### Commit Message Format
-
+**Format**:
 ```text
 Short Title (50 chars max)
 
 - Detailed change 1
 - Detailed change 2
-- Detailed change 3
 
-Implements: SPEC-Commit-N-Name.md
+Implements: SPEC-Sortie-N-Name.md
 Related: PRD-Feature-Name.md
-Fixes: #123 (if applicable)
 ```
 
-#### Commit Granularity
-
-- **One Logical Change**: Each commit should be atomic
-- **Compilable**: Each commit should leave the code in a working state
-- **Testable**: Each commit should pass all tests
-- **Documentable**: Each commit should update relevant docs
-
-All commits will be flattened when merged with the pull request.
+**Granularity**: One logical change per commit, compilable, testable, documented.
 
 ---
 
-## Example: LLM Integration Nano-Sprint
+## Detailed Guides
 
-### Timeline
+For comprehensive documentation, see:
 
-**Sprint**: `2-start-me-up`  
-**Feature**: LLM Chat Integration  
-**Duration**: 3 days  
-**Commits**: 6  
-
-### Step-by-Step
-
-#### Day 1: Planning (2 hours)
-
-1. **Write PRD**
-
-   ```markdown
-   Prompt: "Create a PRD for adding LLM integration to Rosey. 
-   Support OpenAI and Ollama providers, trigger-based responses, 
-   conversation context, and rate limiting."
-   ```
-
-   - Output: `docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md`
-
-2. **Create Commit Specs**
-
-   ```markdown
-   Prompt: "Break the LLM PRD into 6 commit specs covering:
-   1. Basic OpenAI/Ollama support
-   2. Remote Ollama configuration
-   3. Trigger system improvements
-   4. Username correction
-   5. Deployment automation
-   6. Documentation and PR"
-
-   ```
-
-   - Output: `SPEC-Sortie-1` through `SPEC-Sortie-6`
-
-#### Day 2: Implementation (6 hours)
-
-1. **Commit 1: Foundation**
-
-   ```markdown
-   Prompt: "Implement SPEC-Sortie-1-LLM-Foundation.md"
-   ```
-
-   - Modified: `lib/bot.py`
-   - Added: LLM initialization, trigger detection, context management
-   - Commit: "LLM Foundation"
-
-2. **Commit 2: Remote Ollama**
-
-   ```markdown
-   Prompt: "Implement SPEC-Commit-2-Ollama-Remote-Support.md"
-   ```
-
-   - Modified: `lib/bot.py` (_setup_llm method)
-   - Added: `ollama_host` configuration support
-   - Commit: "Add remote Ollama server support"
-
-3. **Commit 3: Trigger Refinement**
-
-   ```markdown
-   Prompt: "Implement SPEC-Commit-3-Trigger-System-Refinement.md"
-   ```
-
-   - Modified: `_check_llm_trigger()` for case-insensitive matching
-   - Commit: "Improve trigger detection system"
-
-4. **Commit 4: Username Correction**
-
-   ```markdown
-   Prompt: "Implement SPEC-Commit-4-Username-Correction.md"
-   ```
-
-   - Added: `_on_set_user_profile()` event handler
-   - Commit: "Add username correction system"
-
-#### Day 3: Deployment & Documentation (3 hours)
-
-1. **Commit 5: Deployment**
-
-   ```markdown
-   Prompt: "Implement SPEC-Commit-5-Deployment-Automation.md"
-   ```
-
-   - Modified: `systemd/cytube-bot.service`
-   - Updated: `systemd/README.md`
-   - Commit: "Add systemd LLM configuration"
-
-2. **Commit 6: Documentation**
-
-   ```markdown
-   Prompt: "Implement SPEC-Commit-6-Documentation-PR.md"
-   ```
-
-   - Updated: `README.md`, `docs/ARCHITECTURE.md`
-   - Created: `docs/guides/LLM_CONFIGURATION.md`
-   - Commit: "Complete LLM documentation"
-
-3. **Create PR**
-
-   - Title: "[2-start-me-up] LLM Chat Integration"
-   - Description: Links to PRD, lists 6 commits, testing notes
-   - Merge: After CI passes and review
-
-### Outcome
-
-- **Code**: Fully functional LLM integration
-- **Tests**: 95% coverage for new code
-- **Docs**: Comprehensive guides and examples
-- **Time**: 11 hours total (planning → merge)
+- **[Agent Workflow Detailed](docs/guides/AGENT_WORKFLOW_DETAILED.md)** - Complete workflow phases, PRD/SPEC templates, detailed examples, LLM integration walkthrough
+- **[Agent Tools Reference](docs/guides/AGENT_TOOLS_REFERENCE.md)** - All GitHub Copilot tools, GitHub MCP, Hugging Face MCP, AI Toolkit, command line tools, selection strategies
+- **[Agent Prompting Guide](docs/guides/AGENT_PROMPTING_GUIDE.md)** - All prompt patterns, advanced workflows, troubleshooting, multi-agent collaboration
 
 ---
 
-## Troubleshooting
+## Example Sprint
 
-### Agent Not Following Spec
+See [Sprint 2: LLM Integration (2-start-me-up)](docs/sprints/completed/2-start-me-up/) for complete example:
 
-**Problem**: Agent generates code that doesn't match specification
-
-**Solution**:
-
-```markdown
-Prompt: "The generated code doesn't match section 4.1 of the spec. 
-Please re-read SPEC-Sortie-1-Foundation.md and implement exactly 
-as specified, particularly the method signatures and error handling."
-```
-
-### Inconsistent Code Style
-
-**Problem**: Agent uses different patterns than existing code
-
-**Solution**:
-
-```markdown
-Prompt: "Review the existing code in lib/bot.py for style patterns. 
-Then regenerate the new methods to match:
-- Docstring format
-- Error handling approach
-- Logging conventions
-- Async patterns"
-```
-
-### Missing Edge Cases
-
-**Problem**: Agent doesn't consider error scenarios
-
-**Solution**:
-
-```markdown
-Prompt: "Review the implementation and identify potential edge cases:
-- What if the API key is invalid?
-- What if the LLM server is unreachable?
-- What if the response is empty or malformed?
-- What if the user is rate-limited?
-
-Add error handling for each scenario."
-```
-
-### Incomplete Documentation
-
-**Problem**: Generated docs lack examples or details
-
-**Solution**:
-
-```markdown
-Prompt: "Expand the LLM_CONFIGURATION.md guide with:
-1. Step-by-step setup for OpenAI
-2. Step-by-step setup for local Ollama
-3. Step-by-step setup for remote Ollama
-4. Configuration examples for each scenario
-5. Troubleshooting section with common issues"
-```
-
----
-
-## Advanced Workflows
-
-### Multi-Agent Collaboration
-
-For complex features, use multiple agent sessions:
-
-1. **Architecture Agent**: System design and component interactions
-2. **Implementation Agent**: Code generation and refactoring
-3. **Testing Agent**: Test case generation and coverage analysis
-4. **Documentation Agent**: User guides and API references
-5. **Review Agent**: Code review and security analysis
-
-### Continuous Refinement
-
-Use agents for ongoing maintenance:
-
-```markdown
-# Weekly Maintenance Prompt
-"Review the codebase for:
-1. Outdated dependencies (check requirements.txt)
-2. Deprecated patterns (check Python version compatibility)
-3. Missing tests (identify untested code paths)
-4. Documentation gaps (check for undocumented features)
-5. Performance opportunities (profile slow operations)
-
-Generate a maintenance backlog with prioritized tasks."
-```
-
-### Knowledge Transfer
-
-Use agents to onboard new contributors:
-
-```markdown
-Prompt: "Create an ONBOARDING.md guide for new contributors that covers:
-1. Project architecture overview
-2. Development workflow
-3. How to create a new feature (with example)
-4. Testing strategy
-5. Documentation standards
-6. Common pitfalls and gotchas"
-```
-
----
-
-## Metrics and Success
-
-### Track Agent Effectiveness
-
-- **Time Savings**: Compare manual vs. agent-assisted development
-- **Code Quality**: Defect rates, test coverage, review findings
-- **Documentation**: Completeness, clarity, accuracy
-- **Velocity**: Features shipped per sprint
-
-### Continuous Improvement
-
-- **Retrospectives**: Review what worked and what didn't
-- **Prompt Library**: Maintain effective prompts for reuse
-- **Template Updates**: Evolve PRD/spec templates based on learnings
-- **Agent Feedback**: Provide feedback to improve future interactions
-
----
-
-## Available Tools and MCPs
-
-### GitHub Copilot Built-in Tools
-
-The agent has access to comprehensive VS Code integration tools:
-
-#### File Operations
-- **read_file** - Read file contents with optional line ranges
-- **create_file** - Create new files with content
-- **replace_string_in_file** - Edit existing files by replacing exact strings
-- **multi_replace_string_in_file** - Batch edit multiple files efficiently
-- **list_dir** - List directory contents
-- **file_search** - Search for files by glob pattern
-- **grep_search** - Fast text search across workspace (supports regex)
-- **semantic_search** - Natural language code search
-
-#### Code Intelligence
-- **list_code_usages** - Find references, definitions, implementations
-- **get_errors** - Get compile/lint errors from VS Code
-- **get_vscode_api** - VS Code extension API documentation
-
-#### Testing & Execution
-- **runTests** - Execute unit tests with coverage
-- **run_in_terminal** - Run PowerShell commands (Windows)
-- **get_terminal_output** - Get output from background terminal commands
-- **terminal_last_command** - Get last terminal command
-- **run_notebook_cell** - Execute Jupyter notebook cells
-
-#### Python Development
-- **configure_python_environment** - Set up Python virtual environment
-- **get_python_environment_details** - Get environment info (packages, version)
-- **get_python_executable_details** - Get Python executable path
-- **install_python_packages** - Install packages via pip
-
-#### Project Setup
-- **create_new_workspace** - Scaffold complete project structures
-- **get_project_setup_info** - Get setup steps for project types
-- **create_and_run_task** - Create VS Code tasks.json and run tasks
-
-### Model Context Protocol (MCP) Servers
-
-#### GitHub MCP (`mcp_github_*`)
-Complete GitHub repository integration:
-
-**Repository Management**
-- `github_create_repository` - Create new repos
-- `github_fork_repository` - Fork repositories
-- `github_create_branch` - Create branches
-- `github_create_or_update_file` - Create/update files remotely
-- `github_push_files` - Push multiple files in single commit
-
-**Pull Requests**
-- `github-pull-request_activePullRequest` - Get active PR details
-- `github-pull-request_openPullRequest` - Get open PR details
-- `github_create_pull_request` - Create new PR
-- `github_update_pull_request` - Update existing PR
-- `github_merge_pull_request` - Merge PR
-- `github_update_pull_request_branch` - Update PR branch
-- `github_request_copilot_review` - Request Copilot code review
-- `github_pull_request_read` - Get PR details, diff, status, files, comments, reviews
-- `github_list_pull_requests` - List PRs with filtering
-- `github_search_pull_requests` - Search PRs with GitHub search syntax
-
-**Issues**
-- `github-pull-request_issue_fetch` - Get issue details
-- `github_issue_write` - Create/update issues
-- `github-pull-request_suggest-fix` - Suggest fix for issue
-- `github-pull-request_renderIssues` - Render issues as markdown table
-- `github_assign_copilot_to_issue` - Assign Copilot to implement issue
-
-**Repository Information**
-- `github_get_teams` - Get user's teams
-- `github_repo` - Search repository code (GitHub)
-
-**Additional GitHub Tools** (activate as needed)
-- Search tools - `activate_github_search_tools`
-- File management - `activate_file_management_tools`
-- Commit/issue tools - `activate_commit_and_issue_tools`
-- Release management - `activate_release_and_tag_management_tools`
-- Branch/commit tools - `activate_branch_and_commit_tools`
-- PR review tools - `activate_pull_request_review_tools`
-- Search/discovery - `activate_search_and_discovery_tools`
-
-#### Hugging Face MCP (`mcp_evalstate_hf-_*`)
-AI model and dataset discovery:
-
-- `mcp_evalstate_hf-_hf_whoami` - Check authenticated user
-- `mcp_evalstate_hf-_paper_search` - Search ML research papers
-- `mcp_evalstate_hf-_space_search` - Find Hugging Face Spaces
-- `mcp_evalstate_hf-_gr1_flux1_schnell_infer` - Generate images with Flux
-- Activate model/dataset tools - `activate_hugging_face_model_and_dataset_tools`
-- Activate documentation tools - `activate_hugging_face_documentation_tools`
-
-#### Web/Documentation MCP
-- `fetch_webpage` - Fetch and summarize web content
-- `mcp_microsoft_mar_convert_to_markdown` - Convert URIs to markdown
-- `open_simple_browser` - Preview URLs in VS Code
-
-#### AI Development Toolkit (`aitk-*`)
-Specialized tools for AI/Agent development:
-
-- `aitk-get_agent_code_gen_best_practices` - Agent development guidance
-- `aitk-get_ai_model_guidance` - Model selection and usage patterns
-- `aitk-evaluation_planner` - Plan evaluation metrics via conversation
-- `aitk-get_evaluation_code_gen_best_practices` - Evaluation code guidance
-- `aitk-evaluation_agent_runner_best_practices` - Agent runner patterns
-- `aitk-convert_declarative_agent_to_code` - Convert specs to code
-- `aitk-get_agent_model_code_sample` - Code samples for agents/models
-- `activate_ai_agent_development_best_practices` - Activate AI dev tools
-
-### Command Line Tools
-
-#### GitHub CLI (`gh`)
-Available via `run_in_terminal`:
-
-```powershell
-# PR Management
-gh pr list
-gh pr view 44
-gh pr create --title "Feature" --body "Description"
-gh pr merge 44 --squash
-
-# Issue Management  
-gh issue list
-gh issue create --title "Bug" --body "Details"
-gh issue view 123
-
-# Repository Operations
-gh repo view
-gh repo clone owner/repo
-gh workflow list
-gh run list
-
-# Release Management
-gh release list
-gh release create v1.0.0
-```
-
-#### Git Operations
-Via `run_in_terminal`:
-
-```powershell
-git status
-git add -A
-git commit -m "Message"
-git push
-git pull
-git branch
-git checkout -b feature-branch
-git log --oneline -10
-```
-
-### VS Code Commands (`run_vscode_command`)
-- Execute VS Code commands programmatically
-- Install extensions (`install_extension`)
-- Manage workspace settings
-
-### Tool Selection Strategy
-
-**For File Operations:**
-- Local edits → `replace_string_in_file` or `multi_replace_string_in_file`
-- Remote GitHub edits → `github_create_or_update_file` or `github_push_files`
-- Reading → `read_file` for local, `github_pull_request_read` for PR files
-
-**For Pull Requests:**
-- Active PR context → `github-pull-request_activePullRequest`
-- PR details/diff → `github_pull_request_read`
-- Create/update → `github_create_pull_request`, `github_update_pull_request`
-- Request review → `github_request_copilot_review`
-
-**For Search:**
-- Code search → `semantic_search` (local), `github_repo` (GitHub)
-- File search → `file_search` (glob), `grep_search` (text/regex)
-- PR/issue search → `github_search_pull_requests`, activate search tools
-
-**For Testing:**
-- Run tests → `runTests` (preferred) or `run_in_terminal` with pytest
-- Get errors → `get_errors` for IDE diagnostics
-
-**For AI Development:**
-- Always call `aitk-get_agent_code_gen_best_practices` before creating AI apps
-- Use `aitk-get_ai_model_guidance` for model selection
-- Use `aitk-evaluation_planner` when evaluation metrics are unclear
-
-### Best Practices
-
-1. **Batch Operations**: Use `multi_replace_string_in_file` for multiple edits
-2. **Parallel Reads**: Read multiple files in parallel when gathering context
-3. **GitHub Integration**: Prefer GitHub MCP tools over `gh` CLI for automation
-4. **Error Checking**: Always use `get_errors` after file edits to validate
-5. **Test Execution**: Use `runTests` over terminal commands when possible
-6. **Tool Discovery**: Activate specialized tool groups only when needed
+- **Duration**: 3 days
+- **Commits**: 6 (Foundation → Remote Ollama → Triggers → Username → Deployment → Docs)
+- **Outcome**: Fully functional LLM chat integration with 95% test coverage
+- **Files**: [PRD-LLM-Integration.md](docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md), SPEC-Sortie-1 through SPEC-Sortie-6
 
 ---
 
 ## Resources
 
 ### Project Documentation
-
-- [README.md](README.md) - Main project documentation
+- [README.md](README.md) - Main documentation
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture
 - [TESTING.md](docs/TESTING.md) - Testing guide
-- [PM_GUIDE.md](docs/guides/PM_GUIDE.md) - Bot control guide
-- [QUICKSTART.md](QUICKSTART.md) - Quick start guide
+- [QUICKSTART.md](QUICKSTART.md) - Quick start
 
-### Example Sprints
-
-- [2-start-me-up](docs/sprints/completed/2-start-me-up/) - LLM Integration sprint (✅ Complete)
-- [3-rest-assured](docs/sprints/completed/3-rest-assured/) - REST API Migration sprint (✅ Complete)
-- [4-test-assured](docs/sprints/completed/4-test-assured/) - Testing Infrastructure sprint (✅ Complete)
-- [5-ship-it](docs/sprints/deferred/5-ship-it/) - Production Deployment sprint (⏸️ Deferred - using manual deployment)
-- [6-make-it-real](docs/sprints/deferred/6-make-it-real/) - Advanced Deployment sprint (⏸️ Deferred - cost constraints)
-- [6a-quicksilver](docs/sprints/completed/6a-quicksilver/) - NATS Event Bus sprint (✅ Complete)
+### Completed Sprints
+- [2-start-me-up](docs/sprints/completed/2-start-me-up/) - LLM Integration ✅
+- [3-rest-assured](docs/sprints/completed/3-rest-assured/) - REST API Migration ✅
+- [4-test-assured](docs/sprints/completed/4-test-assured/) - Testing Infrastructure ✅
+- [6a-quicksilver](docs/sprints/completed/6a-quicksilver/) - NATS Event Bus ✅
 
 ### External Resources
-
 - [GitHub Copilot Documentation](https://docs.github.com/en/copilot)
-- [Agent-Driven Development](https://github.blog/2023-11-08-universe-2023-copilot-transforms-github-into-the-ai-powered-developer-platform/)
 - [Python Type Hints](https://docs.python.org/3/library/typing.html)
 - [Google Python Style Guide](https://google.github.io/styleguide/pyguide.html)
 
@@ -923,30 +240,20 @@ git log --oneline -10
 
 ## Contributing
 
-When contributing to Rosey-Robot, follow this workflow:
+When contributing to Rosey-Robot:
 
-1. **Propose Feature**: Open an issue describing the feature
-2. **Write PRD**: Create PRD in a new sprint folder
+1. **Propose Feature**: Open an issue
+2. **Write PRD**: Create PRD in new sprint folder
 3. **Create Specs**: Break down into sortie specs
 4. **Implement**: Use agent assistance for each commit
 5. **Test**: Write comprehensive tests
-6. **Document**: Update all relevant documentation
+6. **Document**: Update all relevant docs
 7. **Submit PR**: Link to PRD, list commits, provide testing notes
 8. **Iterate**: Address review feedback with agent help
 
 ---
 
-## Conclusion
-
-This agent-assisted workflow enables rapid, high-quality feature development while maintaining comprehensive documentation and test coverage. By structuring work into PRDs, specs, and atomic commits, we create a clear development path that both humans and AI agents can follow effectively.
-
-The key to success is **planning first, implementing incrementally, and documenting continuously**. GitHub Copilot serves as a collaborative partner throughout this process, accelerating development while maintaining quality standards.
-
-**Remember**: Each nano-sprint consists of one or more sorties (logical bundles of changes), and each sortie may contain one or more commits. When each sortie is complete, the nano-sprint is complete.
-
----
-
-**Document Version**: 1.0  
-**Last Updated**: November 18, 2025  
+**Document Version**: 2.0  
+**Last Updated**: November 21, 2025  
 **Maintained By**: Rosey-Robot Team  
 **Workflow Status**: ✅ Active and Proven
