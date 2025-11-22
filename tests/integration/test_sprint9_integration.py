@@ -316,9 +316,11 @@ class TestMediaPlayedFlow:
 class TestRequestReplyFlow:
     """Test request/reply pattern for queries."""
     
-    @pytest.mark.xfail(reason="DatabaseService request/reply handlers not implemented yet")
     async def test_query_user_stats_via_nats(self, nats_client, database_service):
-        """Test querying user stats via NATS request/reply."""
+        """Test querying user stats via NATS request/reply.
+        
+        Validates Sprint 10 Sortie 2 stats query handlers implementation.
+        """
         # Arrange - Add user to database
         await database_service.db.user_joined('QueryUser')
         # Log some chat messages for the user
@@ -326,7 +328,7 @@ class TestRequestReplyFlow:
             await database_service.db.user_chat_message('QueryUser', 'test message')
         
         # Act - Query via NATS request/reply
-        subject = 'rosey.events.database.query.user_stats'
+        subject = 'rosey.db.query.user_stats'
         request_data = {'username': 'QueryUser'}
         
         response = await nats_client.request(
@@ -338,8 +340,10 @@ class TestRequestReplyFlow:
         # Assert
         assert response is not None
         result = json.loads(response.data.decode())
+        assert result.get('success') is True
+        assert result.get('found') is True
         assert result.get('username') == 'QueryUser'
-        assert result.get('chat_messages') == 10
+        assert result.get('total_chat_lines') == 10
 
 
 @pytest.mark.integration
