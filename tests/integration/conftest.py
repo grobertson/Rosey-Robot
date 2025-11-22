@@ -7,6 +7,9 @@ Uses real Bot, Database, and Shell instances to test realistic interactions.
 
 import pytest
 import time
+import tempfile
+import logging
+from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock
 from common.database import BotDatabase
 from common.shell import Shell
@@ -14,17 +17,62 @@ from lib.bot import Bot
 
 
 @pytest.fixture
-def integration_db(tmp_path):
+async def temp_database():
+    """Create temporary database for testing.
+    
+    Provides a fully-initialized async BotDatabase instance with:
+    - Temporary file path (auto-cleaned up)
+    - All tables created via migrations
+    - Clean state for each test
+    - Automatic connection lifecycle management
+    
+    Example:
+        async def test_database_operations(temp_database):
+            await temp_database.user_joined('Alice')
+            stats = await temp_database.get_user_stats('Alice')
+            assert stats is not None
+    
+    Yields:
+        BotDatabase: Connected async database instance
+    """
+    # Create temporary file
+    with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
+        db_path = f.name
+    
+    # Initialize and connect database
+    db = BotDatabase(db_path)
+    await db.connect()
+    
+    # Provide to test
+    yield db
+    
+    # Cleanup
+    try:
+        await db.close()
+    except Exception as e:
+        logging.warning('Error closing test database: %s', e)
+    
+    finally:
+        # Remove temp file
+        try:
+            Path(db_path).unlink(missing_ok=True)
+        except Exception as e:
+            logging.warning('Error removing test database file: %s', e)
+
+
+@pytest.fixture
+async def integration_db(tmp_path):
     """Real database for integration testing."""
     db_path = str(tmp_path / "integration_test.db")
     db = BotDatabase(db_path)
+    await db.connect()
     yield db
-    # Only close if not already closed
+    # Close async connection
     try:
-        if db.conn:
-            db.close()
-    except:
-        pass  # Already closed
+        if db.is_connected:
+            await db.close()
+    except Exception as e:
+        logging.warning('Error closing integration_db: %s', e)
 
 
 @pytest.fixture

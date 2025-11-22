@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """PM command interface for bot control via moderator private messages"""
+import asyncio
+import json
 import logging
 
 from lib import MediaLink
@@ -140,6 +142,8 @@ Examples:
         # TODO: Log PM commands via NATS (future enhancement)
 
         # Process the command
+        command_result = 'success'
+        command_error = None
         try:
             result = await self.handle_command(message, bot)
 
@@ -169,6 +173,8 @@ Examples:
                     await bot.pm(username, response)
 
         except Exception as e:
+            command_result = 'error'
+            command_error = str(e)
             self.logger.error('Error processing PM command: %s', e,
                             exc_info=True)
             try:
