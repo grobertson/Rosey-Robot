@@ -134,14 +134,17 @@ class TestUserJoinedFlow:
     
     async def test_user_joined_publishes_to_nats(self, test_bot, database_service, temp_database):
         """Test that user joined event is published to NATS and stored."""
-        # Arrange
-        user_data = {
-            'name': 'TestUser',
-            'rank': 2
+        # Arrange - Use normalized data structure
+        event_data = {
+            'user': 'TestUser',
+            'user_data': {
+                'username': 'TestUser',
+                'rank': 2
+            }
         }
         
         # Act - Simulate user join (bot publishes to NATS)
-        await test_bot._on_addUser('addUser', user_data)
+        await test_bot._on_user_join('user_join', event_data)
         
         # Wait for DatabaseService to process
         await asyncio.sleep(0.2)
@@ -154,16 +157,16 @@ class TestUserJoinedFlow:
     
     async def test_multiple_users_joined(self, test_bot, database_service, temp_database):
         """Test multiple users joining in sequence."""
-        # Arrange
+        # Arrange - Use normalized data structure
         users = [
-            {'name': 'User1', 'rank': 1},
-            {'name': 'User2', 'rank': 2},
-            {'name': 'User3', 'rank': 3},
+            {'user': 'User1', 'user_data': {'username': 'User1', 'rank': 1}},
+            {'user': 'User2', 'user_data': {'username': 'User2', 'rank': 2}},
+            {'user': 'User3', 'user_data': {'username': 'User3', 'rank': 3}},
         ]
         
         # Act
-        for user in users:
-            await test_bot._on_addUser('addUser', user)
+        for user_event in users:
+            await test_bot._on_user_join('user_join', user_event)
         
         await asyncio.sleep(0.3)
         
@@ -183,15 +186,15 @@ class TestChatMessageFlow:
     
     async def test_chat_message_published_and_stored(self, test_bot, database_service, temp_database):
         """Test chat message is published to NATS and stored in database."""
-        # Arrange
+        # Arrange - Use normalized data structure
         msg_data = {
-            'username': 'Alice',
-            'msg': 'Hello, world!',
-            'time': int(time.time() * 1000)
+            'user': 'Alice',
+            'content': 'Hello, world!',
+            'timestamp': int(time.time())
         }
         
         # Act
-        await test_bot._on_chatMsg('chatMsg', msg_data)
+        await test_bot._on_message('message', msg_data)
         
         await asyncio.sleep(0.2)
         
@@ -219,7 +222,13 @@ class TestChatMessageFlow:
         
         # Act
         for msg in messages:
-            await test_bot._on_chatMsg('chatMsg', msg)
+            # Convert to normalized structure
+            normalized_msg = {
+                'user': msg['username'],
+                'content': msg['msg'],
+                'timestamp': msg.get('time', int(time.time()))
+            }
+            await test_bot._on_message('message', normalized_msg)
             await asyncio.sleep(0.05)
         
         await asyncio.sleep(0.3)
@@ -336,7 +345,7 @@ class TestEventNormalization:
         sub = await nats_client.subscribe('rosey.platform.cytube.>', cb=event_handler)
         
         # Act - Trigger user join
-        await test_bot._on_addUser('addUser', {'name': 'NormalizedUser', 'rank': 1})
+        await test_bot._on_user_join('user_join', {'user': 'NormalizedUser', 'user_data': {'username': 'NormalizedUser', 'rank': 1}})
         
         await asyncio.sleep(0.2)
         
@@ -366,11 +375,11 @@ class TestServiceResilience:
         # Note: DatabaseService is NOT started in this test
         
         # Act - Bot should continue without errors
-        await test_bot._on_addUser('addUser', {'name': 'TestUser', 'rank': 1})
-        await test_bot._on_chatMsg('chatMsg', {
-            'username': 'TestUser',
-            'msg': 'Hello',
-            'time': int(time.time() * 1000)
+        await test_bot._on_user_join('user_join', {'user': 'TestUser', 'user_data': {'username': 'TestUser', 'rank': 1}})
+        await test_bot._on_message('message', {
+            'user': 'TestUser',
+            'content': 'Hello',
+            'timestamp': int(time.time())
         })
         
         # Assert - No exceptions raised
@@ -435,7 +444,8 @@ class TestPerformance:
         # Act - Send messages rapidly
         start_time = time.time()
         for msg in messages:
-            await test_bot._on_chatMsg('chatMsg', msg)
+            normalized_msg = {'user': msg['username'], 'content': msg['msg'], 'timestamp': msg.get('time', int(time.time()))}
+            await test_bot._on_message('message', normalized_msg)
             # Small delay to avoid overwhelming
             await asyncio.sleep(0.001)
         
@@ -463,10 +473,10 @@ class TestPerformance:
         for i in range(num_iterations):
             start = time.time()
             
-            await test_bot._on_chatMsg('chatMsg', {
-                'username': 'LatencyTest',
-                'msg': f'Iteration {i}',
-                'time': int(time.time() * 1000)
+            await test_bot._on_message('message', {
+                'user': 'LatencyTest',
+                'content': f'Iteration {i}',
+                'timestamp': int(time.time())
             })
             
             # Wait for processing
