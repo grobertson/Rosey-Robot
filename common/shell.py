@@ -129,9 +129,10 @@ Examples:
                 return
         else:
             # User not in userlist - this can happen if they joined before bot
-            # or if there's a sync issue. For now, allow the command and let
-            # CyTube's permissions handle any operations
-            self.logger.warning('PM from user not in userlist: %s (allowing command)', username)
+            # or if there's a sync issue. Fail closed (reject) to prevent
+            # potential privilege escalation via authorization bypass
+            self.logger.warning('PM from user not in userlist: %s (rejecting command for security)', username)
+            return
 
         self.logger.info('PM command from %s: %s', username, message)
 
@@ -327,8 +328,13 @@ Examples:
 
     async def cmd_stats(self, bot):
         """Show database statistics"""
-        # TODO: Implement stats via NATS queries to DatabaseService
-        return "Stats command not yet implemented for NATS architecture"
+        # TODO(post-v2.0): Implement stats via NATS request/reply to DatabaseService
+        # This requires implementing query endpoints in DatabaseService for:
+        # - get_channel_stats() -> high water marks, current counts
+        # - get_top_chatters(limit) -> leaderboard
+        # - get_total_users_seen() -> unique user count
+        # Target: Sprint 10 (post-NATS migration stabilization)
+        return "Stats command temporarily disabled during NATS migration. Will return in next release."
 
     async def cmd_users(self, bot):
         """List all users in channel"""

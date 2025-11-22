@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.5.0] - 2025-11-21 - Sprint 9: The Accountant
+
+**🎉 Major Release: NATS Event Bus Architecture**
+
+This release completes the transformation to a fully event-driven architecture using NATS, representing a fundamental shift in how Rosey operates. The bot now runs as part of a distributed system with independent services communicating through a message bus.
+
+### 🌟 What's New
+
+#### Event-Driven Architecture
+- **NATS Message Bus**: All components communicate via NATS pub/sub
+- **Service Isolation**: Bot and DatabaseService run as independent processes
+- **Horizontal Scaling**: Multiple bots can share one DatabaseService
+- **Fault Tolerance**: Bot continues operation even if DatabaseService fails
+- **Monitoring Ready**: Built-in NATS metrics endpoints (port 8222)
+
+#### Configuration v2.0
+- New structured configuration format with `version: 2` field
+- Automatic migration tool: `python -m common.config <config.json>`
+- Multi-platform support (array-based platform configuration)
+- Enhanced NATS configuration with timeouts and reconnect settings
+- Backward-compatible migration path
+
+#### Performance & Testing
+- 95.1% test pass rate (1,168/1,231 tests passing)
+- 66.8% code coverage (exceeds 66% requirement)
+- Comprehensive integration test suite (94 new tests)
+- Performance benchmark suite with 12 benchmark categories
+- Automated test fixtures for NATS architecture
+
+#### Documentation
+- **ARCHITECTURE.md**: Complete event-driven architecture documentation (731 lines)
+- **DEPLOYMENT.md**: Production deployment guide (883 lines)
+  - Local development setup (macOS, Linux, Windows)
+  - systemd service configurations
+  - Docker Compose deployment
+  - Kubernetes manifests
+- **Performance Testing Guide**: Comprehensive benchmarking documentation (350+ lines)
+- **Sprint 9 Final Status Report**: Complete project documentation (450 lines)
+
+### ⚠️ BREAKING CHANGES
+
+See full breaking changes documentation below for migration details.
+
 ## [Sprint 9: The Accountant] - 2025-11-18
 
 ### ⚠️ BREAKING CHANGES - Configuration v2 & NATS-First Architecture

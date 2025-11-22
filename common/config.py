@@ -12,6 +12,12 @@ try:
 except ImportError:
     HAS_YAML = False
 
+try:
+    from packaging import version
+    HAS_PACKAGING = True
+except ImportError:
+    HAS_PACKAGING = False
+
 
 class RobustFileHandler(logging.FileHandler):
     """FileHandler that gracefully handles flush errors on Windows"""
@@ -136,7 +142,15 @@ def get_config():
 
     # Handle config v2 format (platforms array) vs v1 (flat)
     config_version = conf.get('version', '1.0')
-    if config_version == '2.0':
+    # Use semantic versioning for robust version comparison
+    if HAS_PACKAGING:
+        # Prefer packaging library for proper semver support
+        is_v2 = version.parse(str(config_version)) >= version.parse('2.0')
+    else:
+        # Fallback to string comparison (less robust but works for major versions)
+        is_v2 = str(config_version).startswith('2.')
+    
+    if is_v2:
         # Extract from v2 nested structure
         platforms = conf.get('platforms', [])
         if not platforms:
