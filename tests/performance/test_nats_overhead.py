@@ -299,7 +299,7 @@ class TestThroughputBenchmarks:
         
         # Verify storage
         stored = await temp_database.get_recent_messages(limit=events_published + 10)
-        storage_rate = len(stored) / len(stored)  # Percentage stored
+        storage_rate = len(stored) / events_published if events_published > 0 else 0  # Percentage stored
         
         print(f"\n{'='*60}")
         print("Sustained Throughput Benchmark")

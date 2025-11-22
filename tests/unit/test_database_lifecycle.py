@@ -185,3 +185,134 @@ async def test_connect_creates_indexes():
         assert index in indexes, f"Missing index: {index}"
     
     await db.close()
+
+
+# ============================================================================
+# Chat Methods Tests (Sprint 10.5 Sortie 1)
+# ============================================================================
+
+@pytest.mark.asyncio
+async def test_log_chat():
+    """Test logging chat message."""
+    db = BotDatabase(':memory:')
+    await db.connect()
+    
+    await db.log_chat('Alice', 'Hello!')
+    
+    messages = await db.get_recent_messages()
+    assert len(messages) == 1
+    assert messages[0]['username'] == 'Alice'
+    assert messages[0]['message'] == 'Hello!'
+    assert 'id' in messages[0]
+    assert 'timestamp' in messages[0]
+    
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_recent_messages_limit():
+    """Test message retrieval with limit."""
+    db = BotDatabase(':memory:')
+    await db.connect()
+    
+    # Add 10 messages with incrementing timestamps
+    for i in range(10):
+        await db.log_chat(f'User{i}', f'Message {i}', timestamp=1000 + i)
+    
+    # Get last 5 (most recent)
+    messages = await db.get_recent_messages(limit=5)
+    assert len(messages) == 5
+    # Should be in DESC order (most recent first)
+    assert messages[0]['message'] == 'Message 9'
+    assert messages[4]['message'] == 'Message 5'
+    
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_recent_messages_offset():
+    """Test message pagination with offset."""
+    db = BotDatabase(':memory:')
+    await db.connect()
+    
+    # Add 10 messages
+    for i in range(10):
+        await db.log_chat(f'User{i}', f'Message {i}', timestamp=1000 + i)
+    
+    # Get middle 5 (skip first 3 most recent)
+    messages = await db.get_recent_messages(limit=5, offset=3)
+    assert len(messages) == 5
+    assert messages[0]['message'] == 'Message 6'  # 9, 8, 7 skipped
+    assert messages[4]['message'] == 'Message 2'
+    
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_log_chat_custom_timestamp():
+    """Test logging with custom timestamp."""
+    db = BotDatabase(':memory:')
+    await db.connect()
+    
+    custom_time = 1234567890
+    await db.log_chat('Alice', 'Test', timestamp=custom_time)
+    
+    messages = await db.get_recent_messages()
+    assert messages[0]['timestamp'] == custom_time
+    
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_log_chat_default_timestamp():
+    """Test logging with default (current) timestamp."""
+    db = BotDatabase(':memory:')
+    await db.connect()
+    
+    now_before = int(time.time())
+    await db.log_chat('Alice', 'Test')
+    now_after = int(time.time())
+    
+    messages = await db.get_recent_messages()
+    timestamp = messages[0]['timestamp']
+    
+    # Should be within reasonable range
+    assert now_before <= timestamp <= now_after
+    
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_recent_messages_empty():
+    """Test get_recent_messages() returns empty list when no messages."""
+    db = BotDatabase(':memory:')
+    await db.connect()
+    
+    messages = await db.get_recent_messages()
+    assert messages == []
+    
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_get_recent_messages_all_fields():
+    """Test that all expected fields are returned."""
+    db = BotDatabase(':memory:')
+    await db.connect()
+    
+    await db.log_chat('TestUser', 'TestMessage', timestamp=999999)
+    
+    messages = await db.get_recent_messages()
+    assert len(messages) == 1
+    
+    msg = messages[0]
+    assert 'id' in msg
+    assert 'timestamp' in msg
+    assert 'username' in msg
+    assert 'message' in msg
+    assert isinstance(msg['id'], int)
+    assert msg['timestamp'] == 999999
+    assert msg['username'] == 'TestUser'
+    assert msg['message'] == 'TestMessage'
+    
+    await db.close()

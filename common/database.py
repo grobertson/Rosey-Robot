@@ -404,6 +404,72 @@ class BotDatabase:
 
         await self.conn.commit()
 
+    async def get_recent_messages(self, limit: int = 100, offset: int = 0) -> list[dict]:
+        """Get recent chat messages from database.
+        
+        Returns messages sorted by timestamp descending (most recent first).
+        Used for chat history display and throughput benchmarks.
+        
+        Args:
+            limit: Maximum messages to return (default 100)
+            offset: Number of messages to skip for pagination (default 0)
+        
+        Returns:
+            List of message dicts with keys:
+            - id: Message ID (int)
+            - timestamp: Unix timestamp (int)
+            - username: Username who sent message (str)
+            - message: Message text (str)
+        
+        Example:
+            messages = await db.get_recent_messages(limit=10)
+            for msg in messages:
+                print(f"{msg['username']}: {msg['message']}")
+        """
+        cursor = await self.conn.cursor()
+        await cursor.execute('''
+            SELECT id, timestamp, username, message
+            FROM recent_chat
+            ORDER BY timestamp DESC
+            LIMIT ? OFFSET ?
+        ''', (limit, offset))
+        
+        rows = await cursor.fetchall()
+        return [
+            {
+                'id': row[0],
+                'timestamp': row[1],
+                'username': row[2],
+                'message': row[3]
+            }
+            for row in rows
+        ]
+
+    async def log_chat(self, username: str, message: str, timestamp: int = None) -> None:
+        """Log chat message to database.
+        
+        Convenience method for performance benchmarks. Production code
+        should use user_chat_message() which includes additional tracking.
+        
+        Args:
+            username: Username who sent message
+            message: Message text
+            timestamp: Unix timestamp (default: current time)
+        
+        Example:
+            await db.log_chat('Alice', 'Hello world!')
+        """
+        if timestamp is None:
+            timestamp = int(time.time())
+        
+        cursor = await self.conn.cursor()
+        await cursor.execute('''
+            INSERT INTO recent_chat (timestamp, username, message)
+            VALUES (?, ?, ?)
+        ''', (timestamp, username, message))
+        
+        await self.conn.commit()
+
     async def log_user_action(self, username, action_type, details=None):
         """Log a user action (PM command, etc.)
 
