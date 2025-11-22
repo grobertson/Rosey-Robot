@@ -837,7 +837,7 @@ class BotDatabase:
         async with self._get_session() as session:
             # Build WHERE clause
             where_clauses = [
-                not OutboundMessage.sent,
+                OutboundMessage.sent.is_(False),
                 OutboundMessage.retry_count < max_retries
             ]
 
@@ -1184,7 +1184,7 @@ class BotDatabase:
             async with self._get_session() as session:
                 result = await session.execute(
                     delete(OutboundMessage).where(
-                        OutboundMessage.sent,
+                        OutboundMessage.sent.is_(True),
                         OutboundMessage.sent_timestamp < cutoff_sent
                     )
                 )
@@ -1199,7 +1199,7 @@ class BotDatabase:
             async with self._get_session() as session:
                 result = await session.execute(
                     delete(ApiToken).where(
-                        not ApiToken.is_active,
+                        ApiToken.is_active.is_(False),
                         ApiToken.created_at < cutoff_tokens
                     )
                 )
