@@ -162,4 +162,7 @@ MIT License - See LICENSE file for details.
 - **dead-beef** for the original [cytube-bot](https://github.com/dead-beef/cytube-bot) that started it all.
 - **calzoneman** for creating [CyTube](https://github.com/calzoneman/sync) and keeping it running.
 - **The NATS Team** for building an incredible messaging system.
+- **KGMoon**, who started and runs the 420Grindhouse channel this project was built for.
+- All the mods at **420Grindhouse** ("It's not a Grindhouse, it's a Grindhome!").
+- Everyone who endured my rants about over-engineered architecture, "nano-sprints", and naming sprints after grindhouse movies.
 - And special thanks to the crew of the **Satellite of Love**. Keep circulating the tapes. 🎬
