@@ -6,17 +6,43 @@
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Database](https://img.shields.io/badge/database-SQLite%20%7C%20PostgreSQL-green.svg)](docs/DATABASE_SETUP.md)
 
-**Rosey** is a Python-based framework for building bots that interact with [CyTube](https://github.com/calzoneman/sync) channels. Designed as a monolithic application for easier development and customization, Rosey provides a feature-rich main bot along with simple examples to help you get started.
+**Rosey** is an event-driven Python bot framework for [CyTube](https://github.com/calzoneman/sync) channels, built on a **microservices-on-a-bus** architecture. Services communicate through [NATS](https://nats.io/) messaging, enabling loosely-coupled components that can scale independently while staying simple to develop and deploy.
+
+## 🎯 Architecture: Microservices on a Bus
+
+Rosey uses **NATS** as a lightweight message bus to connect independent services:
+
+```text
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   CyTube    │────▶│  NATS Bus   │◀────│  Database   │
+│ Connection  │     │   (pub/sub  │     │   Service   │
+└─────────────┘     │  req/reply) │     └─────────────┘
+                    └─────────────┘
+                          ▲ │
+                          │ ▼
+                    ┌─────────────┐
+                    │   LLM/AI    │
+                    │   Service   │
+                    └─────────────┘
+```
+
+**Benefits:**
+- **Loose Coupling**: Services don't know about each other, only events
+- **Independent Scaling**: Add LLM servers, database replicas independently
+- **Hot Reload**: Restart services without dropping connections
+- **Testing**: Mock any service by subscribing to its topics
+- **Observability**: Monitor all events flowing through the bus
+
+**Example**: When a user chats, the connection publishes `chat.message` → Database subscribes for logging → LLM subscribes for trigger matching → Both process independently in parallel.
 
 ## 🎯 Project Goals
 
-Rosey aims to provide:
-- **Feature-Rich Main Bot**: Full-featured CyTube bot with shell control, logging, and database tracking
-- **Simple Examples**: Multiple working examples (TUI chat client, logging, echo, markov)
-- **Modern Python**: Built for Python 3.8+ with proper asyncio patterns
-- **Monolithic Architecture**: All core library code alongside bot implementations for easier development
-- **Playlist Management**: Full support for CyTube playlist operations
-- **Shell Interface**: Built-in remote control for bot management
+- **Event-Driven**: Everything communicates through NATS pub/sub and request/reply
+- **Service-Oriented**: Database, LLM, and connection layers run as independent services
+- **Modern Python**: Async/await throughout, SQLAlchemy 2.0 ORM, type hints
+- **Dual Database**: SQLite for development, PostgreSQL for production (with migrations)
+- **AI-Powered**: OpenAI, Ollama, and custom LLM providers with smart triggers
+- **Production Ready**: Systemd services, monitoring, hot reload, comprehensive testing
 
 ## 📁 Project Structure
 
@@ -62,111 +88,100 @@ rosey-robot/
 
 ### Installation
 
-1. Clone this repository:
 ```bash
-git clone <repository-url>
-cd cytube-bot
-```
-
-2. Install dependencies:
-```bash
+# Clone and install
+git clone https://github.com/grobertson/Rosey-Robot.git
+cd Rosey-Robot
 pip install -r requirements.txt
+
+# Start NATS server (required for all services)
+docker-compose up -d nats
+
+# Run database migrations
+alembic upgrade head
+
+# Start the bot
+python -m lib.bot config.json
 ```
 
-### Running Rosey (Main Bot)
+### Configuration
 
-Rosey is the full-featured CyTube bot with logging, shell control, and database tracking:
+Copy `config.json.dist` to `config.json` and customize:
 
-```bash
-cd bot/rosey
-python rosey.py config.json
-```
-
-Copy `config.json.dist` to `config.json` and customize with your credentials.
-
-### Running Examples
-
-Each example includes a `config.json.dist` file. Copy it to `config.json` and customize.
-
-**TUI Chat Client** ⭐ (Feature-complete terminal interface):
-```bash
-cd examples/tui
-python bot.py config.yaml
-```
-See [examples/tui/USER_GUIDE.md](examples/tui/USER_GUIDE.md) for complete documentation.
-
-**Simple Logger** (minimal chat and media logging):
-```bash
-cd examples/log
-python bot.py config.json
-```
-
-**Echo Bot** (repeats messages back):
-```bash
-cd examples/echo
-python bot.py config.json
-```
-
-**Markov Bot** (learns from chat and generates responses):
-```bash
-cd examples/markov
-python bot.py config.json
-```
-
-### Configuration Format
-
-Example `config.json`:
 ```json
 {
   "domain": "https://cytu.be",
-  "channel": ["YourChannelName", "optional-password"],
+  "channel": ["YourChannel", "optional-password"],
   "user": ["BotUsername", "optional-password"],
-  "response_timeout": 0.1,
-  "restart_delay": 5,
-  "log_level": "INFO",
-  "shell": "127.0.0.1:8888"
+  "database_url": "sqlite+aiosqlite:///bot_data.db",
+  "nats": {
+    "servers": ["nats://localhost:4222"]
+  }
 }
 ```
 
-#### Configuration Options
+**Database options:**
+- SQLite (dev): `sqlite+aiosqlite:///bot_data.db` (default)
+- PostgreSQL (prod): `postgresql+asyncpg://user:pass@host/db`
+- See [docs/DATABASE_SETUP.md](docs/DATABASE_SETUP.md) for details
 
-- **domain**: CyTube server URL (e.g., `https://cytu.be`)
-- **channel**: Channel name or `[name, password]` for password-protected channels
-- **user**: `null` (anonymous), `"GuestName"` (guest), or `["Username", "password"]` (registered)
-- **response_timeout**: Socket.IO response timeout in seconds
-- **restart_delay**: Delay before reconnecting after disconnect (`null` to disable auto-reconnect)
-- **log_level**: Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`)
-- **shell**: REPL server address (`"host:port"` or `null` to disable)
-- **proxy**: Optional proxy server (`"host:port"`)
+### Services Architecture
 
-### Using the REPL Shell
+Run services independently or together:
 
-If you enable the shell in your config, you can connect via telnet:
-
+**All-in-one (development):**
 ```bash
-telnet 127.0.0.1 8888
+python -m lib.bot config.json
+# Starts: Connection + Database + NATS in one process
 ```
 
-Then interact with the bot directly:
-```python
->>> bot.user.name
-'YourBotName'
->>> await bot.chat("Hello from the shell!")
->>> bot.channel.playlist.current
-<PlaylistItem ...>
+**Separate services (production):**
+```bash
+# Terminal 1: NATS server
+docker-compose up -d nats
+
+# Terminal 2: Database service
+python -m common.database_service config.json
+
+# Terminal 3: Bot connection
+python -m lib.bot config.json
+
+# Terminal 4: LLM service (optional)
+python -m bot.rosey.llm_service config.json
 ```
 
-## 🤖 LLM Integration
+**Why separate?**
+- Restart LLM service without dropping CyTube connection
+- Scale database service to multiple replicas
+- Hot-reload code changes per service
+- Independent logging and monitoring
 
-**NEW in v0.2:** Rosey now supports AI-powered chat responses using Large Language Models!
+### NATS Event Bus
 
-### Supported Providers
+All services communicate through NATS subjects:
 
-- **OpenAI** - GPT-4, GPT-3.5-turbo (cloud, paid)
-- **Azure OpenAI** - OpenAI models hosted on Azure
-- **Ollama** - Run models locally (Llama 3, Mistral, etc.) - FREE!
-- **OpenRouter** - Access multiple providers through one API
-- **LocalAI / LM Studio** - OpenAI-compatible local servers
+**Subjects:**
+- `rosey.chat.message` - Incoming chat messages
+- `rosey.database.*` - Database operations (pub/sub)
+- `rosey.llm.request` - LLM completion requests (req/reply)
+- `rosey.connection.command` - Bot commands (req/reply)
+
+**Example:** Subscribe to all events:
+```bash
+nats sub "rosey.>" --server=nats://localhost:4222
+```
+
+This shows every event flowing through the system in real-time—perfect for debugging!
+
+## 🤖 LLM Integration (Microservice)
+
+The LLM service runs independently and subscribes to chat events via NATS:
+
+**Supported Providers:**
+- **OpenAI** - GPT-4, GPT-4o, GPT-3.5-turbo
+- **Ollama** - Local models (Llama 3, Mistral, etc.) - FREE!
+- **Azure OpenAI** - Enterprise OpenAI hosting
+- **OpenRouter** - Multi-provider access
 
 ### Quick Setup
 
@@ -282,28 +297,23 @@ Rosey: "Why did the bot go to therapy? It had too many connection issues!"
 
 See [docs/guides/LLM_CONFIGURATION.md](docs/guides/LLM_CONFIGURATION.md) for complete details.
 
-### Web Status Dashboard
+### Web Dashboard (Service)
 
-View live statistics and metrics in your browser:
+The web dashboard queries database via NATS request/reply:
 
 ```bash
-# Windows
-run_status_server.bat
-
-# Linux/Mac
-./run_status_server.sh
+python web/status_server.py
+# Opens: http://127.0.0.1:5000
 ```
 
-Then open: http://127.0.0.1:5000
-
-Features:
+**Features:**
 - Real-time user count graphs
-- Peak statistics (high water marks)
 - Top chatters leaderboard
-- Historical data (1h/6h/24h/7d views)
-- Auto-refreshing every 30 seconds
+- Historical data (1h/6h/24h/7d)
+- Auto-refresh every 30s
+- Queries through NATS (no direct DB access)
 
-See [web/README.md](web/README.md) for detailed documentation.
+See [web/README.md](web/README.md) for details.
 
 ## 🚀 Production Deployment
 
@@ -354,63 +364,50 @@ nssm start CyTubeBot
 nssm start CyTubeWeb
 ```
 
-## 🤖 Creating Your Own Bot
+## 🔧 Creating Your Own Service
 
-Create a new directory under `examples/` and subclass the `Bot` class:
+Extend Rosey by subscribing to NATS topics:
 
 ```python
-#!/usr/bin/env python3
-import sys
-from pathlib import Path
-
-# Add project root to Python path (allows running from any directory)
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
-
 import asyncio
-from lib import Bot, MessageParser
-from common import get_config
+import json
+from nats.aio.client import Client as NATS
 
-class MyBot(Bot):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.msg_parser = MessageParser()
-        
-        # Register event handlers
-        self.on('chatMsg', self.handle_chat)
-        self.on('setCurrent', self.handle_media_change)
+async def run_my_service():
+    nc = NATS()
+    await nc.connect("nats://localhost:4222")
     
-    async def handle_chat(self, event, data):
+    async def message_handler(msg):
+        data = json.loads(msg.data.decode())
         username = data['username']
-        msg = self.msg_parser.parse(data['msg'])
-        self.logger.info(f'{username}: {msg}')
+        message = data['message']
         
-        # Example: respond to mentions
-        if self.user.name in msg:
-            await self.chat(f"{username}: You mentioned me!")
+        # Your logic here
+        if "keyword" in message.lower():
+            # Publish response back to connection service
+            await nc.publish('rosey.connection.command', json.dumps({
+                'action': 'chat',
+                'message': f"@{username} I noticed that!"
+            }).encode())
     
-    async def handle_media_change(self, event, data):
-        current = self.channel.playlist.current
-        if current:
-            self.logger.info(f'Now playing: {current.title}')
-
-async def run_bot():
-    conf, kwargs = get_config()
-    bot = MyBot(**kwargs)
+    # Subscribe to chat messages
+    await nc.subscribe('rosey.chat.message', cb=message_handler)
     
-    try:
-        await bot.run()
-    except KeyboardInterrupt:
-        return 0
+    print("Service running! Listening for messages...")
     
-    return 1
-
-def main():
-    return asyncio.run(run_bot())
+    # Keep running
+    while True:
+        await asyncio.sleep(1)
 
 if __name__ == '__main__':
-    sys.exit(main())
+    asyncio.run(run_my_service())
 ```
+
+**Your service automatically:**
+- Gets all chat messages in real-time
+- Can trigger bot actions (chat, PM, playlist)
+- Runs independently (restart without dropping connection)
+- Scales horizontally (multiple instances)
 
 ## 📚 Core Library API
 
@@ -576,25 +573,32 @@ pytest tests/unit/test_user.py --cov=lib.user --cov-report=term-missing
 
 ## 🛠️ Development
 
-### Why Monolithic?
+### Why Microservices-on-a-Bus?
 
-This project was restructured from a traditional Python package into a monolithic codebase for several reasons:
+**The Problem:** Traditional monolithic bots require full restarts for any change—dropping connections and losing state.
 
-1. **Easier Development**: No need to reinstall packages after every change
-2. **Better Debugging**: All code is local and easy to inspect
-3. **Simpler Deployment**: Copy the directory and run
-4. **Faster Iteration**: Modify library and bot code together
-5. **Learning Friendly**: Everything is visible and accessible
+**The Solution:** Services communicate through NATS messaging:
+- **Loose Coupling**: Services don't import each other, only publish/subscribe to topics
+- **Hot Reload**: Restart LLM service without dropping CyTube connection
+- **Independent Scaling**: Run 5 LLM workers, 2 database replicas, 1 connection
+- **Easy Testing**: Mock any service by subscribing to its topics
+- **Observability**: `nats sub "rosey.>"` shows all events in real-time
 
-### Project History
+### Project Evolution
 
-Originally based on [dead-beef's cytube-bot](https://github.com/dead-beef/cytube-bot), Rosey has been significantly updated and restructured:
+Originally forked from [dead-beef's cytube-bot](https://github.com/dead-beef/cytube-bot), Rosey has evolved significantly:
 
-- Updated for modern Python 3.8+ with proper asyncio patterns
-- Restructured as a monolithic application for easier development
-- Added comprehensive examples including a feature-complete TUI client
-- Enhanced with database tracking, web dashboard, and shell control
-- Renamed from "CyTube Bot" to "Rosey" to reflect its evolution into a complete application
+**v0.1-0.5:** Traditional monolithic bot  
+**v0.6:** Microservices-on-a-bus architecture with NATS  
+**v0.6.1:** SQLAlchemy ORM, PostgreSQL support, async throughout
+
+**Major Changes:**
+- Async/await everywhere (Python 3.11+)
+- NATS message bus for service communication
+- SQLAlchemy 2.0 ORM with Alembic migrations
+- Dual database: SQLite (dev) + PostgreSQL (prod)
+- LLM integration as independent service
+- 1000+ tests, 61% coverage
 
 ## 📝 License
 
