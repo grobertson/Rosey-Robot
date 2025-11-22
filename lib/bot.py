@@ -279,10 +279,10 @@ class Bot:
     def _on_noflood(self, _, data):
         self.logger.error('noflood: %r', data)
 
-    def _on_errorMsg(self, _, data):
+    def _on_errorMsg(self, _, data):  # noqa: N802 (CyTube API naming)
         self.logger.error('error: %r', data)
 
-    def _on_queueFail(self, _, data):
+    def _on_queueFail(self, _, data):  # noqa: N802 (CyTube API naming)
         self.logger.error('playlist error: %r', data)
 
     @staticmethod

@@ -175,7 +175,7 @@ Examples:
             except Exception:
                 pass  # Don't fail if we can't send error message
 
-    async def handle_command(self, cmd, bot):
+    async def handle_command(self, cmd, bot):  # noqa: C901 (complex function)
         """Handle bot control commands
 
         Args:
