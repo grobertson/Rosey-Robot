@@ -3,12 +3,14 @@ Shared pytest fixtures for Rosey test suite.
 
 This file contains fixtures that are available to all test files.
 """
+import os
 import pytest
 import asyncio
 import json
 from unittest.mock import Mock, AsyncMock
 from lib.connection import ConnectionAdapter
 from nats.aio.client import Client as NATS
+from common.database import BotDatabase
 
 
 @pytest.fixture
@@ -21,6 +23,165 @@ def event_loop():
     loop = asyncio.new_event_loop()
     yield loop
     loop.close()
+
+
+# ============================================================================
+# Database Fixtures (Sprint 11 - SQLAlchemy ORM + PostgreSQL)
+# ============================================================================
+
+@pytest.fixture(scope='session')
+def database_url():
+    """
+    Get database URL from environment or use in-memory SQLite.
+    
+    Usage in CI:
+        DATABASE_URL=postgresql+asyncpg://... pytest tests/
+    
+    Usage locally:
+        pytest tests/  # Uses SQLite in-memory
+    
+    Returns:
+        str: Database URL (SQLite in-memory or PostgreSQL from env)
+    """
+    return os.environ.get('DATABASE_URL', 'sqlite+aiosqlite:///:memory:')
+
+
+@pytest.fixture
+def temp_db_path(tmp_path):
+    """
+    Provide temporary database path for testing.
+    
+    Returns:
+        str: Path to temporary test database file
+    """
+    return str(tmp_path / "test_bot.db")
+
+
+@pytest.fixture
+async def db(temp_db_path, database_url):
+    """
+    Create fresh async database instance for testing.
+    
+    Automatically uses DATABASE_URL from environment if set (for PostgreSQL CI testing),
+    otherwise uses temp_db_path (for local SQLite testing).
+    
+    Creates tables via SQLAlchemy ORM (not Alembic, for test speed).
+    Tables must be created BEFORE connect() since connect() queries the database.
+    
+    Args:
+        temp_db_path: Temporary database path from fixture
+        database_url: Database URL from environment or in-memory
+    
+    Yields:
+        BotDatabase: Connected database instance with tables created
+    
+    Cleanup:
+        Closes database connection after test
+    """
+    from common.models import Base
+    
+    # Use environment DATABASE_URL if PostgreSQL, else temp file
+    if database_url.startswith('postgresql'):
+        db_url = database_url
+    else:
+        db_url = temp_db_path
+    
+    database = BotDatabase(db_url)
+    
+    # Create all tables from ORM models (fast for tests)
+    # MUST be done before connect() since connect() queries the DB
+    async with database.engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    # Now connect (verifies connection by querying user count)
+    await database.connect()
+    
+    yield database
+    await database.close()
+    
+    # Cleanup PostgreSQL tables after test (reset for next test)
+    if database_url.startswith('postgresql'):
+        try:
+            from sqlalchemy import text
+            async with database.engine.begin() as conn:
+                # Drop all tables in public schema
+                await conn.execute(text('DROP SCHEMA public CASCADE'))
+                await conn.execute(text('CREATE SCHEMA public'))
+                await conn.execute(text('GRANT ALL ON SCHEMA public TO rosey'))
+                await conn.execute(text('GRANT ALL ON SCHEMA public TO public'))
+        except Exception:
+            # Cleanup errors are non-fatal (e.g., schema already dropped)
+            pass
+
+
+@pytest.fixture
+async def db_with_users(db):
+    """
+    Database with sample users pre-populated.
+    
+    Creates three test users: alice, bob, charlie
+    
+    Args:
+        db: Database fixture
+    
+    Returns:
+        BotDatabase: Database with users
+    """
+    await db.user_joined("alice")
+    await db.user_joined("bob")
+    await db.user_joined("charlie")
+    return db
+
+
+@pytest.fixture
+async def db_with_history(db):
+    """
+    Database with user count history (24 hours of data).
+    
+    Args:
+        db: Database fixture
+    
+    Returns:
+        BotDatabase: Database with historical data
+    """
+    import time
+    now = int(time.time())
+    for i in range(24):  # 24 hours of data
+        timestamp = now - (23 - i) * 3600
+        await db.log_user_count(timestamp, 10 + i, 15 + i)
+    return db
+
+
+@pytest.fixture
+async def db_with_messages(db):
+    """
+    Database with outbound messages in queue.
+    
+    Args:
+        db: Database fixture
+    
+    Returns:
+        BotDatabase: Database with queued messages
+    """
+    await db.enqueue_outbound_message("Hello world")
+    await db.enqueue_outbound_message("Test message")
+    return db
+
+
+@pytest.fixture
+async def db_with_tokens(db):
+    """
+    Database with API tokens.
+    
+    Args:
+        db: Database fixture
+    
+    Returns:
+        tuple: (database, token1, token2)
+    """
+    token1 = await db.generate_api_token("Test token 1")
+    token2 = await db.generate_api_token("Test token 2")
+    return db, token1, token2
 
 
 @pytest.fixture

@@ -239,11 +239,43 @@ Trivia Plugin receives command, starts game
 **Purpose**: Shared utilities for bot development
 
 **Key Files**:
-- `config.py` - JSON/YAML config loading, logging setup
-- `database.py` - SQLite for stats tracking (optional)
+- `config.py` - JSON/YAML config loading, logging setup, database URL resolution
+- `database.py` - Async ORM with dual-database support (SQLite/PostgreSQL)
 - `shell.py` - PM command handler (moderator commands via private messages)
 
 **Note**: TCP/telnet REPL server has been removed. Shell.py now only handles PM commands.
+
+### Database Layer (`common/database.py`)
+
+**Purpose**: Unified async database interface with dual-database support
+
+**Supported Databases**:
+- **SQLite** (development/testing): Zero-config, file-based, fast for single-user
+- **PostgreSQL** (staging/production): ACID guarantees, concurrent writes, replication
+
+**Key Features**:
+- **Async ORM**: SQLAlchemy 2.0+ with asyncio support
+- **Environment-Aware Pooling**: Auto-scales connections (dev: 2+5, staging: 5+10, production: 10+20)
+- **12-Factor Config**: DATABASE_URL environment variable with fallback priority
+- **Schema Migrations**: Alembic for version-controlled schema changes
+- **Transparent Switching**: Same code works with both databases
+
+**Connection String Priority**:
+1. Environment variable: `DATABASE_URL`
+2. Config file: `database_url` field
+3. Config file (legacy): `database` field (converted to SQLite URL)
+4. Default: `sqlite+aiosqlite:///bot_data.db`
+
+**Examples**:
+```bash
+# SQLite (development)
+DATABASE_URL=sqlite+aiosqlite:///bot_data.db
+
+# PostgreSQL (production)
+DATABASE_URL=postgresql+asyncpg://rosey:password@localhost/rosey_production
+```
+
+See [DATABASE_SETUP.md](DATABASE_SETUP.md) for complete PostgreSQL setup guide and [MIGRATIONS.md](MIGRATIONS.md) for Alembic migration workflow.
 
 ## Event Flow
 

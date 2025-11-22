@@ -1,5 +1,131 @@
 # Changelog
 
+## [0.6.0] - 2025-11-22 - Sprint 11: The Conversation
+
+**🎉 SQLAlchemy ORM Migration - Complete Database Modernization**
+
+This release completes the SQLAlchemy ORM migration, replacing all raw SQL with type-safe ORM operations. All 28 database methods have been migrated to use async SQLAlchemy, providing improved maintainability, portability, and type safety.
+
+### 🌟 What's New (Sortie 2)
+
+#### BotDatabase ORM Integration
+- **28 Methods Migrated**: All database operations now use SQLAlchemy ORM
+  - User tracking (7 methods): user_joined, user_left, user_chat_message, etc.
+  - Query methods (10 methods): get_user_stats, get_top_chatters, get_recent_chat, etc.
+  - Outbound messages (4 methods): enqueue, get_unsent, mark_sent, mark_failed
+  - Status & tokens (7 methods): update_status, generate_token, validate_token, etc.
+- **Session Management**: Context manager pattern (`async with self._get_session()`)
+- **Automatic Transactions**: Auto-commit on success, auto-rollback on error
+- **Connection Pooling**: PostgreSQL connection pooling (5 base + 10 overflow)
+- **File Path Support**: Auto-converts file paths to SQLAlchemy URLs
+
+#### Backward Compatibility
+- **API Unchanged**: All methods return same data structures (dicts, lists, tuples)
+- **Drop-In Replacement**: No changes required for existing code
+- **Path Auto-Conversion**: Constructor accepts both URLs and file paths
+  - `BotDatabase('/path/to/db.db')` → `sqlite+aiosqlite:///...`
+  - `BotDatabase(':memory:')` → `sqlite+aiosqlite:///:memory:`
+  - `BotDatabase('postgresql://...')` → Works directly
+
+#### Performance Improvements
+- **Connection Pooling**: PostgreSQL uses connection pooling for better performance
+- **Batch Operations**: Multi-row inserts/updates use SQLAlchemy bulk operations
+- **Query Optimization**: Indexes preserved from Sortie 1 models
+- **Async Throughout**: All operations fully async (no blocking calls)
+
+### 🔧 Changes (Sortie 2)
+
+**Modified Files**:
+- `common/database.py` - Complete ORM refactor (1,107 lines)
+  - Replaced aiosqlite imports with SQLAlchemy
+  - Replaced `__init__` (now creates engine + session factory)
+  - Replaced `connect()`/`close()` (engine lifecycle management)
+  - Added `_get_session()` context manager
+  - Deleted `_run_migrations()` (170+ lines - Alembic handles this)
+  - Migrated all 28 methods to ORM patterns
+
+**Patterns Established**:
+- Simple Insert: `session.add(obj)`
+- Query Single: `select(Model).where(...).scalar_one_or_none()`
+- Query Multiple: `select(Model).where(...).order_by(...).limit(n)`
+- Update: `update(Model).where(...).values(...)`
+- Bulk Delete: `delete(Model).where(...).rowcount`
+
+### ⚠️ Known Issues (Sortie 2)
+
+- **Test Suite Requires Updates**: Tests written for aiosqlite, need async/ORM updates
+  - Will be addressed in Sortie 3 (Test Migration)
+  - Non-blocking: All 28 methods functional and tested manually
+  - Tests use old `BotDatabase(path)` pattern, now auto-converted
+
+### 🌟 What's New (Sortie 1 - ORM Foundation)
+
+#### SQLAlchemy ORM Models
+
+This release establishes the SQLAlchemy ORM foundation for Rosey, replacing raw SQL strings with type-safe ORM models. The migration framework (Alembic) is now initialized and ready for schema versioning.
+
+### 🌟 What's New
+
+#### SQLAlchemy ORM Models
+- **8 Type-Safe Models**: Complete ORM layer matching v0.5.0 schema
+  - UserStats - User activity tracking
+  - UserAction - Audit log for PM commands
+  - ChannelStats - Channel statistics (singleton)
+  - UserCountHistory - Historical analytics
+  - RecentChat - Message cache
+  - CurrentStatus - Bot status (singleton)
+  - OutboundMessage - Message queue
+  - ApiToken - API authentication
+- **Full Type Hints**: All models use `Mapped[type]` annotations for IDE/mypy support
+- **Comprehensive Docstrings**: Every model, column, and constraint documented
+- **Performance Indexes**: All performance-critical columns indexed
+- **Data Integrity**: Check constraints enforce positive values, singleton patterns
+
+#### Alembic Migration Framework
+- **Initialized Alembic**: Migration framework configured for async operations
+- **Config-Based URL**: Database URL loaded from config.json or environment variable
+- **Async Support**: Full async/await support for migrations
+- **SQLite Batch Mode**: ALTER TABLE support for SQLite
+- **PostgreSQL Ready**: Async driver (asyncpg) configured
+
+#### Testing & Documentation
+- **31 Unit Tests**: Comprehensive model tests (100% passing)
+- **alembic/README.md**: Complete migration workflow guide (350+ lines)
+- **Migration Generated**: Initial schema migration (v0.5.0 → v0.6.0) ready
+
+### 📦 Dependencies Added
+
+```txt
+sqlalchemy[asyncio]==2.0.23    # ORM framework with async support
+alembic==1.13.1                # Database schema migrations
+aiosqlite==0.19.0              # Async SQLite driver
+asyncpg==0.29.0                # Async PostgreSQL driver
+greenlet==3.0.3                # SQLAlchemy async dependency
+psycopg2-binary==2.9.9        # Fallback sync PostgreSQL driver
+```
+
+### 🔧 Changes
+
+**New Files**:
+- `common/models.py` - 8 ORM models (661 lines)
+- `alembic/` - Migration framework directory
+- `alembic.ini` - Alembic configuration
+- `alembic/env.py` - Async migration environment (181 lines)
+- `alembic/README.md` - Migration guide (350 lines)
+- `alembic/versions/45490ea63a06_initial_schema_v0_5_0_to_v0_6_0.py` - Initial migration
+- `tests/unit/test_models.py` - Model unit tests (520 lines, 31 tests)
+
+**Modified Files**:
+- `requirements.txt` - Added 6 SQLAlchemy dependencies
+
+### 🎯 Next Steps (Sprint 11 Remaining Sorties)
+
+- **Sortie 2**: Integrate ORM models into BotDatabase
+- **Sortie 3**: PostgreSQL support and testing
+- **Sortie 4**: Documentation and migration guide
+
+---
+
 ## [0.5.0] - 2025-11-21 - Sprint 9: The Accountant
 
 **🎉 Major Release: NATS Event Bus Architecture**

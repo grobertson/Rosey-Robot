@@ -61,7 +61,26 @@ cd Rosey-Robot
 pip install -r requirements.txt
 ```
 
-### 3. Run Setup
+### 3. Database Setup (Optional: PostgreSQL)
+
+**Default**: Uses SQLite (`bot_data.db`) with zero configuration
+
+**For Production (PostgreSQL)**:
+
+```bash
+# Start PostgreSQL via Docker
+docker-compose up -d postgres
+
+# Set database URL
+export DATABASE_URL="postgresql+asyncpg://rosey:rosey_dev_password@localhost/rosey_dev"
+
+# Run migrations
+alembic upgrade head
+```
+
+See [DATABASE_SETUP.md](DATABASE_SETUP.md) for complete PostgreSQL setup guide and [MIGRATIONS.md](MIGRATIONS.md) for migration workflow.
+
+### 4. Run Setup
 
 **With LLM (Ollama):**
 ```bash
