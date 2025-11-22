@@ -8,8 +8,7 @@ including socket.io integration, event normalization, and authentication.
 import pytest
 import asyncio
 import json
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
-from typing import Optional
+from unittest.mock import AsyncMock, Mock, patch
 
 from lib.connection import CyTubeConnection
 from lib.connection.errors import (
@@ -18,8 +17,7 @@ from lib.connection.errors import (
     NotConnectedError,
     SendError
 )
-from lib.socket_io import SocketIOResponse, SocketIOError
-from lib.error import LoginError, SocketConfigError
+from lib.error import SocketConfigError
 
 
 @pytest.fixture

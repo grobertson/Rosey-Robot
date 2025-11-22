@@ -4,13 +4,12 @@ lib/plugin/event_bus.py
 Pub/sub event bus for inter-plugin communication.
 """
 
-import asyncio
 import fnmatch
 from typing import Dict, List, Callable, Optional, Tuple
 from collections import defaultdict, deque
 import logging
 
-from .event import Event, EventPriority
+from .event import Event
 
 
 class EventBus:

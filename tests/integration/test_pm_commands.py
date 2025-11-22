@@ -10,7 +10,7 @@ Tests PM-based command flow with authentication and response:
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 
 pytestmark = pytest.mark.asyncio

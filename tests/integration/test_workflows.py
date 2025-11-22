@@ -9,7 +9,6 @@ Tests complete user workflows from start to finish:
 
 import pytest
 import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock
 
 

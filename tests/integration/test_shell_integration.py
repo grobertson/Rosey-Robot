@@ -9,7 +9,6 @@ Tests shell commands that trigger bot actions and database updates:
 """
 
 import pytest
-import time
 from unittest.mock import AsyncMock, MagicMock
 
 

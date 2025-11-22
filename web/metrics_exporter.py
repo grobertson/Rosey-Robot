@@ -122,7 +122,7 @@ def generate_metrics() -> str:
         ))
     
     # Scrape metadata
-    metrics.append(f"# TYPE rosey_bot_scrape_timestamp_ms gauge\n")
+    metrics.append("# TYPE rosey_bot_scrape_timestamp_ms gauge\n")
     metrics.append(f"rosey_bot_scrape_timestamp_ms {timestamp}\n")
     
     return ''.join(metrics)

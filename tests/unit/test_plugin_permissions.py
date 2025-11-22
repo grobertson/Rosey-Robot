@@ -11,7 +11,6 @@ Tests cover:
 
 import pytest
 from pathlib import Path
-from unittest.mock import Mock
 
 from bot.rosey.core.plugin_permissions import (
     Permission,

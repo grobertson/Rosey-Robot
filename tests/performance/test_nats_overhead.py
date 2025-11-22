@@ -40,12 +40,10 @@ import asyncio
 import time
 import psutil
 import statistics
-from typing import List, Dict, Any
+from typing import List
 import pytest
 import nats
-from nats.aio.client import Client as NATS
 
-from lib.bot import Bot
 from common.database_service import DatabaseService
 from common.database import BotDatabase
 

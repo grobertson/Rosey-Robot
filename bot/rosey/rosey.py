@@ -13,7 +13,6 @@ import sys
 from pathlib import Path
 import logging
 import asyncio
-import json
 from functools import partial
 from time import localtime, strftime
 
@@ -23,7 +22,6 @@ sys.path.insert(0, str(project_root))
 
 from common import Shell, get_config, configure_logger
 from common.database_service import DatabaseService
-from lib.error import CytubeError, SocketIOError
 from lib import Bot
 
 # NATS import

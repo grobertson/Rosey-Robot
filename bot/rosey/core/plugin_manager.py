@@ -35,10 +35,8 @@ Plugin Lifecycle:
 """
 
 import asyncio
-import importlib.util
 import logging
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from typing import Dict, Optional, Set, List, Any, Callable
 import time
@@ -50,14 +48,12 @@ from .plugin_isolation import (
     PluginIPC,
     PluginState,
     RestartConfig,
-    ResourceLimits,
-    ResourceMonitor
+    ResourceLimits
 )
 from .plugin_permissions import (
     PluginPermissions,
     PermissionProfile,
-    Permission,
-    PermissionValidator
+    Permission
 )
 
 logger = logging.getLogger(__name__)

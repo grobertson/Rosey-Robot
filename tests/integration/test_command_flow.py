@@ -35,7 +35,6 @@ See: Sprint 7 Sortie 3 refactoring (ConnectionAdapter architecture)
 """
 import pytest
 import asyncio
-import json
 from unittest.mock import patch
 
 from bot.rosey.core.event_bus import EventBus, Event

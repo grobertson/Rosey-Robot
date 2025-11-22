@@ -3,7 +3,6 @@ Mock NATS client for testing without requiring a real NATS server
 """
 import asyncio
 from typing import Callable, Dict, List, Optional
-from unittest.mock import AsyncMock, Mock
 from dataclasses import dataclass
 
 

@@ -7,8 +7,7 @@ Unit tests for hot reload system (Sprint 8 Sortie 3).
 import pytest
 import asyncio
 import time
-from pathlib import Path
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock
 
 # Try to import hot reload (may not be available if watchdog not installed)
 try:

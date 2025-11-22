@@ -11,7 +11,6 @@ Tests complete bot lifecycle from startup to shutdown, including:
 
 import pytest
 import asyncio
-import time
 from unittest.mock import MagicMock
 
 

@@ -290,7 +290,7 @@ class SocketIO:
                 except asyncio.CancelledError:
                     self.logger.info('response cancelled %s', event)
                     raise
-                except asyncio.TimeoutError as ex:
+                except asyncio.TimeoutError:
                     self.logger.info('response timeout %s', event)
                     response.cancel()
                     res = None

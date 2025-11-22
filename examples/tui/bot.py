@@ -26,14 +26,13 @@ Keybindings:
 """
 
 import sys
-import os
 import json
 import signal
 import platform
 import textwrap
 from pathlib import Path
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime
 import asyncio
 import logging
 import time

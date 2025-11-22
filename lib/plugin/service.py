@@ -5,7 +5,7 @@ Service definition for plugin services.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict
 from abc import ABC, abstractmethod
 
 

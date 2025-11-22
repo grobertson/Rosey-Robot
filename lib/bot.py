@@ -8,8 +8,7 @@ import collections
 from typing import Optional
 
 from .error import (
-    CytubeError,
-    SocketConfigError, LoginError,
+    LoginError,
     ChannelError, ChannelPermissionError, Kicked
 )
 from .connection import ConnectionAdapter, CyTubeConnection
@@ -18,7 +17,6 @@ from .channel import Channel
 from .user import User
 from .playlist import PlaylistItem
 from .media_link import MediaLink
-from .util import get as default_get, to_sequence
 
 try:
     from common.database import BotDatabase

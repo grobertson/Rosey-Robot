@@ -6,7 +6,7 @@ Manages provider selection, context, and conversation state.
 
 from typing import Optional, List, Dict, Any
 from pathlib import Path
-from .providers import LLMProvider, OpenAIProvider, OllamaProvider, OpenRouterProvider
+from .providers import OpenAIProvider, OllamaProvider, OpenRouterProvider
 
 
 class LLMClient:

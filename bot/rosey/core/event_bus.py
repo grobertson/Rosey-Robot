@@ -18,7 +18,6 @@ import nats
 from nats.aio.client import Client as NATS
 from nats.js import JetStreamContext
 
-from bot.rosey.core.subjects import Subjects
 
 logger = logging.getLogger(__name__)
 

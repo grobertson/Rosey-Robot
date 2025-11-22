@@ -18,7 +18,7 @@ from .errors import (
     NotConnectedError, SendError
 )
 from ..socket_io import SocketIO, SocketIOResponse, SocketIOError
-from ..error import LoginError, ChannelError, SocketConfigError
+from ..error import LoginError, SocketConfigError
 from ..util import get as http_get
 
 

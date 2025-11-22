@@ -11,9 +11,8 @@ Usage:
 import sys
 import os
 import sqlite3
-import json
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict
 from flask import Flask, render_template, jsonify, request
 import requests
 

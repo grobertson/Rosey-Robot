@@ -13,7 +13,6 @@ from lib.plugin import (
     Plugin,
     PluginMetadata,
     PluginError,
-    PluginLoadError,
     PluginDependencyError,
 )
 

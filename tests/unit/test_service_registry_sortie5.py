@@ -9,12 +9,10 @@ lifecycle management, and dependency resolution.
 
 import pytest
 import logging
-from unittest.mock import AsyncMock, MagicMock
 
 from lib.plugin import (
     Service,
     ServiceRegistry,
-    ServiceRegistration,
     PluginError,
 )
 

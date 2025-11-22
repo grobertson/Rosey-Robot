@@ -32,10 +32,9 @@ Example:
     >>> data = weather_service.get_weather("Seattle")
 """
 
-import asyncio
 import logging
-from typing import Dict, List, Optional, Set, Tuple
-from packaging.version import Version, parse
+from typing import Dict, List, Optional, Set
+from packaging.version import parse
 
 from .service import Service, ServiceRegistration
 from .errors import PluginError

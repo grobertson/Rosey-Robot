@@ -21,7 +21,6 @@ import asyncio
 import json
 import logging
 import sys
-from typing import Optional
 
 try:
     from nats.aio.client import Client as NATS

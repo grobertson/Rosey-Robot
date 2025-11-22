@@ -31,7 +31,6 @@ def integration_db(tmp_path):
 def integration_bot(integration_db):
     """Bot instance with real database but mocked connection."""
     from lib.connection import ConnectionAdapter
-    from unittest.mock import AsyncMock
     
     # Create mock connection adapter
     mock_conn = AsyncMock(spec=ConnectionAdapter)

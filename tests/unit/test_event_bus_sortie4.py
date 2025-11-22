@@ -5,7 +5,6 @@ Unit tests for event bus system (Sprint 8 Sortie 4).
 """
 
 import pytest
-import asyncio
 from datetime import datetime
 
 from lib.plugin import (

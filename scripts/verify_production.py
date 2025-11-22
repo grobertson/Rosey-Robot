@@ -15,7 +15,7 @@ import time
 import argparse
 import json
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 import requests
 
 # Exit codes

@@ -3,7 +3,7 @@
 """Unit tests for DatabaseService (NATS-enabled database wrapper)"""
 import pytest
 import json
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock, patch
 
 
 @pytest.fixture

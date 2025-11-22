@@ -8,7 +8,6 @@ Tests the 5 critical normalization fixes implemented in Sprint 9:
 5. PM event with recipient field
 """
 
-import pytest
 from lib.connection.cytube import CyTubeConnection
 
 

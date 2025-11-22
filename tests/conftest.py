@@ -6,8 +6,7 @@ This file contains fixtures that are available to all test files.
 import pytest
 import asyncio
 import json
-from pathlib import Path
-from unittest.mock import Mock, AsyncMock, MagicMock
+from unittest.mock import Mock, AsyncMock
 from lib.connection import ConnectionAdapter
 from nats.aio.client import Client as NATS
 

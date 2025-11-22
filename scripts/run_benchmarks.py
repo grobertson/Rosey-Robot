@@ -23,7 +23,6 @@ import sys
 import os
 import subprocess
 import time
-import json
 from pathlib import Path
 from datetime import datetime
 

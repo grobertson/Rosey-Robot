@@ -265,7 +265,7 @@ Examples:
     print()
     print("4. Start your bot:")
     print(f"   cd {output_path.parent}")
-    print(f"   python rosey.py config.json")
+    print("   python rosey.py config.json")
     print()
     
     if config.get('llm', {}).get('enabled'):
@@ -274,7 +274,7 @@ Examples:
         if config['llm']['provider'] == 'ollama':
             print(f"  • Ollama URL: {config['llm']['ollama']['base_url']}")
             print(f"  • Model: {config['llm']['ollama']['model']}")
-        print(f"  • Triggers: Direct mentions and commands (!ai, !ask)")
+        print("  • Triggers: Direct mentions and commands (!ai, !ask)")
         print()
         print("Test LLM setup:")
         print(f"   cd {output_path.parent}")

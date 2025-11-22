@@ -2,15 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import pytest
-import asyncio
 import json
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock
 from lib.bot import Bot
 from lib.channel import Channel
 from lib.user import User
-from lib.playlist import PlaylistItem
-from lib.error import LoginError, SocketIOError, Kicked, ChannelPermissionError
-from lib.socket_io import SocketIO, SocketIOResponse
+from lib.error import LoginError, Kicked
+from lib.socket_io import SocketIO
 from lib.connection import CyTubeConnection
 
 

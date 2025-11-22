@@ -27,7 +27,7 @@ import json
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 
 # Import NATS
 try:
@@ -41,7 +41,6 @@ except ImportError:
 from lib.bot import Bot
 from common.database import BotDatabase
 from common.database_service import DatabaseService
-from unittest.mock import MagicMock
 
 
 @pytest.fixture
@@ -478,7 +477,7 @@ class TestPerformance:
         assert avg_latency < 100, f"Average latency too high: {avg_latency:.2f}ms"
         
         # Print stats for reference
-        print(f"\nLatency Stats:")
+        print("\nLatency Stats:")
         print(f"  Average: {avg_latency:.2f}ms")
         print(f"  Min: {min(latencies):.2f}ms")
         print(f"  Max: {max(latencies):.2f}ms")

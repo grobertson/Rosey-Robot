@@ -4,7 +4,7 @@
 import pytest
 import json
 import asyncio
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import Mock, AsyncMock
 
 from lib.bot import Bot
 from lib.connection import ConnectionAdapter
