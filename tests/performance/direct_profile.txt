@@ -1,0 +1,58 @@
+         289351 function calls (289347 primitive calls) in 0.546 seconds
+
+   Ordered by: cumulative time
+   List reduced from 259 to 50 due to restriction <50>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+     6062    0.037    0.000    1.232    0.000 base_events.py:1922(_run_once)
+     9095    0.009    0.000    1.043    0.000 events.py:86(_run)
+     9095    0.045    0.000    0.919    0.000 {method 'run' of '_contextvars.Context' objects}
+     3029    0.008    0.000    0.596    0.000 profile_direct.py:23(profile_direct_operations)
+        1    0.000    0.000    0.546    0.546 runners.py:160(run)
+        3    0.000    0.000    0.545    0.182 base_events.py:655(run_until_complete)
+        3    0.000    0.000    0.545    0.182 windows_events.py:318(run_forever)
+        3    0.000    0.000    0.545    0.182 base_events.py:631(run_forever)
+        1    0.000    0.000    0.545    0.545 runners.py:86(run)
+     6062    0.008    0.000    0.254    0.000 windows_events.py:443(select)
+     6063    0.032    0.000    0.203    0.000 windows_events.py:761(_poll)
+     9094    0.107    0.000    0.107    0.000 {built-in method _overlapped.GetQueuedCompletionStatus}
+     3033    0.005    0.000    0.103    0.000 proactor_events.py:792(_loop_self_reading)
+     3031    0.010    0.000    0.096    0.000 windows_events.py:482(recv)
+     3028    0.004    0.000    0.062    0.000 base_events.py:842(call_soon_threadsafe)
+     3028    0.006    0.000    0.056    0.000 proactor_events.py:820(_write_to_self)
+     4000    0.006    0.000    0.044    0.000 database.py:448(log_chat)
+     3028    0.044    0.000    0.044    0.000 {method 'send' of '_socket.socket' objects}
+     3031    0.035    0.000    0.035    0.000 {method 'WSARecv' of '_overlapped.Overlapped' objects}
+     6056    0.007    0.000    0.028    0.000 {function _OverlappedFuture.set_result at 0x00000298A0B70400}
+     9096    0.015    0.000    0.028    0.000 base_events.py:818(_call_soon)
+     6054    0.010    0.000    0.025    0.000 core.py:112(_execute)
+     3029    0.023    0.000    0.023    0.000 {method 'get' of '_queue.SimpleQueue' objects}
+     3028    0.005    0.000    0.021    0.000 windows_events.py:92(set_result)
+     6068    0.005    0.000    0.021    0.000 base_events.py:789(call_soon)
+     3031    0.010    0.000    0.019    0.000 windows_events.py:714(_register)
+     3028    0.002    0.000    0.018    0.000 windows_events.py:459(finish_socket_func)
+     3028    0.016    0.000    0.016    0.000 {method 'getresult' of '_overlapped.Overlapped' objects}
+     3028    0.003    0.000    0.015    0.000 core.py:30(set_result)
+     2036    0.002    0.000    0.012    0.000 cursor.py:34(execute)
+     2004    0.003    0.000    0.012    0.000 core.py:148(cursor)
+     2006    0.002    0.000    0.011    0.000 core.py:153(commit)
+     2042    0.002    0.000    0.011    0.000 cursor.py:30(_execute)
+     9096    0.008    0.000    0.010    0.000 events.py:36(__init__)
+     3029    0.010    0.000    0.010    0.000 {method 'put_nowait' of '_queue.SimpleQueue' objects}
+     3031    0.008    0.000    0.008    0.000 windows_events.py:55(__init__)
+     6062    0.006    0.000    0.006    0.000 _weakrefset.py:75(__contains__)
+     6057    0.004    0.000    0.006    0.000 __init__.py:1517(debug)
+     6062    0.003    0.000    0.005    0.000 base_events.py:738(time)
+     3031    0.002    0.000    0.004    0.000 windows_events.py:704(_register_with_iocp)
+     3028    0.003    0.000    0.004    0.000 base_events.py:446(create_future)
+12131/12129    0.003    0.000    0.003    0.000 {built-in method builtins.len}
+     9097    0.003    0.000    0.003    0.000 {method 'append' of 'collections.deque' objects}
+     3031    0.003    0.000    0.003    0.000 {method 'pop' of 'dict' objects}
+    15158    0.002    0.000    0.002    0.000 base_events.py:2017(get_debug)
+     1002    0.002    0.000    0.002    0.000 context.py:52(wrapper)
+     9095    0.002    0.000    0.002    0.000 {method 'popleft' of 'collections.deque' objects}
+     6064    0.002    0.000    0.002    0.000 {built-in method time.monotonic}
+     6061    0.002    0.000    0.002    0.000 __init__.py:1790(isEnabledFor)
+     6064    0.002    0.000    0.002    0.000 {method 'clear' of 'list' objects}
+
+
