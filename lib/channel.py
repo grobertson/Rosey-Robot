@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 import logging
 
+from .error import ChannelPermissionError
 from .playlist import Playlist
 from .user import UserList
-from .error import ChannelPermissionError
 
 
 class Channel:

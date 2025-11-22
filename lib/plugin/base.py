@@ -4,12 +4,13 @@ lib/plugin/base.py
 Abstract plugin base class.
 """
 
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Callable, List
 import logging
-from .metadata import PluginMetadata
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Dict, List, Optional
+
 from .errors import PluginError
 from .event import Event, EventPriority
+from .metadata import PluginMetadata
 
 
 class Plugin(ABC):
@@ -55,7 +56,7 @@ class Plugin(ABC):
                 if message.startswith('!hello'):
                     await self.send_message('Hello!')
     """
-    
+
     def __init__(self, bot, config: Optional[Dict[str, Any]] = None):
         """
         Initialize plugin.
@@ -73,7 +74,7 @@ class Plugin(ABC):
         self._is_enabled = False
         self._event_handlers: Dict[str, List[Callable]] = {}
         self._event_subscriptions: List[str] = []  # Track subscriptions for cleanup
-    
+
     @property
     @abstractmethod
     def metadata(self) -> PluginMetadata:
@@ -97,12 +98,12 @@ class Plugin(ABC):
                     author='YourName'
                 )
         """
-    
+
     @property
     def is_enabled(self) -> bool:
         """Check if plugin is currently enabled."""
         return self._is_enabled
-    
+
     @property
     def storage(self):
         """
@@ -112,7 +113,7 @@ class Plugin(ABC):
             StorageAdapter instance or None if database disabled
         """
         return getattr(self.bot, 'storage', None)
-    
+
     @property
     def event_bus(self):
         """
@@ -131,11 +132,11 @@ class Plugin(ABC):
         if hasattr(self.bot, 'plugin_manager'):
             return self.bot.plugin_manager.event_bus
         return None
-    
+
     # =================================================================
     # Lifecycle Hooks
     # =================================================================
-    
+
     async def setup(self) -> None:
         """
         Initialize plugin (called once on load).
@@ -153,7 +154,7 @@ class Plugin(ABC):
         Raises:
             PluginError: If setup fails (plugin will not load)
         """
-    
+
     async def teardown(self) -> None:
         """
         Cleanup plugin (called once on unload).
@@ -173,7 +174,7 @@ class Plugin(ABC):
             for pattern in self._event_subscriptions:
                 self.event_bus.unsubscribe(pattern, self.metadata.name)
             self._event_subscriptions.clear()
-    
+
     async def on_enable(self) -> None:
         """
         Called when plugin is enabled.
@@ -188,7 +189,7 @@ class Plugin(ABC):
         """
         self._is_enabled = True
         self.logger.info(f"{self.metadata.display_name} enabled")
-    
+
     async def on_disable(self) -> None:
         """
         Called when plugin is disabled.
@@ -204,11 +205,11 @@ class Plugin(ABC):
         """
         self._is_enabled = False
         self.logger.info(f"{self.metadata.display_name} disabled")
-    
+
     # =================================================================
     # Event Registration
     # =================================================================
-    
+
     def on(self, event_name: str, handler: Callable) -> None:
         """
         Register event handler.
@@ -228,7 +229,7 @@ class Plugin(ABC):
             self._event_handlers[event_name] = []
         self._event_handlers[event_name].append(handler)
         self.logger.debug(f"Registered handler for '{event_name}'")
-    
+
     def on_message(self, handler: Callable) -> Callable:
         """
         Decorator to register message handler.
@@ -254,7 +255,7 @@ class Plugin(ABC):
         """
         self.on('message', handler)
         return handler
-    
+
     def on_user_join(self, handler: Callable) -> Callable:
         """
         Decorator to register user join handler.
@@ -267,7 +268,7 @@ class Plugin(ABC):
         """
         self.on('user_join', handler)
         return handler
-    
+
     def on_user_leave(self, handler: Callable) -> Callable:
         """
         Decorator to register user leave handler.
@@ -279,7 +280,7 @@ class Plugin(ABC):
         """
         self.on('user_leave', handler)
         return handler
-    
+
     def on_command(self, command: str, handler: Callable) -> Callable:
         """
         Decorator to register command handler.
@@ -306,7 +307,7 @@ class Plugin(ABC):
         async def wrapper(event, data):
             if not self.is_enabled:
                 return
-            
+
             message = data.get('content', '')
             if message.startswith(f'!{command}'):
                 username = data.get('user', '')
@@ -314,14 +315,14 @@ class Plugin(ABC):
                 parts = message.split(maxsplit=1)
                 args = parts[1].split() if len(parts) > 1 else []
                 await handler(username, args)
-        
+
         self.on('message', wrapper)
         return handler
-    
+
     # =================================================================
     # Inter-Plugin Communication (Event Bus)
     # =================================================================
-    
+
     def subscribe(self, event_pattern: str, handler: Callable) -> None:
         """
         Subscribe to event bus events matching pattern.
@@ -346,10 +347,10 @@ class Plugin(ABC):
         if not self.event_bus:
             self.logger.warning("Event bus not available")
             return
-        
+
         self.event_bus.subscribe(event_pattern, handler, self.metadata.name)
         self._event_subscriptions.append(event_pattern)
-    
+
     async def publish(
         self,
         event_name: str,
@@ -381,7 +382,7 @@ class Plugin(ABC):
         if not self.event_bus:
             self.logger.warning("Event bus not available")
             return
-        
+
         event = Event(
             name=event_name,
             data=data,
@@ -389,11 +390,11 @@ class Plugin(ABC):
             priority=priority,
         )
         await self.event_bus.publish(event)
-    
+
     # =================================================================
     # Bot Interaction
     # =================================================================
-    
+
     async def send_message(self, message: str) -> None:
         """
         Send message to channel.
@@ -410,11 +411,11 @@ class Plugin(ABC):
             await self.bot.send_message(message)
         else:
             self.logger.warning("Bot does not support send_message()")
-    
+
     # =================================================================
     # Configuration
     # =================================================================
-    
+
     def get_config(self, key: str, default: Any = None) -> Any:
         """
         Get configuration value.
@@ -437,15 +438,15 @@ class Plugin(ABC):
         # Support dot notation for nested config
         keys = key.split('.')
         value = self.config
-        
+
         for k in keys:
             if isinstance(value, dict) and k in value:
                 value = value[k]
             else:
                 return default
-        
+
         return value
-    
+
     def validate_config(self, required_keys: List[str]) -> None:
         """
         Validate that required configuration keys exist.
@@ -464,17 +465,17 @@ class Plugin(ABC):
         for key in required_keys:
             if self.get_config(key) is None:
                 missing.append(key)
-        
+
         if missing:
             raise PluginError(
                 f"{self.metadata.display_name}: Missing required config keys: "
                 f"{', '.join(missing)}"
             )
-    
+
     # =================================================================
     # Service Registry
     # =================================================================
-    
+
     @property
     def services(self):
         """
@@ -491,7 +492,7 @@ class Plugin(ABC):
         if hasattr(self.bot, 'plugin_manager'):
             return self.bot.plugin_manager.service_registry
         return None
-    
+
     def provide_service(self, service, dependencies: Optional[Dict[str, str]] = None) -> None:
         """
         Register a service with the service registry.
@@ -525,7 +526,7 @@ class Plugin(ABC):
             raise PluginError(
                 f"{self.metadata.display_name}: Service registry not available"
             )
-        
+
         self.services.register(
             service,
             provider=self.metadata.name,
@@ -534,7 +535,7 @@ class Plugin(ABC):
         self.logger.info(
             f"Provided service '{service.service_name}' v{service.service_version}"
         )
-    
+
     def get_service(self, service_name: str, min_version: Optional[str] = None):
         """
         Get a service from the service registry.
@@ -555,9 +556,9 @@ class Plugin(ABC):
         if not self.services:
             self.logger.warning("Service registry not available")
             return None
-        
+
         return self.services.get(service_name, min_version)
-    
+
     def require_service(self, service_name: str, min_version: Optional[str] = None):
         """
         Get a service from the registry, raising error if not available.
@@ -582,17 +583,17 @@ class Plugin(ABC):
             raise PluginError(
                 f"{self.metadata.display_name}: Service registry not available"
             )
-        
+
         return self.services.require(service_name, min_version)
-    
+
     # =================================================================
     # Utility
     # =================================================================
-    
+
     def __str__(self) -> str:
         """String representation for logs."""
         return str(self.metadata)
-    
+
     def __repr__(self) -> str:
         """Developer representation."""
         status = "enabled" if self.is_enabled else "disabled"

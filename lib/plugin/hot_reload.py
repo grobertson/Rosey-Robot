@@ -5,14 +5,14 @@ File system watching and automatic plugin reloading.
 """
 
 import asyncio
+import logging
 import time
 from pathlib import Path
-from typing import Optional, Dict, Set
-import logging
+from typing import Dict, Optional, Set
 
 try:
+    from watchdog.events import FileModifiedEvent, FileSystemEventHandler
     from watchdog.observers import Observer
-    from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
     WATCHDOG_AVAILABLE = True
 except ImportError:

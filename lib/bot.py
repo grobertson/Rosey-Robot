@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import re
-import json
-import logging
 import asyncio
 import collections
+import json
+import logging
+import re
 from typing import Optional
 
-from .error import (
-    LoginError,
-    ChannelError, ChannelPermissionError, Kicked
-)
-from .connection import ConnectionAdapter, CyTubeConnection
-from .connection.errors import ConnectionError as ConnError, NotConnectedError
 from .channel import Channel
-from .user import User
-from .playlist import PlaylistItem
+from .connection import ConnectionAdapter, CyTubeConnection
+from .connection.errors import ConnectionError as ConnError
+from .connection.errors import NotConnectedError
+from .error import ChannelError, ChannelPermissionError, Kicked, LoginError
 from .media_link import MediaLink
+from .playlist import PlaylistItem
+from .user import User
 
 try:
     from common.database import BotDatabase
@@ -116,7 +114,7 @@ class Bot:
             user=user,
             password=password
         )
-        
+
         # Set channel info from connection (for backward compatibility)
         instance = cls(connection=connection, **kwargs)
         instance.channel.name = channel
@@ -124,7 +122,7 @@ class Bot:
         if user:
             instance.user.name = user
             instance.user.password = password or ''
-        
+
         return instance
 
     def __init__(self, connection: ConnectionAdapter,
@@ -175,14 +173,14 @@ class Bot:
             # DatabaseService runs separately
         """
         import time
-        
+
         # Validate NATS client (REQUIRED)
         if nats_client is None:
             raise ValueError(
                 "NATS client is required. Bot cannot operate without NATS event bus. "
                 "See docs/sprints/active/9-The-Accountant/MIGRATION.md for migration guide."
             )
-        
+
         self.connection = connection
         self.restart_delay = restart_delay
         self.channel = Channel()
@@ -202,7 +200,7 @@ class Bot:
         # Store NATS client for event bus communication (REQUIRED)
         self.nats = nats_client
         self.logger.info('NATS event bus enabled')
-        
+
         # NO self.db - Database operations go through NATS only
         # DatabaseService subscribes to NATS subjects separately
 
@@ -227,7 +225,7 @@ class Bot:
         if isinstance(self.connection, CyTubeConnection):
             return self.connection.socket
         return None
-    
+
     @property
     def response_timeout(self):
         """Response timeout for CyTube operations (backward compatibility)."""
@@ -263,7 +261,7 @@ class Bot:
         # Update high water mark for connected count when it changes
         user_count = len(self.channel.userlist)
         connected_count = data
-        
+
         # Publish via NATS (REQUIRED)
         await self.nats.publish('rosey.db.stats.high_water', json.dumps({
             'chat_count': user_count,
@@ -300,14 +298,14 @@ class Bot:
         """
         # Support both normalized 'username' and CyTube 'name'
         username = data.get('username', data.get('name', ''))
-        
+
         # Create User with basic fields that __init__ accepts
         user_dict = {
             'name': username,
             'rank': data.get('rank', 0),
             'meta': data.get('meta', {})
         }
-        
+
         if username == self.user.name:
             self.user.update(**user_dict)
             # Set afk attribute directly (not in __init__)
@@ -328,14 +326,14 @@ class Bot:
         ✅ NORMALIZATION COMPLETE (Sortie 2): Uses normalized 'users' array
         """
         self.channel.userlist.clear()
-        
+
         # ✅ Use normalized 'users' array (Sortie 1 provides full objects)
         users_data = data.get('users', [])
-        
+
         for user in users_data:
             # user is now guaranteed to be a dict with normalized fields
             self._add_user(user)
-        
+
         self.logger.info('userlist: %s users', len(self.channel.userlist))
 
     async def _on_user_join(self, _, data):
@@ -349,10 +347,10 @@ class Bot:
         # ✅ Use normalized 'user_data' field (Sortie 1 provides full object)
         user_data = data.get('user_data', {})
         username = data.get('user', user_data.get('username', ''))
-        
+
         if user_data:
             self._add_user(user_data)
-            self.logger.info('User joined: %s (rank=%s)', 
+            self.logger.info('User joined: %s (rank=%s)',
                            username, user_data.get('rank', 0))
         else:
             self.logger.warning('User join without user_data: %s', username)
@@ -364,7 +362,7 @@ class Bot:
                 'username': username
             }).encode())
             self.logger.debug(f"[NATS] Published user_joined: {username}")
-            
+
             # Update high water mark
             user_count = len(self.channel.userlist)
             connected_count = self.channel.userlist.count
@@ -394,7 +392,7 @@ class Bot:
             self.logger.debug(f"[NATS] Published user_left: {username}")
         try:
             del self.channel.userlist[username]
-            
+
             # Enhanced logging if user_data available
             if user_data:
                 rank = user_data.get('rank', 0)
@@ -496,7 +494,7 @@ class Bot:
         # Use normalized fields (user, content) - no platform_data access needed
         username = data.get('user')
         msg = data.get('content', '')
-        
+
         if username:
             # Publish via NATS
             await self.nats.publish('rosey.db.message.log', json.dumps({
@@ -607,7 +605,7 @@ class Bot:
                 try:
                     # Fetch messages ready for sending (respects retry backoff)
                     messages = []
-                    
+
                     # Query via NATS request/reply
                     try:
                         response = await self.nats.request(
@@ -636,7 +634,7 @@ class Bot:
 
                         try:
                             await self.chat(text)
-                            
+
                             # Mark as sent via NATS or database
                             await self.nats.publish('rosey.db.messages.outbound.mark_sent', json.dumps({
                                 'message_id': mid
@@ -650,10 +648,7 @@ class Bot:
                                 self.logger.info('Sent outbound id=%s', mid)
 
                         except Exception as send_exc:
-                            from .error import (
-                                ChannelPermissionError,
-                                ChannelError
-                            )
+                            from .error import ChannelError, ChannelPermissionError
 
                             error_msg = str(send_exc)
 
@@ -737,24 +732,24 @@ class Bot:
                         self.logger.info('connecting')
                         await self.connection.connect()
                         self.connect_time = time.time()  # Record connection time
-                    
+
                     async for ev, data in self.connection.recv_events():
                         await self.trigger(ev, data)
-                        
+
                 except (ConnError, Exception) as ex:
                     self.logger.error('connection error: %r', ex, exc_info=True)
                     try:
                         await self.connection.disconnect()
                     except Exception:
                         pass
-                    
+
                     if self.restart_delay is None or self.restart_delay <= 0:
                         break
-                    
+
                     self.logger.error('restarting in %s seconds', self.restart_delay)
                     await asyncio.sleep(self.restart_delay)
                     await self.connection.reconnect()
-                    
+
         except asyncio.CancelledError:
             self.logger.info('cancelled')
         finally:

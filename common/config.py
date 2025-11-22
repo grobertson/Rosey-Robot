@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import sys
 import json
 import logging
+import sys
 
 from lib import SocketIO, set_proxy
 
@@ -121,7 +121,7 @@ def get_config():
         sys.exit(1)
 
     config_file = sys.argv[1]
-    
+
     # Determine file format from extension
     if config_file.endswith(('.yaml', '.yml')):
         if not HAS_YAML:
@@ -149,7 +149,7 @@ def get_config():
     else:
         # Fallback to string comparison (less robust but works for major versions)
         is_v2 = str(config_version).startswith('2.')
-    
+
     if is_v2:
         # Extract from v2 nested structure
         platforms = conf.get('platforms', [])

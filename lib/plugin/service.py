@@ -4,9 +4,9 @@ lib/plugin/service.py
 Service definition for plugin services.
 """
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict
-from abc import ABC, abstractmethod
 
 
 class Service(ABC):

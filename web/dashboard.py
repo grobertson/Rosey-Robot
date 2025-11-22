@@ -8,13 +8,14 @@ Usage:
     python web/dashboard.py [--port 5000] [--host 0.0.0.0]
 """
 
-import sys
 import os
 import sqlite3
+import sys
 from datetime import datetime
 from typing import Dict
-from flask import Flask, render_template, jsonify, request
+
 import requests
+from flask import Flask, jsonify, render_template, request
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -91,9 +92,9 @@ def api_deployments():
     """Get deployment history."""
     environment = request.args.get('environment', 'all')
     limit = request.args.get('limit', 50, type=int)
-    
+
     db = get_db()
-    
+
     if environment == 'all':
         rows = db.execute(
             'SELECT * FROM deployments ORDER BY started_at DESC LIMIT ?',
@@ -104,20 +105,20 @@ def api_deployments():
             'SELECT * FROM deployments WHERE environment = ? ORDER BY started_at DESC LIMIT ?',
             (environment, limit)
         ).fetchall()
-    
+
     deployments = []
     for row in rows:
         deployment = dict(row)
-        
+
         # Get checks for this deployment
         checks = db.execute(
             'SELECT * FROM deployment_checks WHERE deployment_id = ? ORDER BY checked_at',
             (row['id'],)
         ).fetchall()
         deployment['checks'] = [dict(check) for check in checks]
-        
+
         deployments.append(deployment)
-    
+
     db.close()
     return jsonify(deployments)
 
@@ -127,20 +128,20 @@ def api_status():
     """Get current status of all environments."""
     test_status = get_health_status('test')
     prod_status = get_health_status('prod')
-    
+
     db = get_db()
-    
+
     # Get latest deployment for each environment
     test_deploy = db.execute(
         'SELECT * FROM deployments WHERE environment = "test" ORDER BY started_at DESC LIMIT 1'
     ).fetchone()
-    
+
     prod_deploy = db.execute(
         'SELECT * FROM deployments WHERE environment = "prod" ORDER BY started_at DESC LIMIT 1'
     ).fetchone()
-    
+
     db.close()
-    
+
     return jsonify({
         'test': {
             'health': test_status,
@@ -157,26 +158,26 @@ def api_status():
 def api_deployment_detail(deployment_id: int):
     """Get detailed information about a deployment."""
     db = get_db()
-    
+
     deployment = db.execute(
         'SELECT * FROM deployments WHERE id = ?',
         (deployment_id,)
     ).fetchone()
-    
+
     if not deployment:
         db.close()
         return jsonify({'error': 'Deployment not found'}), 404
-    
+
     checks = db.execute(
         'SELECT * FROM deployment_checks WHERE deployment_id = ? ORDER BY checked_at',
         (deployment_id,)
     ).fetchall()
-    
+
     db.close()
-    
+
     result = dict(deployment)
     result['checks'] = [dict(check) for check in checks]
-    
+
     return jsonify(result)
 
 
@@ -184,11 +185,11 @@ def api_deployment_detail(deployment_id: int):
 def api_create_deployment():
     """Create a new deployment record."""
     data = request.json
-    
+
     required = ['environment', 'version', 'deployed_by']
     if not all(k in data for k in required):
         return jsonify({'error': 'Missing required fields'}), 400
-    
+
     db = get_db()
     cursor = db.execute(
         '''INSERT INTO deployments 
@@ -200,7 +201,7 @@ def api_create_deployment():
     deployment_id = cursor.lastrowid
     db.commit()
     db.close()
-    
+
     return jsonify({'id': deployment_id, 'status': 'created'}), 201
 
 
@@ -208,33 +209,33 @@ def api_create_deployment():
 def api_update_deployment(deployment_id: int):
     """Update deployment status."""
     data = request.json
-    
+
     db = get_db()
-    
+
     updates = []
     values = []
-    
+
     if 'status' in data:
         updates.append('status = ?')
         values.append(data['status'])
-    
+
     if 'completed_at' in data or data.get('status') in ('success', 'failed'):
         updates.append('completed_at = ?')
         values.append(datetime.utcnow().isoformat())
-    
+
     if not updates:
         db.close()
         return jsonify({'error': 'No updates provided'}), 400
-    
+
     values.append(deployment_id)
-    
+
     db.execute(
         f'UPDATE deployments SET {", ".join(updates)} WHERE id = ?',
         values
     )
     db.commit()
     db.close()
-    
+
     return jsonify({'status': 'updated'})
 
 
@@ -242,11 +243,11 @@ def api_update_deployment(deployment_id: int):
 def api_add_check(deployment_id: int):
     """Add a deployment check result."""
     data = request.json
-    
+
     required = ['check_name', 'passed']
     if not all(k in data for k in required):
         return jsonify({'error': 'Missing required fields'}), 400
-    
+
     db = get_db()
     db.execute(
         '''INSERT INTO deployment_checks 
@@ -257,7 +258,7 @@ def api_add_check(deployment_id: int):
     )
     db.commit()
     db.close()
-    
+
     return jsonify({'status': 'created'}), 201
 
 
@@ -265,20 +266,20 @@ def api_add_check(deployment_id: int):
 def api_stats():
     """Get deployment statistics."""
     db = get_db()
-    
+
     # Total deployments
     total = db.execute('SELECT COUNT(*) as count FROM deployments').fetchone()['count']
-    
+
     # Success rate
     success = db.execute(
         'SELECT COUNT(*) as count FROM deployments WHERE status = "success"'
     ).fetchone()['count']
-    
+
     # Failed deployments
     failed = db.execute(
         'SELECT COUNT(*) as count FROM deployments WHERE status = "failed"'
     ).fetchone()['count']
-    
+
     # Recent deployments (last 7 days)
     recent = db.execute(
         '''SELECT environment, COUNT(*) as count 
@@ -286,7 +287,7 @@ def api_stats():
            WHERE started_at >= datetime('now', '-7 days')
            GROUP BY environment'''
     ).fetchall()
-    
+
     # Average deployment time
     avg_time = db.execute(
         '''SELECT AVG(
@@ -295,9 +296,9 @@ def api_stats():
            FROM deployments 
            WHERE completed_at IS NOT NULL'''
     ).fetchone()['avg_seconds']
-    
+
     db.close()
-    
+
     return jsonify({
         'total_deployments': total,
         'success_rate': (success / total * 100) if total > 0 else 0,
@@ -310,17 +311,17 @@ def api_stats():
 def main():
     """Run the dashboard server."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='Rosey Bot Deployment Dashboard')
     parser.add_argument('--port', type=int, default=5000, help='Port to run on')
     parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
     parser.add_argument('--debug', action='store_true', help='Run in debug mode')
-    
+
     args = parser.parse_args()
-    
+
     # Initialize database
     init_db()
-    
+
     print(f"🚀 Starting Rosey Bot Dashboard on http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=args.debug)
 

@@ -6,9 +6,9 @@ platform connection implementations must inherit from. It provides a
 platform-agnostic interface for connecting to chat platforms.
 """
 
-from abc import ABC, abstractmethod
-from typing import AsyncIterator, Callable, Optional, Tuple, Dict, Any
 import logging
+from abc import ABC, abstractmethod
+from typing import Any, AsyncIterator, Callable, Dict, Optional, Tuple
 
 
 class ConnectionAdapter(ABC):
@@ -37,7 +37,7 @@ class ConnectionAdapter(ABC):
         >>> await conn.connect()
         >>> await conn.send_message("Hello world")
     """
-    
+
     def __init__(self, logger: Optional[logging.Logger] = None):
         """
         Initialize connection adapter.
@@ -48,7 +48,7 @@ class ConnectionAdapter(ABC):
         """
         self.logger = logger or logging.getLogger(self.__class__.__name__)
         self._is_connected = False
-    
+
     @abstractmethod
     async def connect(self) -> None:
         """
@@ -66,7 +66,7 @@ class ConnectionAdapter(ABC):
             TimeoutError: If connection times out
         """
         pass
-    
+
     @abstractmethod
     async def disconnect(self) -> None:
         """
@@ -82,7 +82,7 @@ class ConnectionAdapter(ABC):
         effort to clean up even if errors occur.
         """
         pass
-    
+
     @abstractmethod
     async def send_message(self, content: str, **metadata) -> None:
         """
@@ -101,7 +101,7 @@ class ConnectionAdapter(ABC):
             >>> await conn.send_message("Hello!", meta={"color": "blue"})
         """
         pass
-    
+
     @abstractmethod
     async def send_pm(self, user: str, content: str) -> None:
         """
@@ -120,7 +120,7 @@ class ConnectionAdapter(ABC):
             >>> await conn.send_pm("alice", "Hello privately!")
         """
         pass
-    
+
     @abstractmethod
     def on_event(self, event: str, callback: Callable) -> None:
         """
@@ -140,7 +140,7 @@ class ConnectionAdapter(ABC):
             >>> conn.on_event('message', on_message)
         """
         pass
-    
+
     @abstractmethod
     def off_event(self, event: str, callback: Callable) -> None:
         """
@@ -154,7 +154,7 @@ class ConnectionAdapter(ABC):
             >>> conn.off_event('message', on_message)
         """
         pass
-    
+
     @abstractmethod
     async def recv_events(self) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:
         """
@@ -179,7 +179,7 @@ class ConnectionAdapter(ABC):
             ...         print(f"{data['user']} joined")
         """
         pass
-    
+
     @property
     def is_connected(self) -> bool:
         """
@@ -189,7 +189,7 @@ class ConnectionAdapter(ABC):
             True if connected, False otherwise
         """
         return self._is_connected
-    
+
     @abstractmethod
     async def reconnect(self) -> None:
         """

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import sys
-import socket
 import logging
+import socket
+import sys
 
 # Removed Socks5 support for simplicity, pysocks had resolution issues
 HAS_PYSOCKS = False
@@ -17,7 +17,6 @@ class socksocket: # pylint: disable=invalid-name,too-few-public-methods
 
 
 from .error import ProxyConfigError
-
 
 logger = logging.getLogger('socks.getaddrinfo')
 _orig_getaddrinfo = socket.getaddrinfo

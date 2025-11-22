@@ -34,10 +34,11 @@ Example:
 
 import logging
 from typing import Dict, List, Optional, Set
+
 from packaging.version import parse
 
-from .service import Service, ServiceRegistration
 from .errors import PluginError
+from .service import Service, ServiceRegistration
 
 
 class ServiceRegistry:
@@ -58,7 +59,7 @@ class ServiceRegistry:
         _started: Set of started service names
         _logger: Logger instance
     """
-    
+
     def __init__(self, logger: Optional[logging.Logger] = None):
         """Initialize the service registry.
         
@@ -68,7 +69,7 @@ class ServiceRegistry:
         self._services: Dict[str, ServiceRegistration] = {}
         self._started: Set[str] = set()
         self._logger = logger or logging.getLogger(__name__)
-    
+
     def register(
         self,
         service: Service,
@@ -96,7 +97,7 @@ class ServiceRegistry:
         """
         service_name = service.service_name
         service_version = service.service_version
-        
+
         # Validate service version
         try:
             parse(service_version)
@@ -104,14 +105,14 @@ class ServiceRegistry:
             raise PluginError(
                 f"Invalid service version '{service_version}' for service '{service_name}': {e}"
             )
-        
+
         # Check if already registered
         if service_name in self._services:
             existing = self._services[service_name]
             raise PluginError(
                 f"Service '{service_name}' already registered by plugin '{existing.provider}'"
             )
-        
+
         # Create registration
         registration = ServiceRegistration(
             service=service,
@@ -119,20 +120,20 @@ class ServiceRegistry:
             version=service_version,
             dependencies=dependencies or {}
         )
-        
+
         self._services[service_name] = registration
         self._logger.info(
             f"Registered service '{service_name}' v{service_version} "
             f"from plugin '{provider}'"
         )
-        
+
         # Log dependencies if any
         if registration.dependencies:
             deps_str = ", ".join(
                 f"{name}>={ver}" for name, ver in registration.dependencies.items()
             )
             self._logger.debug(f"  Dependencies: {deps_str}")
-    
+
     def unregister(self, service_name: str) -> None:
         """Unregister a service from the registry.
         
@@ -148,20 +149,20 @@ class ServiceRegistry:
         """
         if service_name not in self._services:
             raise PluginError(f"Service '{service_name}' is not registered")
-        
+
         if service_name in self._started:
             raise PluginError(
                 f"Cannot unregister service '{service_name}' while it is started. "
                 "Stop the service first."
             )
-        
+
         registration = self._services[service_name]
         del self._services[service_name]
-        
+
         self._logger.info(
             f"Unregistered service '{service_name}' from plugin '{registration.provider}'"
         )
-    
+
     def get(self, service_name: str, min_version: Optional[str] = None) -> Optional[Service]:
         """Get a service by name with optional version constraint.
         
@@ -179,15 +180,15 @@ class ServiceRegistry:
         """
         if service_name not in self._services:
             return None
-        
+
         registration = self._services[service_name]
-        
+
         # Check version constraint if specified
         if min_version:
             try:
                 service_ver = parse(registration.version)
                 required_ver = parse(min_version)
-                
+
                 if service_ver < required_ver:
                     self._logger.warning(
                         f"Service '{service_name}' version {registration.version} "
@@ -199,9 +200,9 @@ class ServiceRegistry:
                     f"Version comparison failed for service '{service_name}': {e}"
                 )
                 return None
-        
+
         return registration.service
-    
+
     def require(self, service_name: str, min_version: Optional[str] = None) -> Service:
         """Get a service by name, raising an error if not available.
         
@@ -221,7 +222,7 @@ class ServiceRegistry:
             >>> data = weather.get_weather("Seattle")
         """
         service = self.get(service_name, min_version)
-        
+
         if service is None:
             if service_name not in self._services:
                 raise PluginError(f"Required service '{service_name}' is not registered")
@@ -231,9 +232,9 @@ class ServiceRegistry:
                     f"Service '{service_name}' version {registration.version} "
                     f"is incompatible with required version {min_version}"
                 )
-        
+
         return service
-    
+
     def has(self, service_name: str) -> bool:
         """Check if a service is registered.
         
@@ -248,7 +249,7 @@ class ServiceRegistry:
             ...     weather = registry.get("weather")
         """
         return service_name in self._services
-    
+
     async def start(self, service_name: str) -> None:
         """Start a service and its dependencies.
         
@@ -269,26 +270,26 @@ class ServiceRegistry:
         """
         if service_name not in self._services:
             raise PluginError(f"Cannot start unregistered service '{service_name}'")
-        
+
         if service_name in self._started:
             # Already started
             return
-        
+
         registration = self._services[service_name]
-        
+
         # Start dependencies first
         for dep_name, min_version in registration.dependencies.items():
             if dep_name not in self._services:
                 raise PluginError(
                     f"Service '{service_name}' depends on unregistered service '{dep_name}'"
                 )
-            
+
             # Verify version compatibility
             dep_registration = self._services[dep_name]
             try:
                 dep_ver = parse(dep_registration.version)
                 required_ver = parse(min_version)
-                
+
                 if dep_ver < required_ver:
                     raise PluginError(
                         f"Service '{service_name}' requires '{dep_name}' >={min_version}, "
@@ -300,10 +301,10 @@ class ServiceRegistry:
                 raise PluginError(
                     f"Version comparison failed for dependency '{dep_name}': {e}"
                 )
-            
+
             # Recursively start dependency
             await self.start(dep_name)
-        
+
         # Start the service
         try:
             self._logger.info(f"Starting service '{service_name}'...")
@@ -314,7 +315,7 @@ class ServiceRegistry:
             raise PluginError(
                 f"Failed to start service '{service_name}': {e}"
             )
-    
+
     async def stop(self, service_name: str) -> None:
         """Stop a service.
         
@@ -330,13 +331,13 @@ class ServiceRegistry:
         """
         if service_name not in self._services:
             raise PluginError(f"Cannot stop unregistered service '{service_name}'")
-        
+
         if service_name not in self._started:
             # Not started
             return
-        
+
         registration = self._services[service_name]
-        
+
         try:
             self._logger.info(f"Stopping service '{service_name}'...")
             await registration.service.stop()
@@ -348,7 +349,7 @@ class ServiceRegistry:
             raise PluginError(
                 f"Failed to stop service '{service_name}': {e}"
             )
-    
+
     async def start_all(self) -> None:
         """Start all registered services in dependency order.
         
@@ -368,12 +369,12 @@ class ServiceRegistry:
         except PluginError as e:
             self._logger.error(f"Cannot start services: {e}")
             raise
-        
+
         # Start services in order
         for service_name in start_order:
             if service_name not in self._started:
                 await self.start(service_name)
-    
+
     async def stop_all(self) -> None:
         """Stop all started services in reverse dependency order.
         
@@ -390,7 +391,7 @@ class ServiceRegistry:
         except PluginError:
             # If we can't resolve dependencies, just stop in reverse registration order
             stop_order = list(reversed(list(self._services.keys())))
-        
+
         # Stop all started services
         for service_name in stop_order:
             if service_name in self._started:
@@ -399,7 +400,7 @@ class ServiceRegistry:
                 except PluginError as e:
                     self._logger.error(f"Error stopping service '{service_name}': {e}")
                     # Continue stopping other services
-    
+
     def _resolve_dependencies(self) -> List[str]:
         """Resolve service dependencies using topological sort.
         
@@ -412,40 +413,40 @@ class ServiceRegistry:
         # Build dependency graph
         graph: Dict[str, Set[str]] = {}
         in_degree: Dict[str, int] = {}
-        
+
         for service_name, registration in self._services.items():
             graph[service_name] = set(registration.dependencies.keys())
             in_degree[service_name] = 0
-        
+
         # Calculate in-degrees
         for service_name, deps in graph.items():
             for dep in deps:
                 if dep in in_degree:
                     in_degree[dep] += 1
-        
+
         # Topological sort using Kahn's algorithm
         queue: List[str] = []
         result: List[str] = []
-        
+
         # Start with services that have no dependents
         for service_name, degree in in_degree.items():
             if degree == 0:
                 queue.append(service_name)
-        
+
         while queue:
             service_name = queue.pop(0)
             result.append(service_name)
-            
+
             # Process this service's dependencies
             for dep in graph[service_name]:
                 if dep in in_degree:
                     in_degree[dep] -= 1
                     if in_degree[dep] == 0:
                         queue.append(dep)
-        
+
         # Reverse to get dependencies-first order
         result.reverse()
-        
+
         # Check for cycles
         if len(result) != len(self._services):
             # Find services involved in cycle
@@ -453,9 +454,9 @@ class ServiceRegistry:
             raise PluginError(
                 f"Circular dependencies detected among services: {', '.join(cycle_services)}"
             )
-        
+
         return result
-    
+
     def list_services(self) -> List[Dict[str, any]]:
         """List all registered services with their metadata.
         
@@ -482,7 +483,7 @@ class ServiceRegistry:
                 "dependencies": dict(registration.dependencies)
             })
         return services
-    
+
     def get_providers(self, plugin_name: str) -> List[str]:
         """Get list of services provided by a specific plugin.
         
@@ -501,7 +502,7 @@ class ServiceRegistry:
             for service_name, registration in self._services.items()
             if registration.provider == plugin_name
         ]
-    
+
     def __repr__(self) -> str:
         """Return string representation of the registry.
         

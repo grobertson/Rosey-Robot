@@ -34,7 +34,7 @@ def migrate_config_v1_to_v2(old_config: dict) -> dict:
     shell = old_config.get('shell', 'localhost:5555')
     db_path = old_config.get('db', 'bot_data.db')
     llm = old_config.get('llm', {})
-    
+
     # Parse shell (old format: "host:port")
     if ':' in shell:
         shell_host, shell_port = shell.split(':', 1)
@@ -42,23 +42,23 @@ def migrate_config_v1_to_v2(old_config: dict) -> dict:
     else:
         shell_host = 'localhost'
         shell_port = 5555
-    
+
     # Build v2 config
     new_config = {
         "version": "2.0",
-        
+
         "nats": {
             "url": "nats://localhost:4222",
             "connection_timeout": 5,
             "max_reconnect_attempts": -1,
             "reconnect_delay": 2
         },
-        
+
         "database": {
             "path": db_path,
             "run_as_service": True
         },
-        
+
         "platforms": [
             {
                 "type": "cytube",
@@ -71,28 +71,28 @@ def migrate_config_v1_to_v2(old_config: dict) -> dict:
                 "restart_delay": restart_delay
             }
         ],
-        
+
         "shell": {
             "enabled": True,
             "host": shell_host,
             "port": shell_port
         },
-        
+
         "logging": {
             "level": log_level,
             "chat_log_file": chat_log_file,
             "media_log_file": media_log_file
         },
-        
+
         "llm": llm,
-        
+
         "plugins": {
             "enabled": True,
             "directory": "plugins/",
             "auto_reload": False
         }
     }
-    
+
     return new_config
 
 
@@ -102,17 +102,17 @@ def main():
         epilog='See docs/sprints/active/9-The-Accountant/MIGRATION.md for details'
     )
     parser.add_argument('config_file', help='Path to config.json')
-    parser.add_argument('--backup', action='store_true', 
+    parser.add_argument('--backup', action='store_true',
                        help='Backup original file to .json.bak')
     parser.add_argument('--output', help='Output file (default: overwrite input)')
     args = parser.parse_args()
-    
+
     config_path = Path(args.config_file)
-    
+
     if not config_path.exists():
         print(f"❌ Error: Config file not found: {config_path}")
         return 1
-    
+
     # Load old config
     print(f"📂 Loading config: {config_path}")
     try:
@@ -121,28 +121,28 @@ def main():
     except json.JSONDecodeError as e:
         print(f"❌ Error: Invalid JSON in config file: {e}")
         return 1
-    
+
     # Check if already v2
     if old_config.get('version') == '2.0':
         print("✅ Config is already v2 format. Nothing to do.")
         return 0
-    
+
     # Backup if requested
     if args.backup:
         backup_path = config_path.with_suffix('.json.bak')
         print(f"💾 Backing up to: {backup_path}")
         shutil.copy2(config_path, backup_path)
-    
+
     # Migrate
     print("🔄 Migrating config v1 → v2...")
     new_config = migrate_config_v1_to_v2(old_config)
-    
+
     # Write output
     output_path = Path(args.output) if args.output else config_path
     print(f"💾 Writing new config: {output_path}")
     with open(output_path, 'w') as f:
         json.dump(new_config, f, indent=2)
-    
+
     print("\n✅ Migration complete!")
     print("\n📋 Next steps:")
     print("1. Review the new config file and adjust settings as needed")
@@ -154,7 +154,7 @@ def main():
     print("4. Start bot: python bot/rosey/rosey.py config.json")
     print("\n📖 For troubleshooting, see:")
     print("   docs/sprints/active/9-The-Accountant/MIGRATION.md")
-    
+
     return 0
 
 

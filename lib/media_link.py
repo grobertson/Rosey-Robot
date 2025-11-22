@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import logging
 import os
 import re
-import logging
-from urllib.parse import urlparse, parse_qsl
+from urllib.parse import parse_qsl, urlparse
 
 
 class MediaLink:

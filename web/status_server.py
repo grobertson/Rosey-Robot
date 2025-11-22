@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Web status server for displaying bot metrics and statistics"""
-import sys
+import logging
 import os
+import sys
 import time
 from pathlib import Path
-from flask import Flask, render_template, jsonify, g, request
-import logging
+
+from flask import Flask, g, jsonify, render_template, request
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from common.database import BotDatabase
-
 
 app = Flask(__name__)
 app.config['TEMPLATES_AUTO_RELOAD'] = True

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 from .util import uncloak_ip
 
+
 class User:
     """CyTube user.
 

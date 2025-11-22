@@ -6,9 +6,9 @@ storage implementations must inherit from. It provides a database-agnostic
 interface for bot data persistence.
 """
 
-from abc import ABC, abstractmethod
-from typing import Optional, List, Dict, Any
 import logging
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional
 
 
 class StorageAdapter(ABC):
@@ -35,7 +35,7 @@ class StorageAdapter(ABC):
         >>> await storage.connect()
         >>> await storage.save_user_stats("alice", first_seen=123456)
     """
-    
+
     def __init__(self, logger: Optional[logging.Logger] = None):
         """
         Initialize storage adapter.
@@ -45,7 +45,7 @@ class StorageAdapter(ABC):
         """
         self.logger = logger or logging.getLogger(self.__class__.__name__)
         self._is_connected = False
-    
+
     @abstractmethod
     async def connect(self) -> None:
         """
@@ -62,7 +62,7 @@ class StorageAdapter(ABC):
             MigrationError: If schema migration fails
         """
         pass
-    
+
     @abstractmethod
     async def close(self) -> None:
         """
@@ -78,7 +78,7 @@ class StorageAdapter(ABC):
         Implementers should catch and log any errors.
         """
         pass
-    
+
     @property
     def is_connected(self) -> bool:
         """
@@ -88,9 +88,9 @@ class StorageAdapter(ABC):
             True if connected and ready for operations, False otherwise
         """
         return self._is_connected
-    
+
     # ==================== User Statistics ====================
-    
+
     @abstractmethod
     async def save_user_stats(self,
                              username: str,
@@ -118,7 +118,7 @@ class StorageAdapter(ABC):
             IntegrityError: If data violates constraints
         """
         pass
-    
+
     @abstractmethod
     async def get_user_stats(self, username: str) -> Optional[Dict[str, Any]]:
         """
@@ -141,7 +141,7 @@ class StorageAdapter(ABC):
             StorageError: If query fails
         """
         pass
-    
+
     @abstractmethod
     async def get_all_user_stats(self,
                                  limit: Optional[int] = None,
@@ -161,9 +161,9 @@ class StorageAdapter(ABC):
             StorageError: If query fails
         """
         pass
-    
+
     # ==================== User Actions / Logs ====================
-    
+
     @abstractmethod
     async def log_user_action(self,
                              username: str,
@@ -183,7 +183,7 @@ class StorageAdapter(ABC):
             StorageError: If log fails
         """
         pass
-    
+
     @abstractmethod
     async def get_user_actions(self,
                               username: Optional[str] = None,
@@ -212,9 +212,9 @@ class StorageAdapter(ABC):
             StorageError: If query fails
         """
         pass
-    
+
     # ==================== Channel Statistics ====================
-    
+
     @abstractmethod
     async def update_channel_stats(self,
                                    max_users: Optional[int] = None,
@@ -235,7 +235,7 @@ class StorageAdapter(ABC):
             StorageError: If update fails
         """
         pass
-    
+
     @abstractmethod
     async def get_channel_stats(self) -> Dict[str, Any]:
         """
@@ -253,7 +253,7 @@ class StorageAdapter(ABC):
             StorageError: If query fails
         """
         pass
-    
+
     @abstractmethod
     async def log_user_count(self,
                             chat_users: int,
@@ -273,7 +273,7 @@ class StorageAdapter(ABC):
             StorageError: If log fails
         """
         pass
-    
+
     @abstractmethod
     async def get_user_count_history(self,
                                      start_time: Optional[int] = None,
@@ -299,9 +299,9 @@ class StorageAdapter(ABC):
             StorageError: If query fails
         """
         pass
-    
+
     # ==================== Chat Messages ====================
-    
+
     @abstractmethod
     async def save_message(self,
                           username: str,
@@ -322,7 +322,7 @@ class StorageAdapter(ABC):
             StorageError: If save fails
         """
         pass
-    
+
     @abstractmethod
     async def get_recent_messages(self,
                                   limit: int = 100,
@@ -346,7 +346,7 @@ class StorageAdapter(ABC):
             StorageError: If query fails
         """
         pass
-    
+
     @abstractmethod
     async def clear_old_messages(self, keep_count: int = 1000) -> int:
         """

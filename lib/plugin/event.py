@@ -5,9 +5,9 @@ Event structure for inter-plugin communication.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict
 from datetime import datetime
 from enum import IntEnum
+from typing import Any, Dict
 
 
 class EventPriority(IntEnum):
@@ -48,7 +48,7 @@ class Event:
     def __str__(self) -> str:
         """String representation for logging."""
         return f"Event({self.name} from {self.source})"
-    
+
     def __repr__(self) -> str:
         """Developer representation."""
         return (

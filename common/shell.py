@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """PM command interface for bot control via moderator private messages"""
 import logging
+
 from lib import MediaLink
 
 
@@ -99,7 +100,7 @@ Examples:
             None - responses are sent back via PM
         """
         self.logger.debug('handle_pm_command called: event=%s, data=%s', event, data)
-        
+
         # TODO: NORMALIZATION - Shell should only use normalized fields (user, content)
         # Platform-specific access to platform_data should be removed once normalization is complete
         # Extract data from PM - check both normalized and platform_data locations
@@ -120,7 +121,7 @@ Examples:
         # Get the user object if available
         if bot.channel and username in bot.channel.userlist:
             user = bot.channel.userlist[username]
-            
+
             # Check if user is a moderator (rank 2.0+)
             if user.rank < 2.0:
                 self.logger.info('PM command from non-moderator %s: %s',

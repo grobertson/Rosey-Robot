@@ -8,12 +8,12 @@ for connecting to various chat platforms (CyTube, Discord, Twitch, etc.).
 from .adapter import ConnectionAdapter
 from .cytube import CyTubeConnection
 from .errors import (
-    ConnectionError,
     AuthenticationError,
+    ConnectionError,
     NotConnectedError,
+    ProtocolError,
     SendError,
     UserNotFoundError,
-    ProtocolError,
 )
 
 __all__ = [

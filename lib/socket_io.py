@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import re
-import json
-import socket
 import asyncio
+import json
 import logging
+import re
+import socket
 from time import time
 
 import websockets
 
-from .util import Queue, get as default_get, current_task
-from .error import (
-    SocketIOError, ConnectionFailed,
-    ConnectionClosed, PingTimeout
-)
+from .error import ConnectionClosed, ConnectionFailed, PingTimeout, SocketIOError
 from .proxy import ProxyError
+from .util import Queue, current_task
+from .util import get as default_get
 
 
 class SocketIOResponse:

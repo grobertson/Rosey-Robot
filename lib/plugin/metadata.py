@@ -44,7 +44,7 @@ class PluginMetadata:
     dependencies: List[str] = field(default_factory=list)
     min_bot_version: Optional[str] = None
     config_schema: Optional[dict] = None
-    
+
     def __post_init__(self):
         """Validate metadata after initialization."""
         # Validate name format (lowercase alphanumeric + underscores)
@@ -53,7 +53,7 @@ class PluginMetadata:
                 f"Plugin name '{self.name}' must be lowercase alphanumeric "
                 "with underscores only"
             )
-        
+
         # Validate version format (basic semver check)
         version_parts = self.version.split('.')
         if len(version_parts) != 3 or not all(p.isdigit() for p in version_parts):
@@ -61,11 +61,11 @@ class PluginMetadata:
                 f"Plugin version '{self.version}' must be semantic version "
                 "(e.g., '1.0.0')"
             )
-    
+
     def __str__(self) -> str:
         """String representation for logs."""
         return f"{self.display_name} v{self.version}"
-    
+
     def __repr__(self) -> str:
         """Developer representation."""
         deps = f", deps={self.dependencies}" if self.dependencies else ""

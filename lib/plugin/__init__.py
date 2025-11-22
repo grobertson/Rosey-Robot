@@ -36,22 +36,22 @@ Example:
 """
 
 from .base import Plugin
-from .metadata import PluginMetadata
-from .manager import PluginManager, PluginState, PluginInfo
-from .event import Event, EventPriority
-from .event_bus import EventBus
-from .service import Service, ServiceRegistration
-from .service_registry import ServiceRegistry
 from .errors import (
+    PluginAlreadyLoadedError,
+    PluginConfigError,
+    PluginDependencyError,
     PluginError,
     PluginLoadError,
+    PluginNotFoundError,
     PluginSetupError,
     PluginTeardownError,
-    PluginDependencyError,
-    PluginConfigError,
-    PluginNotFoundError,
-    PluginAlreadyLoadedError,
 )
+from .event import Event, EventPriority
+from .event_bus import EventBus
+from .manager import PluginInfo, PluginManager, PluginState
+from .metadata import PluginMetadata
+from .service import Service, ServiceRegistration
+from .service_registry import ServiceRegistry
 
 # Hot reload (optional - requires watchdog)
 try:

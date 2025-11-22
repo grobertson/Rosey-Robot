@@ -5,22 +5,22 @@ Plugin discovery, loading, and lifecycle management.
 """
 
 import importlib.util
+import logging
 import sys
+import traceback
+from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Set
-from enum import Enum
-import logging
-import traceback
 
 from .base import Plugin
-from .metadata import PluginMetadata
 from .errors import (
+    PluginDependencyError,
     PluginError,
     PluginLoadError,
     PluginSetupError,
-    PluginDependencyError,
 )
 from .event_bus import EventBus
+from .metadata import PluginMetadata
 from .service_registry import ServiceRegistry
 
 

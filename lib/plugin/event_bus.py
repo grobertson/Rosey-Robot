@@ -5,9 +5,9 @@ Pub/sub event bus for inter-plugin communication.
 """
 
 import fnmatch
-from typing import Dict, List, Callable, Optional, Tuple
-from collections import defaultdict, deque
 import logging
+from collections import defaultdict, deque
+from typing import Callable, Dict, List, Optional, Tuple
 
 from .event import Event
 

@@ -6,14 +6,14 @@ the contract for all storage implementations (SQLite, PostgreSQL, etc.).
 """
 
 from .adapter import StorageAdapter
-from .sqlite import SQLiteStorage
 from .errors import (
-    StorageError,
-    StorageConnectionError,
-    QueryError,
+    IntegrityError,
     MigrationError,
-    IntegrityError
+    QueryError,
+    StorageConnectionError,
+    StorageError,
 )
+from .sqlite import SQLiteStorage
 
 __all__ = [
     'StorageAdapter',

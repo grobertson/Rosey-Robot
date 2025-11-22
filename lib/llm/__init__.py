@@ -8,6 +8,6 @@ Supports multiple providers:
 """
 
 from .client import LLMClient
-from .providers import OpenAIProvider, OllamaProvider, OpenRouterProvider
+from .providers import OllamaProvider, OpenAIProvider, OpenRouterProvider
 
 __all__ = ['LLMClient', 'OpenAIProvider', 'OllamaProvider', 'OpenRouterProvider']
