@@ -227,24 +227,24 @@ async def run_bot():
     # Validate config version (BREAKING CHANGE: v2 required)
     config_version = conf.get('version')
     if config_version != '2.0':
-        print(f"❌ ERROR: Configuration version {config_version} not supported.")
+        print(f"[!] ERROR: Configuration version {config_version} not supported.")
         print("   This version of Rosey requires configuration v2.0")
-        print("\n🔧 To migrate:")
+        print("\n[*] To migrate:")
         print("   python scripts/migrate_config.py config.json --backup")
-        print("\n📖 See: docs/sprints/active/9-The-Accountant/MIGRATION.md")
+        print("\n[*] See: docs/sprints/active/9-The-Accountant/MIGRATION.md")
         sys.exit(1)
     
     # Connect to NATS (REQUIRED)
     nats_config = conf.get('nats', {})
     if not nats_config:
-        print("❌ ERROR: Missing 'nats' section in configuration")
+        print("[!] ERROR: Missing 'nats' section in configuration")
         print("   NATS event bus is required in Sprint 9+")
-        print("\n🔧 Run migration script to add NATS configuration:")
+        print("\n[*] Run migration script to add NATS configuration:")
         print("   python scripts/migrate_config.py config.json --backup")
         sys.exit(1)
     
     nats_url = nats_config.get('url', 'nats://localhost:4222')
-    print(f"🔌 Connecting to NATS: {nats_url}")
+    print(f"[*] Connecting to NATS: {nats_url}")
     
     nats = NATS()
     try:
@@ -254,12 +254,12 @@ async def run_bot():
             reconnect_time_wait=nats_config.get('reconnect_delay', 2),
             connect_timeout=nats_config.get('connection_timeout', 5)
         )
-        print(f"✅ Connected to NATS: {nats_url}")
+        print(f"[+] Connected to NATS: {nats_url}")
     except Exception as e:
-        print(f"❌ ERROR: Failed to connect to NATS: {e}")
-        print("\n🔧 Ensure NATS server is running:")
+        print(f"[!] ERROR: Failed to connect to NATS: {e}")
+        print("\n[*] Ensure NATS server is running:")
         print("   nats-server")
-        print("\n📖 Installation:")
+        print("\n[*] Installation:")
         print("   macOS: brew install nats-server")
         print("   Linux/Windows: https://github.com/nats-io/nats-server/releases")
         sys.exit(1)
@@ -269,12 +269,12 @@ async def run_bot():
     db_path = db_config.get('path', 'bot_data.db')
     
     if db_config.get('run_as_service', True):
-        print(f"🗄️  Starting DatabaseService: {db_path}")
+        print(f"[*] Starting DatabaseService: {db_path}")
         db_service = DatabaseService(nats, db_path)
         await db_service.start()
-        print("✅ DatabaseService started (listening on NATS)")
+        print("[+] DatabaseService started (listening on NATS)")
     else:
-        print("⚠️  DatabaseService disabled in configuration")
+        print("[!] DatabaseService disabled in configuration")
 
     # Create separate loggers for chat messages, media, and LLM
     chat_logger = logging.getLogger("chat")
@@ -308,12 +308,12 @@ async def run_bot():
     # Get platform config (currently only one CyTube platform supported)
     platforms = conf.get('platforms', [])
     if not platforms:
-        print("❌ ERROR: No platforms configured")
+        print("[!] ERROR: No platforms configured")
         sys.exit(1)
     
     platform_config = platforms[0]  # Primary platform
     if not platform_config.get('enabled', True):
-        print("❌ ERROR: Primary platform is disabled")
+        print("[!] ERROR: Primary platform is disabled")
         sys.exit(1)
 
     # Extract CyTube connection parameters from platform config
@@ -331,7 +331,7 @@ async def run_bot():
     password = user[1] if isinstance(user, (list, tuple)) and len(user) > 1 else None
     
     # Create Rosey bot instance (BREAKING CHANGE: requires nats_client)
-    print(f"🤖 Creating bot for {domain}/{channel_name}")
+    print(f"[*] Creating bot for {domain}/{channel_name}")
     bot = Bot.from_cytube(
         domain=domain,
         channel=channel_name,
@@ -341,7 +341,7 @@ async def run_bot():
         nats_client=nats,  # REQUIRED
         restart_delay=restart_delay
     )
-    print("✅ Bot created with NATS integration")
+    print("[+] Bot created with NATS integration")
 
     # Create shell (PM command handler) if configured
     shell_config = conf.get("shell", {})
@@ -369,10 +369,10 @@ async def run_bot():
                 trigger_manager = TriggerManager(trigger_config, bot_username)
                 
                 llm_logger.info("LLM integration enabled with %s provider", llm_config.get('provider'))
-                print(f"🤖 LLM integration enabled: {llm_config.get('provider')}")
+                print(f"[+] LLM integration enabled: {llm_config.get('provider')}")
             except Exception as e:
                 llm_logger.error("Failed to initialize LLM: %s", e)
-                print(f"⚠️  LLM initialization failed: {e}")
+                print(f"[!] LLM initialization failed: {e}")
                 llm_client = None
                 trigger_manager = None
 
@@ -388,7 +388,7 @@ async def run_bot():
     # Register PM command handler for moderators (if shell is enabled)
     if shell.bot is not None:
         bot.on("pm", shell.handle_pm_command)  # Handle mod commands via PM
-        print("✅ PM command shell enabled")
+        print("[+] PM command shell enabled")
     
     # Register LLM handlers if enabled
     if llm_client and trigger_manager:
@@ -399,11 +399,11 @@ async def run_bot():
 
     try:
         # Run Rosey (blocks until cancelled or error)
-        print("🚀 Starting bot...")
+        print("[*] Starting bot...")
         await bot.run()
     finally:
         # Cleanup
-        print("\n🛑 Shutting down...")
+        print("\n[*] Shutting down...")
         
         # Close LLM client if active
         if llm_client:
@@ -412,7 +412,7 @@ async def run_bot():
         # Close NATS connection
         if nats and not nats.is_closed:
             await nats.close()
-            print("✅ NATS connection closed")
+            print("[+] NATS connection closed")
 
 
 def main():

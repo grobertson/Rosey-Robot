@@ -543,7 +543,7 @@ class Bot:
             while True:
                 await asyncio.sleep(10)  # 10 seconds
 
-                if self.db and self.channel:
+                if self.channel:
                     try:
                         status = {
                             'bot_name': self.user.name,
@@ -592,7 +592,7 @@ class Bot:
                 await asyncio.sleep(2)  # Poll every 2 seconds
 
                 # Check if bot is connected and ready
-                if not self.nats and not self.db:
+                if not self.nats:
                     continue
                 if not self.connection.is_connected:
                     self.logger.debug(
@@ -666,26 +666,14 @@ class Bot:
                                 # Permanent: permissions, muted, flood control
                                 # For now, we can't mark as failed via NATS
                                 # (DatabaseService doesn't have mark_failed handler yet)
-                                # Fall back to direct call if available
-                                if self.db:
-                                    self.db.mark_outbound_failed(
-                                        mid,
-                                        error_msg,
-                                        is_permanent=True
-                                    )
+                                # TODO: Add mark_failed handler to DatabaseService
                                 self.logger.error(
                                     'Permanent failure for outbound id=%s: %s',
                                     mid, error_msg
                                 )
                             else:
                                 # Transient: network, timeout, etc - will retry
-                                # Fall back to direct call for mark_failed
-                                if self.db:
-                                    self.db.mark_outbound_failed(
-                                        mid,
-                                        error_msg,
-                                        is_permanent=False
-                                    )
+                                # TODO: Add mark_failed handler to DatabaseService
                                 self.logger.warning(
                                     'Transient failure for outbound id=%s '
                                     '(retry %d): %s',
@@ -710,18 +698,15 @@ class Bot:
         try:
             while True:
                 # Run immediately on startup, then every 24 hours
-                if self.db:
-                    try:
-                        self.logger.info('Starting database maintenance...')
-                        maintenance_log = self.db.perform_maintenance()
-                        self.logger.info(
-                            'Maintenance complete: %s',
-                            ', '.join(maintenance_log)
-                        )
-                    except Exception as e:
-                        self.logger.error(
-                            'Database maintenance failed: %s', e
-                        )
+                # TODO: Implement maintenance via NATS/DatabaseService
+                try:
+                    self.logger.info('Database maintenance check (NATS mode - TODO)')
+                    # Maintenance would be handled by DatabaseService
+                    # Could publish to 'db.maintenance' subject
+                except Exception as e:
+                    self.logger.error(
+                        'Database maintenance check failed: %s', e
+                    )
 
                 # Wait 24 hours before next maintenance
                 await asyncio.sleep(86400)
@@ -734,20 +719,19 @@ class Bot:
         """
         import time
         try:
-            # Start background tasks for logging and status updates
-            if self.db:
-                self._history_task = asyncio.create_task(
-                    self._log_user_counts_periodically()
-                )
-                self._status_task = asyncio.create_task(
-                    self._update_current_status_periodically()
-                )
-                self._outbound_task = asyncio.create_task(
-                    self._process_outbound_messages_periodically()
-                )
-                self._maintenance_task = asyncio.create_task(
-                    self._perform_maintenance_periodically()
-                )
+            # Start background tasks for logging and status updates (via NATS)
+            self._history_task = asyncio.create_task(
+                self._log_user_counts_periodically()
+            )
+            self._status_task = asyncio.create_task(
+                self._update_current_status_periodically()
+            )
+            self._outbound_task = asyncio.create_task(
+                self._process_outbound_messages_periodically()
+            )
+            self._maintenance_task = asyncio.create_task(
+                self._perform_maintenance_periodically()
+            )
 
             while True:
                 try:
