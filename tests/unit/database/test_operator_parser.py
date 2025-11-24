@@ -749,3 +749,349 @@ class TestCombinedOperatorsSortie2:
         
         assert len(clauses) == 2
 
+
+class TestUpdateOperators:
+    """Test update operator parsing (Sprint 14 Sortie 3)."""
+    
+    def test_set_operator(self, sample_schema, sample_table):
+        """Test $set operator for direct assignment."""
+        parser = OperatorParser(sample_schema)
+        ops = {'username': {'$set': 'alice'}}
+        
+        updates = parser.parse_update_operations(ops, sample_table)
+        
+        assert 'username' in updates
+        assert updates['username'] == 'alice'
+    
+    def test_inc_operator(self, sample_schema, sample_table):
+        """Test $inc operator for incrementing."""
+        parser = OperatorParser(sample_schema)
+        ops = {'score': {'$inc': 10}}
+        
+        updates = parser.parse_update_operations(ops, sample_table)
+        
+        assert 'score' in updates
+        # Should be SQLAlchemy expression
+        assert str(updates['score']).find('score') >= 0
+    
+    def test_dec_operator(self, sample_schema, sample_table):
+        """Test $dec operator for decrementing."""
+        parser = OperatorParser(sample_schema)
+        ops = {'score': {'$dec': 5}}
+        
+        updates = parser.parse_update_operations(ops, sample_table)
+        
+        assert 'score' in updates
+    
+    def test_mul_operator(self, sample_schema, sample_table):
+        """Test $mul operator for multiplication."""
+        parser = OperatorParser(sample_schema)
+        ops = {'rating': {'$mul': 2.5}}
+        
+        updates = parser.parse_update_operations(ops, sample_table)
+        
+        assert 'rating' in updates
+    
+    def test_max_operator(self, sample_schema, sample_table):
+        """Test $max operator for maximum value."""
+        parser = OperatorParser(sample_schema)
+        ops = {'score': {'$max': 100}}
+        
+        updates = parser.parse_update_operations(ops, sample_table)
+        
+        assert 'score' in updates
+        # Should use func.greatest()
+        assert 'greatest' in str(updates['score']).lower()
+    
+    def test_min_operator(self, sample_schema, sample_table):
+        """Test $min operator for minimum value."""
+        parser = OperatorParser(sample_schema)
+        ops = {'score': {'$min': 50}}
+        
+        updates = parser.parse_update_operations(ops, sample_table)
+        
+        assert 'score' in updates
+        # Should use func.least()
+        assert 'least' in str(updates['score']).lower()
+    
+    def test_multiple_update_operations(self, sample_schema, sample_table):
+        """Test multiple update operations in one call."""
+        parser = OperatorParser(sample_schema)
+        ops = {
+            'score': {'$inc': 10},
+            'rating': {'$max': 95.0},
+            'username': {'$set': 'bob'}
+        }
+        
+        updates = parser.parse_update_operations(ops, sample_table)
+        
+        assert len(updates) == 3
+        assert 'score' in updates
+        assert 'rating' in updates
+        assert 'username' in updates
+    
+    def test_inc_on_float_field(self, sample_schema, sample_table):
+        """Test $inc works on float fields."""
+        parser = OperatorParser(sample_schema)
+        ops = {'rating': {'$inc': 0.5}}
+        
+        updates = parser.parse_update_operations(ops, sample_table)
+        
+        assert 'rating' in updates
+    
+    def test_max_on_datetime_field(self, sample_schema, sample_table):
+        """Test $max works on datetime fields."""
+        parser = OperatorParser(sample_schema)
+        now = datetime(2024, 1, 1, 12, 0, 0)
+        ops = {'joined_at': {'$max': now}}
+        
+        updates = parser.parse_update_operations(ops, sample_table)
+        
+        assert 'joined_at' in updates
+    
+    def test_invalid_field_name(self, sample_schema, sample_table):
+        """Test error on invalid field name."""
+        parser = OperatorParser(sample_schema)
+        ops = {'nonexistent': {'$inc': 1}}
+        
+        with pytest.raises(ValueError, match="not in schema"):
+            parser.parse_update_operations(ops, sample_table)
+    
+    def test_unknown_operator(self, sample_schema, sample_table):
+        """Test error on unknown update operator."""
+        parser = OperatorParser(sample_schema)
+        ops = {'score': {'$invalid': 10}}
+        
+        with pytest.raises(ValueError, match="Unknown update operator"):
+            parser.parse_update_operations(ops, sample_table)
+    
+    def test_numeric_operator_on_string_field(self, sample_schema, sample_table):
+        """Test error when using numeric operator on string field."""
+        parser = OperatorParser(sample_schema)
+        ops = {'username': {'$inc': 1}}
+        
+        with pytest.raises(TypeError, match="requires numeric type"):
+            parser.parse_update_operations(ops, sample_table)
+    
+    def test_numeric_operator_on_boolean_field(self, sample_schema, sample_table):
+        """Test error when using numeric operator on boolean field."""
+        parser = OperatorParser(sample_schema)
+        ops = {'active': {'$mul': 2}}
+        
+        with pytest.raises(TypeError, match="requires numeric type"):
+            parser.parse_update_operations(ops, sample_table)
+    
+    def test_inc_with_non_numeric_value(self, sample_schema, sample_table):
+        """Test error when $inc value is not numeric."""
+        parser = OperatorParser(sample_schema)
+        ops = {'score': {'$inc': 'ten'}}
+        
+        with pytest.raises(TypeError, match="requires numeric value"):
+            parser.parse_update_operations(ops, sample_table)
+    
+    def test_invalid_operation_format(self, sample_schema, sample_table):
+        """Test error when operation is not a dict."""
+        parser = OperatorParser(sample_schema)
+        ops = {'score': 10}  # Should be {'$set': 10}
+        
+        with pytest.raises(TypeError, match="must be dict"):
+            parser.parse_update_operations(ops, sample_table)
+    
+    def test_multiple_operators_per_field(self, sample_schema, sample_table):
+        """Test error when field has multiple operators."""
+        parser = OperatorParser(sample_schema)
+        ops = {'score': {'$inc': 5, '$set': 100}}
+        
+        with pytest.raises(ValueError, match="exactly one update operator"):
+            parser.parse_update_operations(ops, sample_table)
+    
+    def test_max_on_string_field_fails(self, sample_schema, sample_table):
+        """Test error when using $max on string field."""
+        parser = OperatorParser(sample_schema)
+        ops = {'username': {'$max': 'zzz'}}
+        
+        with pytest.raises(TypeError, match="requires numeric or timestamp type"):
+            parser.parse_update_operations(ops, sample_table)
+
+
+class TestCompoundLogic:
+    """Test compound logical operators (Sprint 14 Sortie 3)."""
+    
+    def test_and_operator_simple(self, sample_schema, sample_table):
+        """Test $and with simple conditions."""
+        parser = OperatorParser(sample_schema)
+        filters = {
+            '$and': [
+                {'score': {'$gte': 100}},
+                {'active': {'$eq': True}}
+            ]
+        }
+        
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+        # Should contain AND clause
+    
+    def test_or_operator_simple(self, sample_schema, sample_table):
+        """Test $or with simple conditions."""
+        parser = OperatorParser(sample_schema)
+        filters = {
+            '$or': [
+                {'username': {'$eq': 'alice'}},
+                {'username': {'$eq': 'bob'}}
+            ]
+        }
+        
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+        # Should contain OR clause
+    
+    def test_not_operator_simple(self, sample_schema, sample_table):
+        """Test $not with simple condition."""
+        parser = OperatorParser(sample_schema)
+        filters = {
+            '$not': {'score': {'$lt': 50}}
+        }
+        
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+        # Should contain NOT clause
+    
+    def test_nested_and_or(self, sample_schema, sample_table):
+        """Test nested $and containing $or."""
+        parser = OperatorParser(sample_schema)
+        filters = {
+            '$and': [
+                {'score': {'$gte': 100}},
+                {
+                    '$or': [
+                        {'username': {'$eq': 'alice'}},
+                        {'username': {'$eq': 'bob'}}
+                    ]
+                }
+            ]
+        }
+        
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_nested_or_and(self, sample_schema, sample_table):
+        """Test nested $or containing $and."""
+        parser = OperatorParser(sample_schema)
+        filters = {
+            '$or': [
+                {
+                    '$and': [
+                        {'score': {'$gte': 100}},
+                        {'active': {'$eq': True}}
+                    ]
+                },
+                {'username': {'$eq': 'admin'}}
+            ]
+        }
+        
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_not_with_compound_condition(self, sample_schema, sample_table):
+        """Test $not with compound condition."""
+        parser = OperatorParser(sample_schema)
+        filters = {
+            '$not': {
+                '$and': [
+                    {'score': {'$lt': 50}},
+                    {'active': {'$eq': False}}
+                ]
+            }
+        }
+        
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_and_with_set_operators(self, sample_schema, sample_table):
+        """Test $and with set operators."""
+        parser = OperatorParser(sample_schema)
+        filters = {
+            '$and': [
+                {'username': {'$in': ['alice', 'bob', 'charlie']}},
+                {'score': {'$gte': 100}}
+            ]
+        }
+        
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_or_with_pattern_operators(self, sample_schema, sample_table):
+        """Test $or with pattern operators."""
+        parser = OperatorParser(sample_schema)
+        filters = {
+            '$or': [
+                {'username': {'$like': 'test_%'}},
+                {'username': {'$like': 'admin_%'}}
+            ]
+        }
+        
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_and_empty_list(self, sample_schema, sample_table):
+        """Test error on empty $and list."""
+        parser = OperatorParser(sample_schema)
+        filters = {'$and': []}
+        
+        with pytest.raises(ValueError, match="at least one condition"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_or_not_list(self, sample_schema, sample_table):
+        """Test error when $or value is not a list."""
+        parser = OperatorParser(sample_schema)
+        filters = {'$or': {'score': {'$gte': 100}}}
+        
+        with pytest.raises(TypeError, match="requires a list"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_not_not_dict(self, sample_schema, sample_table):
+        """Test error when $not value is not a dict."""
+        parser = OperatorParser(sample_schema)
+        filters = {'$not': ['score', '>', 100]}
+        
+        with pytest.raises(TypeError, match="requires a dict"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_unknown_logical_operator(self, sample_schema, sample_table):
+        """Test error on unknown logical operator."""
+        parser = OperatorParser(sample_schema)
+        filters = {'$xor': [{'score': {'$gte': 100}}]}
+        
+        with pytest.raises(ValueError, match="Unknown logical operator"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_deeply_nested_logic(self, sample_schema, sample_table):
+        """Test deeply nested compound logic."""
+        parser = OperatorParser(sample_schema)
+        filters = {
+            '$and': [
+                {
+                    '$or': [
+                        {'score': {'$gte': 100}},
+                        {'rating': {'$gte': 4.5}}
+                    ]
+                },
+                {
+                    '$not': {
+                        'username': {'$in': ['banned', 'deleted']}
+                    }
+                }
+            ]
+        }
+        
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1

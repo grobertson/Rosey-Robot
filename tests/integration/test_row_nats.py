@@ -1836,3 +1836,213 @@ class TestRowSearchExtendedOperators:
         titles = sorted([row['title'] for row in result['rows']])
         assert titles == ['Python Advanced', 'Python Tips']
 
+
+class TestRowSearchCompoundLogic:
+    """Test row search with compound logical operators via NATS (Sprint 14 Sortie 3)."""
+    
+    async def test_search_with_and_operator(self, nats_client, db_service):
+        """Test search with $and operator."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "players",
+                "schema": {
+                    "fields": [
+                        {"name": "username", "type": "string", "required": True},
+                        {"name": "score", "type": "integer", "required": True},
+                        {"name": "active", "type": "boolean", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "players",
+                "data": [
+                    {"username": "alice", "score": 150, "active": True},
+                    {"username": "bob", "score": 80, "active": True},
+                    {"username": "charlie", "score": 200, "active": False}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Find active players with score >= 100
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "players",
+                "filters": {
+                    "$and": [
+                        {"score": {"$gte": 100}},
+                        {"active": {"$eq": True}}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 1
+        assert result['rows'][0]['username'] == 'alice'
+    
+    async def test_search_with_or_operator(self, nats_client, db_service):
+        """Test search with $or operator."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "members",
+                "schema": {
+                    "fields": [
+                        {"name": "username", "type": "string", "required": True},
+                        {"name": "role", "type": "string", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "members",
+                "data": [
+                    {"username": "alice", "role": "admin"},
+                    {"username": "bob", "role": "user"},
+                    {"username": "charlie", "role": "moderator"},
+                    {"username": "diana", "role": "user"}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Find admins or moderators
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "members",
+                "filters": {
+                    "$or": [
+                        {"role": {"$eq": "admin"}},
+                        {"role": {"$eq": "moderator"}}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        usernames = sorted([row['username'] for row in result['rows']])
+        assert usernames == ['alice', 'charlie']
+    
+    async def test_search_with_not_operator(self, nats_client, db_service):
+        """Test search with $not operator."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "accounts",
+                "schema": {
+                    "fields": [
+                        {"name": "username", "type": "string", "required": True},
+                        {"name": "suspended", "type": "boolean", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "accounts",
+                "data": [
+                    {"username": "alice", "suspended": False},
+                    {"username": "bob", "suspended": True},
+                    {"username": "charlie", "suspended": False}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Find accounts that are NOT suspended
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "accounts",
+                "filters": {
+                    "$not": {"suspended": {"$eq": True}}
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        usernames = sorted([row['username'] for row in result['rows']])
+        assert usernames == ['alice', 'charlie']
+    
+    async def test_nested_and_or(self, nats_client, db_service):
+        """Test nested $and containing $or."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "employees",
+                "schema": {
+                    "fields": [
+                        {"name": "name", "type": "string", "required": True},
+                        {"name": "department", "type": "string", "required": True},
+                        {"name": "salary", "type": "integer", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "employees",
+                "data": [
+                    {"name": "Alice", "department": "Engineering", "salary": 120000},
+                    {"name": "Bob", "department": "Sales", "salary": 80000},
+                    {"name": "Charlie", "department": "Engineering", "salary": 95000},
+                    {"name": "Diana", "department": "Marketing", "salary": 110000}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Find high-salary employees in Engineering or Marketing
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "employees",
+                "filters": {
+                    "$and": [
+                        {"salary": {"$gte": 100000}},
+                        {
+                            "$or": [
+                                {"department": {"$eq": "Engineering"}},
+                                {"department": {"$eq": "Marketing"}}
+                            ]
+                        }
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        names = sorted([row['name'] for row in result['rows']])
+        assert names == ['Alice', 'Diana']
+
+

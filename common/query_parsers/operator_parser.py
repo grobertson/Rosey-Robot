@@ -2,13 +2,15 @@
 MongoDB-style query operator parser for row operations.
 
 Converts filter dictionaries with operators like $gt, $lte into
-SQLAlchemy where clauses.
+SQLAlchemy where clauses, and update operations into atomic SQL expressions.
 
 Supports:
 - Comparison operators: $eq, $ne, $gt, $gte, $lt, $lte
 - Set operators: $in, $nin (Sprint 14 Sortie 2)
 - Pattern operators: $like, $ilike (Sprint 14 Sortie 2)
 - Existence operators: $exists, $null (Sprint 14 Sortie 2)
+- Update operators: $set, $inc, $dec, $mul, $max, $min (Sprint 14 Sortie 3)
+- Compound logic: $and, $or, $not (Sprint 14 Sortie 3)
 - Type validation based on table schema
 - Clear error messages for invalid operations
 
@@ -36,10 +38,23 @@ Example:
     >>> # Pattern matching
     >>> filters = {'username': {'$like': 'test_%'}}
     >>> clauses = parser.parse_filters(filters, table)
+    >>> 
+    >>> # Compound logic (Sortie 3)
+    >>> filters = {
+    ...     '$and': [
+    ...         {'score': {'$gte': 100}},
+    ...         {'status': {'$in': ['active', 'pending']}}
+    ...     ]
+    ... }
+    >>> clauses = parser.parse_filters(filters, table)
+    >>> 
+    >>> # Atomic updates (Sortie 3)
+    >>> updates = {'score': {'$inc': 10}, 'high_score': {'$max': 95}}
+    >>> expressions = parser.parse_update_operations(updates, table)
 """
 
 from typing import Any, Dict, List, Callable
-from sqlalchemy import Column, and_
+from sqlalchemy import Column, and_, or_, not_, func
 
 
 class OperatorParser:
@@ -51,6 +66,8 @@ class OperatorParser:
     - Set operators: $in, $nin (Sortie 2)
     - Pattern operators: $like, $ilike (Sortie 2)
     - Existence operators: $exists, $null (Sortie 2)
+    - Update operators: $set, $inc, $dec, $mul, $max, $min (Sortie 3)
+    - Compound logic: $and, $or, $not (Sortie 3)
     
     All operators include type validation based on table schema.
     
@@ -59,9 +76,13 @@ class OperatorParser:
         SET_OPS: Dict mapping set operators to SQLAlchemy methods
         PATTERN_OPS: Dict mapping pattern operators to SQLAlchemy methods
         EXISTENCE_OPS: Dict mapping existence operators to SQLAlchemy methods
+        UPDATE_OPS: Dict mapping update operators to SQLAlchemy expressions (Sortie 3)
+        LOGICAL_OPS: Set of compound logical operators (Sortie 3)
         RANGE_OPS: Set of operators requiring numeric/datetime types
         RANGE_COMPATIBLE_TYPES: Set of field types compatible with range operators
         PATTERN_COMPATIBLE_TYPES: Set of field types compatible with pattern operators
+        NUMERIC_TYPES: Set of numeric field types (Sortie 3)
+        COMPARABLE_TYPES: Set of types supporting max/min operations (Sortie 3)
     """
     
     # Comparison operators (Sortie 1)
@@ -93,14 +114,40 @@ class OperatorParser:
         '$null': lambda col, is_null: col.is_(None) if is_null else col.isnot(None),
     }
     
+    # Atomic update operators (Sortie 3)
+    # Execute at database level to prevent race conditions
+    UPDATE_OPS = {
+        '$set': lambda col, val: val,  # Direct assignment
+        '$inc': lambda col, val: col + val,  # Increment
+        '$dec': lambda col, val: col - val,  # Decrement
+        '$mul': lambda col, val: col * val,  # Multiply
+        '$max': lambda col, val: func.greatest(col, val),  # Maximum
+        '$min': lambda col, val: func.least(col, val),  # Minimum
+    }
+    
+    # Compound logical operators (Sortie 3)
+    LOGICAL_OPS = {'$and', '$or', '$not'}
+    
     # Operators that require numeric or datetime types
     RANGE_OPS = {'$gt', '$gte', '$lt', '$lte'}
+    
+    # Update operators requiring numeric types
+    NUMERIC_UPDATE_OPS = {'$inc', '$dec', '$mul'}
+    
+    # Update operators supporting conditional operations
+    CONDITIONAL_UPDATE_OPS = {'$max', '$min'}
     
     # Field types compatible with range operators
     RANGE_COMPATIBLE_TYPES = {'integer', 'float', 'datetime'}
     
     # Field types compatible with pattern operators
     PATTERN_COMPATIBLE_TYPES = {'string', 'text'}
+    
+    # Numeric types for update operators (Sortie 3)
+    NUMERIC_TYPES = {'integer', 'bigint', 'float', 'real', 'numeric', 'decimal'}
+    
+    # Types supporting max/min operations (Sortie 3)
+    COMPARABLE_TYPES = {'integer', 'bigint', 'float', 'real', 'numeric', 'decimal', 'datetime', 'date', 'timestamp'}
     
     def __init__(self, schema: Dict[str, Any]):
         """
@@ -143,14 +190,15 @@ class OperatorParser:
         """
         Parse filter dict into SQLAlchemy where clauses.
         
-        Supports both simple equality filters (backward compatible) and
-        operator-based filters.
+        Supports both simple equality filters (backward compatible),
+        operator-based filters, and compound logical operators (Sortie 3).
         
         Args:
             filters: MongoDB-style filter dict. Can use:
                 - Simple equality: {'username': 'alice'}
                 - Operators: {'score': {'$gte': 100}}
                 - Multiple operators: {'score': {'$gte': 100, '$lte': 200}}
+                - Compound logic: {'$and': [{...}, {...}]}
             table: SQLAlchemy table object with columns
         
         Returns:
@@ -158,7 +206,7 @@ class OperatorParser:
         
         Raises:
             ValueError: If field name invalid or operator unknown
-            TypeError: If operator incompatible with field type
+            TypeError: If operator incompatible with field type or logical operator format invalid
         
         Examples:
             >>> # Simple equality
@@ -184,10 +232,72 @@ class OperatorParser:
             ... }
             >>> clauses = parser.parse_filters(filters, table)
             >>> # Returns: [score >= 100, username == 'alice', active == True]
+            
+            >>> # Compound logic (Sortie 3)
+            >>> filters = {
+            ...     '$and': [
+            ...         {'score': {'$gte': 100}},
+            ...         {'status': {'$in': ['active', 'pending']}}
+            ...     ]
+            ... }
+            >>> clauses = parser.parse_filters(filters, table)
+            >>> # Returns: [and_(score >= 100, status.in_([...]))]
         """
+        # Handle compound logical operators (Sortie 3)
+        if '$and' in filters:
+            conditions = filters['$and']
+            if not isinstance(conditions, list):
+                raise TypeError("$and operator requires a list of conditions")
+            if not conditions:
+                raise ValueError("$and operator requires at least one condition")
+            
+            # Recursively parse each condition
+            all_clauses = []
+            for cond in conditions:
+                cond_clauses = self.parse_filters(cond, table)
+                all_clauses.extend(cond_clauses)
+            
+            return [and_(*all_clauses)]
+        
+        if '$or' in filters:
+            conditions = filters['$or']
+            if not isinstance(conditions, list):
+                raise TypeError("$or operator requires a list of conditions")
+            if not conditions:
+                raise ValueError("$or operator requires at least one condition")
+            
+            # Recursively parse each condition
+            all_clauses = []
+            for cond in conditions:
+                cond_clauses = self.parse_filters(cond, table)
+                all_clauses.extend(cond_clauses)
+            
+            return [or_(*all_clauses)]
+        
+        if '$not' in filters:
+            condition = filters['$not']
+            if not isinstance(condition, dict):
+                raise TypeError("$not operator requires a dict condition")
+            
+            # Recursively parse the negated condition
+            neg_clauses = self.parse_filters(condition, table)
+            if len(neg_clauses) == 1:
+                return [not_(neg_clauses[0])]
+            else:
+                # Multiple clauses - combine with AND before negating
+                return [not_(and_(*neg_clauses))]
+        
+        # Regular field filters
         clauses = []
         
         for field_name, filter_value in filters.items():
+            # Check for unknown logical operators
+            if field_name.startswith('$'):
+                raise ValueError(
+                    f"Unknown logical operator: {field_name}. "
+                    f"Supported: $and, $or, $not"
+                )
+            
             # Validate field exists
             if field_name not in self.fields:
                 raise ValueError(
@@ -409,3 +519,110 @@ class OperatorParser:
                             raise TypeError(
                                 f"Existence operator {operator} requires boolean value"
                             )
+    
+    def parse_update_operations(
+        self, 
+        operations: Dict[str, Any], 
+        table
+    ) -> Dict[str, Any]:
+        """
+        Parse update operations dict into SQLAlchemy column expressions.
+        
+        Generates atomic update expressions that execute at database level,
+        preventing race conditions in concurrent scenarios (Sortie 3).
+        
+        Args:
+            operations: Dict of {field: {operator: value}}
+                Example: {
+                    'score': {'$inc': 10},
+                    'high_score': {'$max': 95},
+                    'status': {'$set': 'active'}
+                }
+            table: SQLAlchemy Table object with schema
+        
+        Returns:
+            Dict of {field: SQLAlchemy_expression} for use in update() statement
+            Example: {
+                'score': Column('score') + 10,
+                'high_score': func.greatest(Column('high_score'), 95),
+                'status': 'active'
+            }
+        
+        Raises:
+            ValueError: If field not in schema, operator unknown, or value invalid
+            TypeError: If operator type incompatible with field type or invalid operation format
+        
+        Example:
+            >>> parser = OperatorParser(schema)
+            >>> ops = {'score': {'$inc': 5}, 'status': {'$set': 'active'}}
+            >>> updates = parser.parse_update_operations(ops, users_table)
+            >>> stmt = update(users_table).values(**updates).where(...)
+        """
+        updates = {}
+        
+        for field_name, op_spec in operations.items():
+            # Validate field exists
+            if field_name not in self.fields:
+                raise ValueError(
+                    f"Field '{field_name}' not in schema. "
+                    f"Available fields: {', '.join(sorted(self.fields.keys()))}"
+                )
+            
+            field_def = self.fields[field_name]
+            field_type = field_def['type']
+            column = table.c[field_name]
+            
+            # Validate operation format (must be dict)
+            if not isinstance(op_spec, dict):
+                raise TypeError(
+                    f"Update operations must be dict {{operator: value}}, "
+                    f"got {type(op_spec).__name__} for field '{field_name}'"
+                )
+            
+            # Validate exactly one operator per field
+            if len(op_spec) != 1:
+                raise ValueError(
+                    f"Each field must have exactly one update operator, "
+                    f"got {len(op_spec)} for field '{field_name}'"
+                )
+            
+            operator, value = next(iter(op_spec.items()))
+            
+            # Validate operator exists
+            if operator not in self.UPDATE_OPS:
+                raise ValueError(
+                    f"Unknown update operator: {operator}. "
+                    f"Supported: {', '.join(sorted(self.UPDATE_OPS.keys()))}"
+                )
+            
+            # Type validation for numeric operators ($inc, $dec, $mul)
+            if operator in self.NUMERIC_UPDATE_OPS:
+                if field_type not in self.NUMERIC_TYPES:
+                    raise TypeError(
+                        f"Operator {operator} requires numeric type, "
+                        f"but field '{field_name}' has type '{field_type}'. "
+                        f"Numeric operators can only be used with: "
+                        f"{', '.join(sorted(self.NUMERIC_TYPES))}"
+                    )
+                
+                # Validate value is numeric
+                if not isinstance(value, (int, float)):
+                    raise TypeError(
+                        f"Operator {operator} requires numeric value, "
+                        f"got {type(value).__name__}"
+                    )
+            
+            # Type validation for conditional operators ($max, $min)
+            if operator in self.CONDITIONAL_UPDATE_OPS:
+                if field_type not in self.COMPARABLE_TYPES:
+                    raise TypeError(
+                        f"Operator {operator} requires numeric or timestamp type, "
+                        f"but field '{field_name}' has type '{field_type}'. "
+                        f"Conditional operators can only be used with: "
+                        f"{', '.join(sorted(self.COMPARABLE_TYPES))}"
+                    )
+            
+            # Generate SQLAlchemy expression (atomic at database level)
+            updates[field_name] = self.UPDATE_OPS[operator](column, value)
+        
+        return updates
