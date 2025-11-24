@@ -21,6 +21,7 @@ import asyncio
 import json
 import logging
 import sys
+from typing import Dict
 
 try:
     from nats.aio.client import Client as NATS  # noqa: N814 (NATS convention)
@@ -28,6 +29,7 @@ except ImportError:
     NATS = None
 
 from common.database import BotDatabase
+from common.migrations import MigrationManager, MigrationExecutor, DryRunRollback
 
 
 class DatabaseService:
@@ -85,6 +87,11 @@ class DatabaseService:
         self._running = False
         self._cleanup_task = None
         self._shutdown = False
+        
+        # Migration support (Sprint 15 Sortie 2)
+        self.migration_manager = MigrationManager(self.db)
+        self.migration_executor = MigrationExecutor(self.db)
+        self.migration_locks: Dict[str, asyncio.Lock] = {}  # Per-plugin locks
 
     async def start(self):
         """Subscribe to all database subjects and start handling events.
@@ -160,6 +167,17 @@ class DatabaseService:
                                         cb=self._handle_row_delete),
                 await self.nats.subscribe('rosey.db.row.*.search',
                                         cb=self._handle_row_search),
+            ])
+            
+            # Migration handlers (request/reply) - Sprint 15 Sortie 2
+            # Wildcard subscriptions for plugin-specific migrations
+            self._subscriptions.extend([
+                await self.nats.subscribe('rosey.db.migrate.*.apply',
+                                        cb=self._handle_migrate_apply),
+                await self.nats.subscribe('rosey.db.migrate.*.rollback',
+                                        cb=self._handle_migrate_rollback),
+                await self.nats.subscribe('rosey.db.migrate.*.status',
+                                        cb=self._handle_migrate_status),
             ])
 
             self._running = True
@@ -1677,6 +1695,496 @@ class DatabaseService:
             
         except Exception as e:
             self.logger.error(f"Unexpected error in row_search: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error"
+                    }
+                }).encode())
+            except:
+                pass
+
+    # ==================== Migration Handlers (Sprint 15 Sortie 2) ====================
+    
+    def _get_plugin_lock(self, plugin_name: str) -> asyncio.Lock:
+        """
+        Get or create migration lock for plugin.
+        
+        Ensures only one migration operation per plugin at a time.
+        
+        Args:
+            plugin_name: Plugin identifier
+        
+        Returns:
+            asyncio.Lock for the plugin
+        """
+        if plugin_name not in self.migration_locks:
+            self.migration_locks[plugin_name] = asyncio.Lock()
+        return self.migration_locks[plugin_name]
+    
+    async def _get_current_version(self, plugin_name: str) -> int:
+        """
+        Get current migration version for plugin.
+        
+        Returns the highest successfully applied migration version,
+        or 0 if no migrations have been applied.
+        
+        Args:
+            plugin_name: Plugin identifier
+        
+        Returns:
+            Current version (0 if no migrations applied)
+        """
+        try:
+            async with self.db._get_session() as session:
+                from sqlalchemy import text
+                query = text("""
+                    SELECT MAX(version)
+                    FROM plugin_schema_migrations
+                    WHERE plugin_name = :plugin_name
+                    AND status = 'applied'
+                """)
+                result = await session.execute(query, {'plugin_name': plugin_name})
+                max_version = result.scalar()
+                return max_version if max_version is not None else 0
+        except Exception as e:
+            self.logger.error(f"Failed to get current version for {plugin_name}: {e}")
+            return 0
+    
+    async def _handle_migrate_apply(self, msg):
+        """
+        Handle rosey.db.migrate.{plugin}.apply requests.
+        
+        Applies pending migrations up to specified version (or all if not specified).
+        Uses per-plugin locking to prevent concurrent migrations.
+        
+        Request:
+            {
+                "version": int (optional),      # Target version (omit for latest)
+                "applied_by": str (optional),   # User applying migration (default "system")
+                "dry_run": bool (optional)      # Preview mode without commit (default false)
+            }
+        
+        Response (success):
+            {
+                "success": true,
+                "applied": [
+                    {
+                        "version": int,
+                        "name": str,
+                        "execution_time_ms": int
+                    },
+                    ...
+                ],
+                "current_version": int
+            }
+        
+        Response (error):
+            {"success": false, "error": {"code": str, "message": str}}
+        
+        Example:
+            # Apply all pending migrations
+            rosey.db.migrate.quotes.apply -> {}
+            
+            # Apply up to version 3
+            rosey.db.migrate.quotes.apply -> {"version": 3, "applied_by": "admin"}
+            
+            # Dry-run (preview)
+            rosey.db.migrate.quotes.apply -> {"version": 3, "dry_run": true}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Extract plugin from subject (rosey.db.migrate.{plugin}.apply)
+            parts = msg.subject.split('.')
+            plugin_name = parts[3]
+            
+            # Extract request fields
+            target_version = request.get('version')
+            applied_by = request.get('applied_by', 'system')
+            dry_run = request.get('dry_run', False)
+            
+            # Acquire plugin lock
+            lock = self._get_plugin_lock(plugin_name)
+            
+            try:
+                # Use timeout to prevent deadlock
+                async with asyncio.timeout(30.0):
+                    await lock.acquire()
+            except asyncio.TimeoutError:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "LOCK_TIMEOUT",
+                        "message": f"Migration already in progress for plugin {plugin_name}"
+                    }
+                }).encode())
+                return
+            
+            try:
+                # Get pending migrations
+                current_version = await self._get_current_version(plugin_name)
+                migrations = await self.migration_manager.get_pending_migrations(
+                    plugin_name=plugin_name,
+                    current_version=current_version,
+                    target_version=target_version
+                )
+                
+                if not migrations:
+                    await msg.respond(json.dumps({
+                        "success": True,
+                        "applied": [],
+                        "current_version": current_version,
+                        "message": "No pending migrations"
+                    }).encode())
+                    return
+                
+                # Apply migrations
+                applied = []
+                for migration in migrations:
+                    async with self.db._get_session() as session:
+                        try:
+                            result = await self.migration_executor.apply_migration(
+                                session=session,
+                                plugin_name=plugin_name,
+                                migration=migration,
+                                applied_by=applied_by,
+                                dry_run=dry_run
+                            )
+                            
+                            if not result.success:
+                                # Migration failed
+                                await msg.respond(json.dumps({
+                                    "success": False,
+                                    "error": {
+                                        "code": "MIGRATION_FAILED",
+                                        "message": f"Failed at v{result.version:03d}: {result.error_message}"
+                                    },
+                                    "applied": applied,
+                                    "current_version": current_version
+                                }).encode())
+                                return
+                            
+                            applied.append({
+                                "version": result.version,
+                                "name": migration.name,
+                                "execution_time_ms": result.execution_time_ms
+                            })
+                            
+                            if not dry_run:
+                                current_version = result.version
+                            
+                        except DryRunRollback:
+                            # Expected for dry-run mode
+                            pass
+                
+                # Success
+                response = {
+                    "success": True,
+                    "applied": applied,
+                    "current_version": current_version
+                }
+                if dry_run:
+                    response["message"] = "Dry-run: migrations not committed"
+                
+                await msg.respond(json.dumps(response).encode())
+                
+            finally:
+                lock.release()
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in migrate_apply: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error"
+                    }
+                }).encode())
+            except:
+                pass
+    
+    async def _handle_migrate_rollback(self, msg):
+        """
+        Handle rosey.db.migrate.{plugin}.rollback requests.
+        
+        Rolls back migrations down to specified version (or one version if not specified).
+        Uses per-plugin locking to prevent concurrent migrations.
+        
+        Request:
+            {
+                "version": int (optional),      # Target version (omit for single rollback)
+                "applied_by": str (optional),   # User rolling back (default "system")
+                "dry_run": bool (optional)      # Preview mode without commit (default false)
+            }
+        
+        Response (success):
+            {
+                "success": true,
+                "rolled_back": [
+                    {
+                        "version": int,
+                        "name": str,
+                        "execution_time_ms": int
+                    },
+                    ...
+                ],
+                "current_version": int
+            }
+        
+        Response (error):
+            {"success": false, "error": {"code": str, "message": str}}
+        
+        Example:
+            # Rollback one version
+            rosey.db.migrate.quotes.rollback -> {}
+            
+            # Rollback to version 2
+            rosey.db.migrate.quotes.rollback -> {"version": 2, "applied_by": "admin"}
+            
+            # Dry-run rollback
+            rosey.db.migrate.quotes.rollback -> {"version": 2, "dry_run": true}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Extract plugin from subject (rosey.db.migrate.{plugin}.rollback)
+            parts = msg.subject.split('.')
+            plugin_name = parts[3]
+            
+            # Extract request fields
+            target_version = request.get('version')
+            applied_by = request.get('applied_by', 'system')
+            dry_run = request.get('dry_run', False)
+            
+            # Acquire plugin lock
+            lock = self._get_plugin_lock(plugin_name)
+            
+            try:
+                async with asyncio.timeout(30.0):
+                    await lock.acquire()
+            except asyncio.TimeoutError:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "LOCK_TIMEOUT",
+                        "message": f"Migration already in progress for plugin {plugin_name}"
+                    }
+                }).encode())
+                return
+            
+            try:
+                # Get migrations to rollback
+                current_version = await self._get_current_version(plugin_name)
+                migrations = await self.migration_manager.get_rollback_migrations(
+                    plugin_name=plugin_name,
+                    current_version=current_version,
+                    target_version=target_version
+                )
+                
+                if not migrations:
+                    await msg.respond(json.dumps({
+                        "success": True,
+                        "rolled_back": [],
+                        "current_version": current_version,
+                        "message": "No migrations to rollback"
+                    }).encode())
+                    return
+                
+                # Rollback migrations
+                rolled_back = []
+                for migration in migrations:
+                    async with self.db._get_session() as session:
+                        try:
+                            result = await self.migration_executor.rollback_migration(
+                                session=session,
+                                plugin_name=plugin_name,
+                                migration=migration,
+                                applied_by=applied_by,
+                                dry_run=dry_run
+                            )
+                            
+                            if not result.success:
+                                # Rollback failed
+                                await msg.respond(json.dumps({
+                                    "success": False,
+                                    "error": {
+                                        "code": "ROLLBACK_FAILED",
+                                        "message": f"Failed at v{result.version:03d}: {result.error_message}"
+                                    },
+                                    "rolled_back": rolled_back,
+                                    "current_version": current_version
+                                }).encode())
+                                return
+                            
+                            rolled_back.append({
+                                "version": result.version,
+                                "name": migration.name,
+                                "execution_time_ms": result.execution_time_ms
+                            })
+                            
+                            if not dry_run:
+                                current_version = migration.version - 1
+                            
+                        except DryRunRollback:
+                            # Expected for dry-run mode
+                            pass
+                
+                # Success
+                response = {
+                    "success": True,
+                    "rolled_back": rolled_back,
+                    "current_version": current_version
+                }
+                if dry_run:
+                    response["message"] = "Dry-run: rollbacks not committed"
+                
+                await msg.respond(json.dumps(response).encode())
+                
+            finally:
+                lock.release()
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in migrate_rollback: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error"
+                    }
+                }).encode())
+            except:
+                pass
+    
+    async def _handle_migrate_status(self, msg):
+        """
+        Handle rosey.db.migrate.{plugin}.status requests.
+        
+        Returns current migration status for plugin: current version,
+        list of applied migrations, and list of pending migrations.
+        
+        Request:
+            {} (empty request)
+        
+        Response (success):
+            {
+                "success": true,
+                "current_version": int,
+                "applied_migrations": [
+                    {
+                        "version": int,
+                        "name": str,
+                        "checksum": str,
+                        "applied_at": str,      # ISO timestamp
+                        "applied_by": str,
+                        "status": str,
+                        "execution_time_ms": int
+                    },
+                    ...
+                ],
+                "pending_migrations": [
+                    {
+                        "version": int,
+                        "name": str,
+                        "filename": str
+                    },
+                    ...
+                ]
+            }
+        
+        Response (error):
+            {"success": false, "error": {"code": str, "message": str}}
+        
+        Example:
+            rosey.db.migrate.quotes.status -> {}
+        """
+        try:
+            # Extract plugin from subject (rosey.db.migrate.{plugin}.status)
+            parts = msg.subject.split('.')
+            plugin_name = parts[3]
+            
+            # Get current version
+            current_version = await self._get_current_version(plugin_name)
+            
+            # Get applied migrations
+            applied_migrations = []
+            try:
+                async with self.db._get_session() as session:
+                    from sqlalchemy import text
+                    query = text("""
+                        SELECT version, name, checksum, applied_at, applied_by, status, execution_time_ms
+                        FROM plugin_schema_migrations
+                        WHERE plugin_name = :plugin_name
+                        ORDER BY version ASC
+                    """)
+                    result = await session.execute(query, {'plugin_name': plugin_name})
+                    
+                    for row in result:
+                        applied_migrations.append({
+                            "version": row[0],
+                            "name": row[1],
+                            "checksum": row[2],
+                            "applied_at": row[3].isoformat() if row[3] else None,
+                            "applied_by": row[4],
+                            "status": row[5],
+                            "execution_time_ms": row[6]
+                        })
+            except Exception as e:
+                self.logger.error(f"Failed to get applied migrations: {e}")
+            
+            # Get pending migrations
+            pending_migrations = []
+            try:
+                migrations = await self.migration_manager.get_pending_migrations(
+                    plugin_name=plugin_name,
+                    current_version=current_version
+                )
+                for migration in migrations:
+                    pending_migrations.append({
+                        "version": migration.version,
+                        "name": migration.name,
+                        "filename": migration.filename
+                    })
+            except Exception as e:
+                self.logger.error(f"Failed to get pending migrations: {e}")
+            
+            # Success response
+            response = {
+                "success": True,
+                "current_version": current_version,
+                "applied_migrations": applied_migrations,
+                "pending_migrations": pending_migrations
+            }
+            await msg.respond(json.dumps(response).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in migrate_status: {e}", exc_info=True)
             try:
                 await msg.respond(json.dumps({
                     "success": False,
