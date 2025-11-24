@@ -296,3 +296,277 @@ class TestPlaceholderMethods:
         """Test increment_score placeholder exists."""
         with pytest.raises(NotImplementedError):
             await initialized_plugin.increment_score(1, amount=5)
+
+
+class TestSearchQuotes:
+    """Test search_quotes operation."""
+    
+    @pytest.mark.asyncio
+    async def test_search_quotes_success(self, initialized_plugin, mock_nats):
+        """Test searching quotes with results."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({
+            "rows": [
+                {"id": 1, "text": "Test quote", "author": "Alice", "score": 5},
+                {"id": 2, "text": "Another quote", "author": "Bob", "score": 3}
+            ]
+        }).encode()
+        mock_nats.request.return_value = mock_response
+        
+        results = await initialized_plugin.search_quotes("test", limit=10)
+        
+        assert len(results) == 2
+        assert results[0]["author"] == "Alice"
+        
+        # Verify NATS payload
+        call_args = mock_nats.request.call_args
+        assert "search" in call_args[0][0]
+        payload = json.loads(call_args[0][1].decode())
+        assert "$or" in payload["filters"]
+        assert payload["filters"]["$or"][0]["author"]["$like"] == "%test%"
+        assert payload["filters"]["$or"][1]["text"]["$like"] == "%test%"
+    
+    @pytest.mark.asyncio
+    async def test_search_quotes_no_results(self, initialized_plugin, mock_nats):
+        """Test searching with no results."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"rows": []}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        results = await initialized_plugin.search_quotes("nonexistent")
+        assert results == []
+    
+    @pytest.mark.asyncio
+    async def test_search_quotes_invalid_limit(self, initialized_plugin):
+        """Test search with invalid limit."""
+        with pytest.raises(ValueError, match="between 1 and 100"):
+            await initialized_plugin.search_quotes("test", limit=0)
+        
+        with pytest.raises(ValueError, match="between 1 and 100"):
+            await initialized_plugin.search_quotes("test", limit=101)
+
+
+class TestVoting:
+    """Test upvote/downvote operations."""
+    
+    @pytest.mark.asyncio
+    async def test_upvote_quote_success(self, initialized_plugin, mock_nats):
+        """Test upvoting a quote."""
+        # Reset mock to clear initialization calls
+        mock_nats.request.reset_mock()
+        
+        # Mock update response
+        update_response = MagicMock()
+        update_response.data = json.dumps({"updated": 1}).encode()
+        
+        # Mock get_quote response
+        get_response = MagicMock()
+        get_response.data = json.dumps({
+            "rows": [{"id": 42, "text": "Test", "author": "Alice", "score": 6}]
+        }).encode()
+        
+        mock_nats.request.side_effect = [update_response, get_response]
+        
+        score = await initialized_plugin.upvote_quote(42)
+        assert score == 6
+        
+        # Verify update payload (first call after reset)
+        call_args = mock_nats.request.call_args_list[0]
+        assert "update" in call_args[0][0]
+        payload = json.loads(call_args[0][1].decode())
+        assert payload["operations"]["score"]["$inc"] == 1
+    
+    @pytest.mark.asyncio
+    async def test_downvote_quote_success(self, initialized_plugin, mock_nats):
+        """Test downvoting a quote."""
+        # Reset mock to clear initialization calls
+        mock_nats.request.reset_mock()
+        
+        update_response = MagicMock()
+        update_response.data = json.dumps({"updated": 1}).encode()
+        
+        get_response = MagicMock()
+        get_response.data = json.dumps({
+            "rows": [{"id": 42, "text": "Test", "author": "Alice", "score": 4}]
+        }).encode()
+        
+        mock_nats.request.side_effect = [update_response, get_response]
+        
+        score = await initialized_plugin.downvote_quote(42)
+        assert score == 4
+        
+        # Verify $inc with negative value (first call after reset)
+        call_args = mock_nats.request.call_args_list[0]
+        payload = json.loads(call_args[0][1].decode())
+        assert payload["operations"]["score"]["$inc"] == -1
+    
+    @pytest.mark.asyncio
+    async def test_upvote_quote_not_found(self, initialized_plugin, mock_nats):
+        """Test upvoting non-existent quote."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"updated": 0}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        with pytest.raises(ValueError, match="not found"):
+            await initialized_plugin.upvote_quote(999)
+    
+    @pytest.mark.asyncio
+    async def test_downvote_quote_not_found(self, initialized_plugin, mock_nats):
+        """Test downvoting non-existent quote."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"updated": 0}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        with pytest.raises(ValueError, match="not found"):
+            await initialized_plugin.downvote_quote(999)
+
+
+class TestTopQuotes:
+    """Test top_quotes operation."""
+    
+    @pytest.mark.asyncio
+    async def test_top_quotes_success(self, initialized_plugin, mock_nats):
+        """Test getting top quotes."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({
+            "rows": [
+                {"id": 1, "text": "Best quote", "author": "Alice", "score": 10},
+                {"id": 2, "text": "Good quote", "author": "Bob", "score": 5}
+            ]
+        }).encode()
+        mock_nats.request.return_value = mock_response
+        
+        results = await initialized_plugin.top_quotes(limit=10)
+        
+        assert len(results) == 2
+        assert results[0]["score"] == 10
+        
+        # Verify payload with $gte filter
+        call_args = mock_nats.request.call_args
+        payload = json.loads(call_args[0][1].decode())
+        assert payload["filters"]["score"]["$gte"] == 1
+        assert payload["sort"]["field"] == "score"
+        assert payload["sort"]["order"] == "desc"
+    
+    @pytest.mark.asyncio
+    async def test_top_quotes_empty(self, initialized_plugin, mock_nats):
+        """Test top quotes with no high-scored quotes."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"rows": []}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        results = await initialized_plugin.top_quotes()
+        assert results == []
+    
+    @pytest.mark.asyncio
+    async def test_top_quotes_invalid_limit(self, initialized_plugin):
+        """Test top quotes with invalid limit."""
+        with pytest.raises(ValueError, match="between 1 and 100"):
+            await initialized_plugin.top_quotes(limit=0)
+
+
+class TestRandomQuote:
+    """Test random_quote operation."""
+    
+    @pytest.mark.asyncio
+    async def test_random_quote_success(self, initialized_plugin, mock_nats):
+        """Test getting a random quote."""
+        # Mock KV cache hit
+        kv_response = MagicMock()
+        kv_response.data = json.dumps({"exists": True, "value": "5"}).encode()
+        
+        # Mock get_quote response
+        get_response = MagicMock()
+        get_response.data = json.dumps({
+            "rows": [{"id": 3, "text": "Random quote", "author": "Alice", "score": 2}]
+        }).encode()
+        
+        mock_nats.request.side_effect = [kv_response, get_response]
+        
+        quote = await initialized_plugin.random_quote()
+        
+        assert quote is not None
+        assert quote["text"] == "Random quote"
+    
+    @pytest.mark.asyncio
+    async def test_random_quote_empty_database(self, initialized_plugin, mock_nats):
+        """Test random quote with empty database."""
+        # Mock KV cache returning 0 count
+        kv_response = MagicMock()
+        kv_response.data = json.dumps({"exists": True, "value": "0"}).encode()
+        mock_nats.request.return_value = kv_response
+        
+        quote = await initialized_plugin.random_quote()
+        assert quote is None
+    
+    @pytest.mark.asyncio
+    async def test_random_quote_fallback(self, initialized_plugin, mock_nats):
+        """Test random quote with ID gap fallback."""
+        # Mock KV cache
+        kv_response = MagicMock()
+        kv_response.data = json.dumps({"exists": True, "value": "10"}).encode()
+        
+        # Mock get_quote returning None (ID gap)
+        get_none = MagicMock()
+        get_none.data = json.dumps({"rows": []}).encode()
+        
+        # Mock fallback search
+        fallback_response = MagicMock()
+        fallback_response.data = json.dumps({
+            "rows": [{"id": 1, "text": "First quote", "author": "Alice", "score": 0}]
+        }).encode()
+        
+        mock_nats.request.side_effect = [kv_response, get_none, fallback_response]
+        
+        quote = await initialized_plugin.random_quote()
+        
+        assert quote is not None
+        assert quote["text"] == "First quote"
+
+
+class TestKVCaching:
+    """Test KV caching operations."""
+    
+    @pytest.mark.asyncio
+    async def test_get_quote_count_cache_hit(self, initialized_plugin, mock_nats):
+        """Test getting count from KV cache."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"exists": True, "value": "42"}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        count = await initialized_plugin._get_quote_count()
+        
+        assert count == 42
+        call_args = mock_nats.request.call_args
+        assert "kv.quote-db.get" in call_args[0][0]
+    
+    @pytest.mark.asyncio
+    async def test_get_quote_count_cache_miss(self, initialized_plugin, mock_nats):
+        """Test counting from database on cache miss."""
+        # Mock KV miss
+        kv_response = MagicMock()
+        kv_response.data = json.dumps({"exists": False}).encode()
+        
+        # Mock database count
+        db_response = MagicMock()
+        db_response.data = json.dumps({
+            "rows": [{"id": 1}, {"id": 2}, {"id": 3}]
+        }).encode()
+        
+        # Mock KV set (cache update)
+        set_response = MagicMock()
+        set_response.data = json.dumps({"success": True}).encode()
+        
+        mock_nats.request.side_effect = [kv_response, db_response, set_response]
+        
+        count = await initialized_plugin._get_quote_count()
+        
+        assert count == 3
+        
+        # Verify cache update was called (check for kv.set in call history)
+        set_calls = [c for c in mock_nats.request.call_args_list if "kv.quote-db.set" in str(c[0][0])]
+        assert len(set_calls) >= 1
+        payload = json.loads(set_calls[0][0][1].decode())
+        assert payload["key"] == "total_count"
+        assert payload["value"] == "3"
+        assert payload["ttl"] == 300

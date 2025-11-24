@@ -172,14 +172,49 @@ except asyncio.TimeoutError as e:
 
 ### Commands
 
-**Note**: Advanced operations (search, scoring, tagging) will be implemented in Sprint 16 Sortie 3.
+**Advanced operations** (search, voting, top quotes, random) implemented in Sprint 16 Sortie 3.
+
+**Searching Quotes**:
 
 ```python
-# Find by author
-quotes = await plugin.find_by_author("MST3K")
+# Search by author or text (case-insensitive)
+results = await plugin.search_quotes("einstein", limit=10)
+for quote in results:
+    print(f"{quote['text']} - {quote['author']}")
+```
 
-# Increment score (atomic)
-success = await plugin.increment_score(quote_id, amount=5)
+**Voting System**:
+
+```python
+# Upvote a quote (atomic increment)
+try:
+    new_score = await plugin.upvote_quote(42)
+    print(f"Quote upvoted! New score: {new_score}")
+except ValueError:
+    print("Quote not found")
+
+# Downvote a quote (atomic decrement)
+new_score = await plugin.downvote_quote(42)
+```
+
+**Top Quotes**:
+
+```python
+# Get highest-scored quotes (score >= 1)
+top_quotes = await plugin.top_quotes(limit=10)
+for quote in top_quotes:
+    print(f"[{quote['score']}] {quote['text']} - {quote['author']}")
+```
+
+**Random Quotes**:
+
+```python
+# Get a random quote (uses KV cache for performance)
+quote = await plugin.random_quote()
+if quote:
+    print(f"{quote['text']} - {quote['author']}")
+else:
+    print("No quotes available")
 ```
 
 ## Development
@@ -264,7 +299,7 @@ Migration 001 inserts 5 example quotes for development and testing:
 
 - ✅ **Sortie 1**: Foundation & Migrations (COMPLETE)
 - ✅ **Sortie 2**: Core CRUD Operations (COMPLETE - add, get, delete, validation)
-- ⏳ **Sortie 3**: Advanced Features (search, scoring, tags, KV cache)
+- ✅ **Sortie 3**: Advanced Features (COMPLETE - search, voting, top quotes, random, KV cache)
 - ⏳ **Sortie 4**: Error Handling, Documentation, Polish
 
 ## Contributing

@@ -13,6 +13,7 @@ import logging
 import json
 import time
 import asyncio
+import random
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -348,6 +349,257 @@ class QuoteDBPlugin:
         # TODO: Implement in Sortie 3
         raise NotImplementedError("Sortie 3")
     
+    async def search_quotes(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Search quotes by author or text.
+        
+        Args:
+            query: Search query string
+            limit: Maximum results to return (1-100, default 10)
+            
+        Returns:
+            List of matching quote dicts, sorted by timestamp descending
+            
+        Raises:
+            ValueError: If limit out of range
+            RuntimeError: If plugin not initialized
+            asyncio.TimeoutError: If NATS request times out
+        """
+        self._ensure_initialized()
+        
+        # Validate limit
+        if limit < 1 or limit > 100:
+            raise ValueError("Limit must be between 1 and 100")
+        
+        # Build search payload with $or and $like
+        payload = {
+            "table": "quotes",
+            "filters": {
+                "$or": [
+                    {"author": {"$like": f"%{query}%"}},
+                    {"text": {"$like": f"%{query}%"}}
+                ]
+            },
+            "sort": {"field": "timestamp", "order": "desc"},
+            "limit": limit
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.search",
+                json.dumps(payload).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            quotes = result.get("rows", [])
+            
+            self.logger.info(f"Search '{query}' returned {len(quotes)} results")
+            return quotes
+            
+        except asyncio.TimeoutError:
+            self.logger.error(f"NATS timeout searching for '{query}'")
+            raise asyncio.TimeoutError("NATS request timed out: search_quotes")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
+    
+    async def upvote_quote(self, quote_id: int) -> int:
+        """
+        Atomically increment quote score by 1.
+        
+        Args:
+            quote_id: The ID of the quote to upvote
+            
+        Returns:
+            The updated score after upvoting
+            
+        Raises:
+            ValueError: If quote not found
+            RuntimeError: If plugin not initialized
+            asyncio.TimeoutError: If NATS request times out
+        """
+        self._ensure_initialized()
+        
+        # Atomic increment via $inc
+        payload = {
+            "table": "quotes",
+            "filters": {"id": {"$eq": quote_id}},
+            "operations": {"score": {"$inc": 1}}
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.update",
+                json.dumps(payload).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            
+            if result.get("updated", 0) == 0:
+                raise ValueError(f"Quote {quote_id} not found")
+            
+            # Retrieve updated score
+            quote = await self.get_quote(quote_id)
+            score = quote["score"]
+            
+            self.logger.info(f"Upvoted quote {quote_id}, new score: {score}")
+            return score
+            
+        except asyncio.TimeoutError:
+            self.logger.error(f"NATS timeout upvoting quote {quote_id}")
+            raise asyncio.TimeoutError("NATS request timed out: upvote_quote")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
+    
+    async def downvote_quote(self, quote_id: int) -> int:
+        """
+        Atomically decrement quote score by 1.
+        
+        Args:
+            quote_id: The ID of the quote to downvote
+            
+        Returns:
+            The updated score after downvoting
+            
+        Raises:
+            ValueError: If quote not found
+            RuntimeError: If plugin not initialized
+            asyncio.TimeoutError: If NATS request times out
+        """
+        self._ensure_initialized()
+        
+        payload = {
+            "table": "quotes",
+            "filters": {"id": {"$eq": quote_id}},
+            "operations": {"score": {"$inc": -1}}
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.update",
+                json.dumps(payload).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            
+            if result.get("updated", 0) == 0:
+                raise ValueError(f"Quote {quote_id} not found")
+            
+            quote = await self.get_quote(quote_id)
+            score = quote["score"]
+            
+            self.logger.info(f"Downvoted quote {quote_id}, new score: {score}")
+            return score
+            
+        except asyncio.TimeoutError:
+            self.logger.error(f"NATS timeout downvoting quote {quote_id}")
+            raise asyncio.TimeoutError("NATS request timed out: downvote_quote")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
+    
+    async def top_quotes(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get highest-scored quotes.
+        
+        Args:
+            limit: Maximum results to return (1-100, default 10)
+            
+        Returns:
+            List of top-scored quotes (score >= 1), sorted by score descending
+            
+        Raises:
+            ValueError: If limit out of range
+            RuntimeError: If plugin not initialized
+            asyncio.TimeoutError: If NATS request times out
+        """
+        self._ensure_initialized()
+        
+        if limit < 1 or limit > 100:
+            raise ValueError("Limit must be between 1 and 100")
+        
+        payload = {
+            "table": "quotes",
+            "filters": {"score": {"$gte": 1}},
+            "sort": {"field": "score", "order": "desc"},
+            "limit": limit
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.search",
+                json.dumps(payload).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            quotes = result.get("rows", [])
+            
+            self.logger.info(f"Retrieved {len(quotes)} top quotes")
+            return quotes
+            
+        except asyncio.TimeoutError:
+            self.logger.error("NATS timeout getting top quotes")
+            raise asyncio.TimeoutError("NATS request timed out: top_quotes")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
+    
+    async def random_quote(self) -> Optional[Dict[str, Any]]:
+        """
+        Get a random quote.
+        
+        Uses KV-cached total count for efficient random selection.
+        Falls back to first quote if random ID has gap.
+        
+        Returns:
+            Random quote dict, or None if database empty
+            
+        Raises:
+            RuntimeError: If plugin not initialized
+            asyncio.TimeoutError: If NATS request times out
+        """
+        self._ensure_initialized()
+        
+        # Get total count (KV cached)
+        count = await self._get_quote_count()
+        if count == 0:
+            self.logger.info("No quotes available for random selection")
+            return None
+        
+        # Generate random ID
+        random_id = random.randint(1, count)
+        
+        # Try to get quote
+        quote = await self.get_quote(random_id)
+        if quote:
+            return quote
+        
+        # Fallback: get first quote (handles ID gaps)
+        self.logger.warning(f"Quote {random_id} not found, using fallback")
+        payload = {
+            "table": "quotes",
+            "filters": {},
+            "limit": 1
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.search",
+                json.dumps(payload).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            rows = result.get("rows", [])
+            return rows[0] if rows else None
+            
+        except asyncio.TimeoutError:
+            self.logger.error("NATS timeout getting random quote")
+            raise asyncio.TimeoutError("NATS request timed out: random_quote")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
+    
     async def increment_score(self, quote_id: int, amount: int = 1) -> bool:
         """
         Atomically increment a quote's score.
@@ -362,3 +614,98 @@ class QuoteDBPlugin:
         self._ensure_initialized()
         # TODO: Implement in Sortie 3
         raise NotImplementedError("Sortie 3")
+    
+    # ===== KV Caching Methods =====
+    # Implemented in Sortie 3
+    
+    async def _get_quote_count(self) -> int:
+        """
+        Get total quote count (KV cached).
+        
+        Returns:
+            Total number of quotes
+            
+        Raises:
+            asyncio.TimeoutError: If database query times out
+        """
+        try:
+            response = await self.nats.request(
+                f"rosey.db.kv.{self.NAMESPACE}.get",
+                json.dumps({"key": "total_count"}).encode(),
+                timeout=1.0
+            )
+            result = json.loads(response.data.decode())
+            
+            if result.get("exists", False):
+                count = int(result["value"])
+                self.logger.debug(f"KV cache hit: total_count={count}")
+                return count
+                
+        except Exception as e:
+            self.logger.warning(f"KV cache miss: {e}")
+        
+        # Cache miss: count from database
+        self.logger.debug("Counting quotes from database")
+        return await self._count_quotes_from_db()
+    
+    async def _count_quotes_from_db(self) -> int:
+        """
+        Count quotes from database (expensive operation).
+        
+        Returns:
+            Total number of quotes
+            
+        Raises:
+            asyncio.TimeoutError: If database query times out
+        """
+        payload = {
+            "table": "quotes",
+            "filters": {},
+            "limit": 10000  # Maximum limit
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.search",
+                json.dumps(payload).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            count = len(result.get("rows", []))
+            
+            # Update cache
+            await self._update_quote_count_cache(count)
+            
+            self.logger.info(f"Counted {count} quotes from database")
+            return count
+            
+        except asyncio.TimeoutError:
+            self.logger.error("NATS timeout counting quotes")
+            raise asyncio.TimeoutError("NATS request timed out: _count_quotes_from_db")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
+    
+    async def _update_quote_count_cache(self, count: int):
+        """
+        Update KV cache with quote count.
+        
+        Args:
+            count: Total quote count to cache
+        """
+        payload = {
+            "key": "total_count",
+            "value": str(count),
+            "ttl": 300  # 5 minutes
+        }
+        
+        try:
+            await self.nats.request(
+                f"rosey.db.kv.{self.NAMESPACE}.set",
+                json.dumps(payload).encode(),
+                timeout=1.0
+            )
+            self.logger.debug(f"Updated KV cache: total_count={count}")
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to update KV cache: {e}")
