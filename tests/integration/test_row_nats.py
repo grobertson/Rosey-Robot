@@ -1459,3 +1459,380 @@ class TestRowSearchWithOperators:
         assert result['count'] == 2
         assert all(row['name'] == 'alpha' for row in result['rows'])
 
+
+class TestRowSearchExtendedOperators:
+    """Test row search with extended operators via NATS (Sprint 14 Sortie 2)."""
+    
+    async def test_search_with_in_operator(self, nats_client, db_service):
+        """Test search with $in operator."""
+        # Register schema
+        register_resp = await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "users",
+                "schema": {
+                    "fields": [
+                        {"name": "username", "type": "string", "required": True},
+                        {"name": "status", "type": "string", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        assert json.loads(register_resp.data.decode())['success'] is True
+        
+        # Insert test data
+        insert_resp = await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "users",
+                "data": [
+                    {"username": "alice", "status": "active"},
+                    {"username": "bob", "status": "banned"},
+                    {"username": "charlie", "status": "active"},
+                    {"username": "diana", "status": "inactive"}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        assert json.loads(insert_resp.data.decode())['success'] is True
+        
+        # Search with $in operator
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "users",
+                "filters": {"status": {"$in": ["active", "inactive"]}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 3
+        statuses = sorted([row['status'] for row in result['rows']])
+        assert statuses == ['active', 'active', 'inactive']
+    
+    async def test_search_with_nin_operator(self, nats_client, db_service):
+        """Test search with $nin operator (not in)."""
+        # Reuse schema from previous test
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "users2",
+                "schema": {
+                    "fields": [
+                        {"name": "username", "type": "string", "required": True},
+                        {"name": "role", "type": "string", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "users2",
+                "data": [
+                    {"username": "alice", "role": "admin"},
+                    {"username": "bob", "role": "banned"},
+                    {"username": "charlie", "role": "user"},
+                    {"username": "diana", "role": "moderator"}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Exclude banned and admin users
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "users2",
+                "filters": {"role": {"$nin": ["banned", "admin"]}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        usernames = sorted([row['username'] for row in result['rows']])
+        assert usernames == ['charlie', 'diana']
+    
+    async def test_search_with_like_operator(self, nats_client, db_service):
+        """Test search with $like pattern operator."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {
+                    "fields": [
+                        {"name": "name", "type": "string", "required": True},
+                        {"name": "category", "type": "string", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "items",
+                "data": [
+                    {"name": "laptop_dell", "category": "electronics"},
+                    {"name": "laptop_hp", "category": "electronics"},
+                    {"name": "mouse_wireless", "category": "accessories"},
+                    {"name": "keyboard", "category": "accessories"}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Find all items starting with 'laptop_'
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "items",
+                "filters": {"name": {"$like": "laptop_%"}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        names = sorted([row['name'] for row in result['rows']])
+        assert names == ['laptop_dell', 'laptop_hp']
+    
+    async def test_search_with_ilike_operator(self, nats_client, db_service):
+        """Test search with $ilike case-insensitive pattern operator."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "products",
+                "schema": {
+                    "fields": [
+                        {"name": "title", "type": "string", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "products",
+                "data": [
+                    {"title": "Python Programming"},
+                    {"title": "Learning PYTHON"},
+                    {"title": "Java Basics"},
+                    {"title": "python for beginners"}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Case-insensitive search for 'python'
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "products",
+                "filters": {"title": {"$ilike": "%python%"}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 3
+        # Should match all variants of 'python' regardless of case
+    
+    async def test_search_with_exists_operator(self, nats_client, db_service):
+        """Test search with $exists operator."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "posts",
+                "schema": {
+                    "fields": [
+                        {"name": "title", "type": "string", "required": True},
+                        {"name": "description", "type": "string", "required": False}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "posts",
+                "data": [
+                    {"title": "Post 1", "description": "Has description"},
+                    {"title": "Post 2", "description": None},
+                    {"title": "Post 3", "description": "Also has description"}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Find posts with description (not null)
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "posts",
+                "filters": {"description": {"$exists": True}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        assert all(row['description'] is not None for row in result['rows'])
+    
+    async def test_search_with_null_operator(self, nats_client, db_service):
+        """Test search with $null operator."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "tasks",
+                "schema": {
+                    "fields": [
+                        {"name": "title", "type": "string", "required": True},
+                        {"name": "completed_at", "type": "datetime", "required": False}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "tasks",
+                "data": [
+                    {"title": "Task 1", "completed_at": None},
+                    {"title": "Task 2", "completed_at": "2024-01-01T10:00:00"},
+                    {"title": "Task 3", "completed_at": None}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Find incomplete tasks (completed_at is null)
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "tasks",
+                "filters": {"completed_at": {"$null": True}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        assert all(row['completed_at'] is None for row in result['rows'])
+    
+    async def test_combined_set_and_comparison(self, nats_client, db_service):
+        """Test combining $in with comparison operators."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "scores",
+                "schema": {
+                    "fields": [
+                        {"name": "username", "type": "string", "required": True},
+                        {"name": "score", "type": "integer", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "scores",
+                "data": [
+                    {"username": "alice", "score": 50},
+                    {"username": "bob", "score": 150},
+                    {"username": "charlie", "score": 200},
+                    {"username": "diana", "score": 175}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Find specific users with high scores
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "scores",
+                "filters": {
+                    "username": {"$in": ["bob", "charlie", "diana"]},
+                    "score": {"$gte": 150}
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 3
+        usernames = sorted([row['username'] for row in result['rows']])
+        assert usernames == ['bob', 'charlie', 'diana']
+    
+    async def test_combined_pattern_and_existence(self, nats_client, db_service):
+        """Test combining $like with $exists."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "articles",
+                "schema": {
+                    "fields": [
+                        {"name": "title", "type": "string", "required": True},
+                        {"name": "author", "type": "string", "required": False}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "articles",
+                "data": [
+                    {"title": "Python Tips", "author": "Alice"},
+                    {"title": "Python Basics", "author": None},
+                    {"title": "Java Guide", "author": "Bob"},
+                    {"title": "Python Advanced", "author": "Charlie"}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Find Python articles with known authors
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "articles",
+                "filters": {
+                    "title": {"$like": "Python%"},
+                    "author": {"$exists": True}
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        titles = sorted([row['title'] for row in result['rows']])
+        assert titles == ['Python Advanced', 'Python Tips']
+

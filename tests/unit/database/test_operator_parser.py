@@ -452,3 +452,300 @@ class TestEdgeCases:
         clauses = parser.parse_filters(filters, sample_table)
         
         assert len(clauses) == 2
+
+
+class TestSetOperators:
+    """Test set membership operators (Sprint 14 Sortie 2)."""
+    
+    def test_in_operator(self, sample_schema, sample_table):
+        """Test $in operator."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'username': {'$in': ['alice', 'bob', 'charlie']}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_nin_operator(self, sample_schema, sample_table):
+        """Test $nin operator (not in)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'username': {'$nin': ['banned_user', 'test_user']}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_in_with_single_value(self, sample_schema, sample_table):
+        """Test $in with single-element list."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'score': {'$in': [100]}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_in_with_integers(self, sample_schema, sample_table):
+        """Test $in with multiple integers."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'score': {'$in': [100, 200, 300]}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_in_requires_list(self, sample_schema, sample_table):
+        """Test $in rejects non-list value."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'username': {'$in': 'alice'}}  # String, not list
+        
+        with pytest.raises(TypeError, match="requires list value"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_in_requires_nonempty_list(self, sample_schema, sample_table):
+        """Test $in rejects empty list."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'username': {'$in': []}}
+        
+        with pytest.raises(ValueError, match="non-empty list"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_nin_with_multiple_values(self, sample_schema, sample_table):
+        """Test $nin with multiple values."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'score': {'$nin': [50, 75]}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+
+
+class TestPatternOperators:
+    """Test pattern matching operators (Sprint 14 Sortie 2)."""
+    
+    def test_like_operator(self, sample_schema, sample_table):
+        """Test $like operator (case-sensitive)."""
+        parser = OperatorParser(sample_schema)
+        
+        # Match usernames starting with 'test_'
+        filters = {'username': {'$like': 'test_%'}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_ilike_operator(self, sample_schema, sample_table):
+        """Test $ilike operator (case-insensitive)."""
+        parser = OperatorParser(sample_schema)
+        
+        # Match usernames containing 'alice' (any case)
+        filters = {'username': {'$ilike': '%alice%'}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_like_wildcards_percent(self, sample_schema, sample_table):
+        """Test % wildcard (zero or more characters)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'username': {'$like': 'user%'}}
+        clauses = parser.parse_filters(filters, sample_table)
+        assert len(clauses) == 1
+    
+    def test_like_wildcards_underscore(self, sample_schema, sample_table):
+        """Test _ wildcard (exactly one character)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'username': {'$like': 'user_'}}
+        clauses = parser.parse_filters(filters, sample_table)
+        assert len(clauses) == 1
+    
+    def test_like_wildcards_combined(self, sample_schema, sample_table):
+        """Test combined wildcards."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'username': {'$like': 'user_%'}}
+        clauses = parser.parse_filters(filters, sample_table)
+        assert len(clauses) == 1
+    
+    def test_pattern_on_string_field_ok(self, sample_schema, sample_table):
+        """Test pattern operator on string field (should work)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'username': {'$like': '%test%'}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_pattern_on_integer_fails(self, sample_schema, sample_table):
+        """Test pattern operator on integer field (should fail)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'score': {'$like': '10%'}}
+        
+        with pytest.raises(TypeError, match="requires string or text type"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_pattern_on_boolean_fails(self, sample_schema, sample_table):
+        """Test pattern operator on boolean field (should fail)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'active': {'$like': 'true%'}}
+        
+        with pytest.raises(TypeError, match="requires string or text type"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_pattern_requires_string_value(self, sample_schema, sample_table):
+        """Test pattern operator rejects non-string value."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'username': {'$like': 123}}  # Integer, not string
+        
+        with pytest.raises(TypeError, match="requires string value"):
+            parser.parse_filters(filters, sample_table)
+
+
+class TestExistenceOperators:
+    """Test existence/null operators (Sprint 14 Sortie 2)."""
+    
+    def test_exists_true(self, sample_schema, sample_table):
+        """Test $exists: true (field is not null)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'rating': {'$exists': True}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_exists_false(self, sample_schema, sample_table):
+        """Test $exists: false (field is null)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'rating': {'$exists': False}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_null_true(self, sample_schema, sample_table):
+        """Test $null: true (field is null)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'rating': {'$null': True}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_null_false(self, sample_schema, sample_table):
+        """Test $null: false (field is not null)."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'rating': {'$null': False}}
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_exists_requires_boolean(self, sample_schema, sample_table):
+        """Test $exists rejects non-boolean value."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'rating': {'$exists': 'true'}}  # String, not bool
+        
+        with pytest.raises(TypeError, match="requires boolean value"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_null_requires_boolean(self, sample_schema, sample_table):
+        """Test $null rejects non-boolean value."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {'rating': {'$null': 1}}  # Integer, not bool
+        
+        with pytest.raises(TypeError, match="requires boolean value"):
+            parser.parse_filters(filters, sample_table)
+    
+    def test_exists_on_string_field(self, sample_schema, sample_table):
+        """Test $exists works on string fields."""
+        parser = OperatorParser(sample_schema)
+        
+        clauses = parser.parse_filters({'username': {'$exists': True}}, sample_table)
+        assert len(clauses) == 1
+    
+    def test_exists_on_integer_field(self, sample_schema, sample_table):
+        """Test $exists works on integer fields."""
+        parser = OperatorParser(sample_schema)
+        
+        clauses = parser.parse_filters({'score': {'$exists': False}}, sample_table)
+        assert len(clauses) == 1
+    
+    def test_exists_on_boolean_field(self, sample_schema, sample_table):
+        """Test $exists works on boolean fields."""
+        parser = OperatorParser(sample_schema)
+        
+        clauses = parser.parse_filters({'active': {'$exists': True}}, sample_table)
+        assert len(clauses) == 1
+
+
+class TestCombinedOperatorsSortie2:
+    """Test combining new operators with existing ones (Sprint 14 Sortie 2)."""
+    
+    def test_in_and_comparison(self, sample_schema, sample_table):
+        """Test combining $in with comparison operators."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {
+            'score': {'$gte': 100},
+            'username': {'$in': ['alice', 'bob']}
+        }
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 2
+    
+    def test_pattern_and_existence(self, sample_schema, sample_table):
+        """Test combining pattern and existence operators."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {
+            'username': {'$like': 'test_%'},
+            'rating': {'$exists': True}
+        }
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 2
+    
+    def test_all_operator_types_combined(self, sample_schema, sample_table):
+        """Test combining operators from Sortie 1 and Sortie 2."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {
+            'score': {'$gte': 100, '$lte': 200},  # Comparison
+            'username': {'$like': '%user%'},      # Pattern
+            'rating': {'$exists': True}            # Existence
+        }
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 4  # 2 for score range, 1 pattern, 1 existence
+    
+    def test_set_and_pattern_and_comparison(self, sample_schema, sample_table):
+        """Test set + pattern + comparison operators."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {
+            'username': {'$like': 'user%'},
+            'score': {'$in': [100, 200, 300]},
+            'rating': {'$gte': 4.0}
+        }
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 3
+    
+    def test_nin_and_exists(self, sample_schema, sample_table):
+        """Test $nin with $exists."""
+        parser = OperatorParser(sample_schema)
+        
+        filters = {
+            'username': {'$nin': ['banned', 'deleted']},
+            'rating': {'$exists': True}
+        }
+        clauses = parser.parse_filters(filters, sample_table)
+        
+        assert len(clauses) == 2
+
