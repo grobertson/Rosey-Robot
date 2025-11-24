@@ -158,6 +158,8 @@ class DatabaseService:
                                         cb=self._handle_row_update),
                 await self.nats.subscribe('rosey.db.row.*.delete',
                                         cb=self._handle_row_delete),
+                await self.nats.subscribe('rosey.db.row.*.search',
+                                        cb=self._handle_row_search),
             ])
 
             self._running = True
@@ -1547,6 +1549,134 @@ class DatabaseService:
             
         except Exception as e:
             self.logger.error(f"Unexpected error in row_delete: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error"
+                    }
+                }).encode())
+            except:
+                pass
+
+    async def _handle_row_search(self, msg):
+        """
+        Handle rosey.db.row.{plugin}.search requests.
+        
+        Searches rows with filters, sorting, and pagination.
+        
+        Request:
+            {
+                "table": str,                                       # Required
+                "filters": dict (optional),                         # Equality filters (AND logic)
+                "sort": {"field": str, "order": "asc"|"desc"} (optional),
+                "limit": int (optional, default 100, max 1000),
+                "offset": int (optional, default 0)
+            }
+        
+        Response (success):
+            {
+                "success": true,
+                "rows": [...],          # Array of matching rows
+                "count": int,           # Number of rows in page
+                "truncated": bool       # True if more rows available
+            }
+        
+        Response (error):
+            {"success": false, "error": {"code": str, "message": str}}
+        
+        Example:
+            # Search all
+            rosey.db.row.quote_db.search -> {"table": "quotes"}
+            
+            # Search with filters
+            rosey.db.row.quote_db.search -> {
+                "table": "quotes",
+                "filters": {"author": "Alice", "active": true}
+            }
+            
+            # Sorted and paginated
+            rosey.db.row.quote_db.search -> {
+                "table": "quotes",
+                "sort": {"field": "created_at", "order": "desc"},
+                "limit": 10,
+                "offset": 0
+            }
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Extract plugin from subject (rosey.db.row.{plugin}.search)
+            parts = msg.subject.split('.')
+            plugin_name = parts[3]
+            
+            # Validate required fields
+            table_name = request.get('table')
+            
+            if not table_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'table' missing"
+                    }
+                }).encode())
+                return
+            
+            # Optional fields
+            filters = request.get('filters')
+            sort = request.get('sort')
+            limit = request.get('limit', 100)
+            offset = request.get('offset', 0)
+            
+            # Search rows
+            try:
+                result = await self.db.row_search(
+                    plugin_name,
+                    table_name,
+                    filters=filters,
+                    sort=sort,
+                    limit=limit,
+                    offset=offset
+                )
+            except ValueError as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": str(e)
+                    }
+                }).encode())
+                return
+            except Exception as e:
+                self.logger.error(f"Search failed: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "DATABASE_ERROR",
+                        "message": "Search operation failed"
+                    }
+                }).encode())
+                return
+            
+            # Success response
+            response = {"success": True, **result}
+            await msg.respond(json.dumps(response).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in row_search: {e}", exc_info=True)
             try:
                 await msg.respond(json.dumps({
                     "success": False,
