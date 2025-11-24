@@ -121,6 +121,18 @@ class DatabaseService:
                                         cb=self._handle_user_stats_query),
             ])
 
+            # KV Storage handlers (request/reply)
+            self._subscriptions.extend([
+                await self.nats.subscribe('rosey.db.kv.set',
+                                        cb=self._handle_kv_set),
+                await self.nats.subscribe('rosey.db.kv.get',
+                                        cb=self._handle_kv_get),
+                await self.nats.subscribe('rosey.db.kv.delete',
+                                        cb=self._handle_kv_delete),
+                await self.nats.subscribe('rosey.db.kv.list',
+                                        cb=self._handle_kv_list),
+            ])
+
             self._running = True
             self.logger.info(
                 f"DatabaseService started with {len(self._subscriptions)} subscriptions"
@@ -586,6 +598,374 @@ class DatabaseService:
             self.logger.error(f"Invalid JSON in pm_action: {e}")
         except Exception as e:
             self.logger.error(f"Error handling pm_action: {e}", exc_info=True)
+
+    # ==================== KV Storage Handlers ====================
+
+    async def _handle_kv_set(self, msg):
+        """Handle rosey.db.kv.set requests.
+        
+        NATS Subject: rosey.db.kv.set (request/reply)
+        
+        Request:
+            {
+                "plugin_name": str,
+                "key": str,
+                "value": Any,
+                "ttl_seconds": Optional[int]
+            }
+        
+        Response:
+            {"success": true, "data": {}}
+            or
+            {"success": false, "error": {"code": str, "message": str}}
+        
+        Error Codes:
+            INVALID_JSON - Malformed JSON request
+            MISSING_FIELD - Required field missing
+            VALUE_TOO_LARGE - Value exceeds 64KB
+            INTERNAL_ERROR - Database operation failed
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Validate required fields
+            plugin_name = request.get("plugin_name")
+            key = request.get("key")
+            value = request.get("value")
+            
+            if not plugin_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'plugin_name' is missing"
+                    }
+                }).encode())
+                return
+            
+            if not key:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'key' is missing"
+                    }
+                }).encode())
+                return
+            
+            if "value" not in request:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'value' is missing"
+                    }
+                }).encode())
+                return
+            
+            ttl_seconds = request.get("ttl_seconds")
+            
+            # Call database method
+            try:
+                await self.db.kv_set(plugin_name, key, value, ttl_seconds)
+            except ValueError as e:
+                # Value too large or other validation error
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "VALUE_TOO_LARGE" if "64KB" in str(e) else "VALIDATION_ERROR",
+                        "message": str(e)
+                    }
+                }).encode())
+                return
+            except Exception as e:
+                self.logger.error(f"Error in kv_set: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Database operation failed"
+                    }
+                }).encode())
+                return
+            
+            # Success response
+            await msg.respond(json.dumps({
+                "success": True,
+                "data": {}
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in _handle_kv_set: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error occurred"
+                    }
+                }).encode())
+            except:
+                pass  # Can't respond, connection may be dead
+
+    async def _handle_kv_get(self, msg):
+        """Handle rosey.db.kv.get requests.
+        
+        NATS Subject: rosey.db.kv.get (request/reply)
+        
+        Request:
+            {"plugin_name": str, "key": str}
+        
+        Response:
+            {"success": true, "data": {"exists": bool, "value": Any}}
+            or
+            {"success": false, "error": {"code": str, "message": str}}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Validate required fields
+            plugin_name = request.get("plugin_name")
+            key = request.get("key")
+            
+            if not plugin_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'plugin_name' is missing"
+                    }
+                }).encode())
+                return
+            
+            if not key:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'key' is missing"
+                    }
+                }).encode())
+                return
+            
+            # Call database method
+            try:
+                result = await self.db.kv_get(plugin_name, key)
+            except Exception as e:
+                self.logger.error(f"Error in kv_get: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Database operation failed"
+                    }
+                }).encode())
+                return
+            
+            # Success response
+            await msg.respond(json.dumps({
+                "success": True,
+                "data": result
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in _handle_kv_get: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error occurred"
+                    }
+                }).encode())
+            except:
+                pass
+
+    async def _handle_kv_delete(self, msg):
+        """Handle rosey.db.kv.delete requests.
+        
+        NATS Subject: rosey.db.kv.delete (request/reply)
+        
+        Request:
+            {"plugin_name": str, "key": str}
+        
+        Response:
+            {"success": true, "data": {"deleted": bool}}
+            or
+            {"success": false, "error": {"code": str, "message": str}}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Validate required fields
+            plugin_name = request.get("plugin_name")
+            key = request.get("key")
+            
+            if not plugin_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'plugin_name' is missing"
+                    }
+                }).encode())
+                return
+            
+            if not key:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'key' is missing"
+                    }
+                }).encode())
+                return
+            
+            # Call database method
+            try:
+                deleted = await self.db.kv_delete(plugin_name, key)
+            except Exception as e:
+                self.logger.error(f"Error in kv_delete: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Database operation failed"
+                    }
+                }).encode())
+                return
+            
+            # Success response
+            await msg.respond(json.dumps({
+                "success": True,
+                "data": {"deleted": deleted}
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in _handle_kv_delete: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error occurred"
+                    }
+                }).encode())
+            except:
+                pass
+
+    async def _handle_kv_list(self, msg):
+        """Handle rosey.db.kv.list requests.
+        
+        NATS Subject: rosey.db.kv.list (request/reply)
+        
+        Request:
+            {
+                "plugin_name": str,
+                "prefix": Optional[str],
+                "limit": Optional[int]
+            }
+        
+        Response:
+            {"success": true, "data": {"keys": [str], "count": int, "truncated": bool}}
+            or
+            {"success": false, "error": {"code": str, "message": str}}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Validate required fields
+            plugin_name = request.get("plugin_name")
+            
+            if not plugin_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'plugin_name' is missing"
+                    }
+                }).encode())
+                return
+            
+            prefix = request.get("prefix", "")
+            limit = request.get("limit", 1000)
+            
+            # Call database method
+            try:
+                result = await self.db.kv_list(plugin_name, prefix, limit)
+            except Exception as e:
+                self.logger.error(f"Error in kv_list: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Database operation failed"
+                    }
+                }).encode())
+                return
+            
+            # Success response
+            await msg.respond(json.dumps({
+                "success": True,
+                "data": result
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in _handle_kv_list: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error occurred"
+                    }
+                }).encode())
+            except:
+                pass
 
 
 async def main():
