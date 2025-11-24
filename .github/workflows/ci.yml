@@ -100,11 +100,38 @@ jobs:
             echo "DATABASE_URL=sqlite+aiosqlite:///:memory:" >> $GITHUB_ENV
           fi
       
+      - name: Start database service
+        run: |
+          # Start database service in background
+          python -m common.database_service --db-path test_bot_data.db --nats-url nats://localhost:4222 --log-level INFO &
+          echo $! > /tmp/db_service.pid
+          # Wait for service to be ready
+          sleep 5
+          echo "Database service started with PID $(cat /tmp/db_service.pid)"
+        env:
+          NATS_URL: nats://localhost:4222
+      
       - name: Run tests
         run: |
           pytest tests/unit tests/integration/test_nats_integration.py --cov=lib --cov=common --cov-report=term-missing --cov-report=xml --ignore=tests/unit/test_database.py --ignore=tests/unit/test_database_service.py --ignore=tests/unit/test_database_lifecycle.py --ignore=tests/integration/test_database_persistence.py
         env:
           NATS_URL: nats://localhost:4222
+      
+      - name: Run plugin tests
+        run: |
+          cd plugins/quote-db
+          pytest tests/ -v --cov=quote_db --cov-report=term-missing
+        env:
+          NATS_URL: nats://localhost:4222
+        continue-on-error: false
+      
+      - name: Stop database service
+        if: always()
+        run: |
+          if [ -f /tmp/db_service.pid ]; then
+            kill $(cat /tmp/db_service.pid) || true
+            echo "Database service stopped"
+          fi
       
       - name: Check coverage
         run: |
