@@ -233,7 +233,7 @@ class SQLiteStorage(StorageAdapter):
             if exists:
                 # Build dynamic UPDATE query based on provided parameters
                 updates = []
-                params = []
+                params: List[Any] = []
 
                 if last_seen is not None:
                     updates.append('last_seen = ?')
