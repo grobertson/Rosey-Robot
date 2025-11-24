@@ -676,11 +676,29 @@ class QuoteDBPlugin:
             return rows[0] if rows else None
             
         except asyncio.TimeoutError:
-            self.logger.error("NATS timeout getting random quote")
+            self.logger.error("NATS timeout getting random quote fallback")
             raise asyncio.TimeoutError("NATS request timed out: random_quote")
         except json.JSONDecodeError as e:
             self.logger.error(f"Invalid JSON response: {e}")
             raise Exception("Invalid JSON response from NATS")
+    
+    # ===== Placeholder Methods =====
+    
+    async def find_by_author(self, author: str) -> List[Dict[str, Any]]:
+        """
+        Find all quotes by a specific author.
+        
+        Note: This method is a placeholder demonstrating the plugin interface.
+        Use search_quotes() for actual author search functionality.
+        
+        Args:
+            author: Author name (exact match)
+            
+        Returns:
+            List of quote dicts
+        """
+        self._ensure_initialized()
+        raise NotImplementedError("Use search_quotes() instead")
     
     async def increment_score(self, quote_id: int, amount: int = 1) -> bool:
         """
@@ -790,6 +808,5 @@ class QuoteDBPlugin:
                 timeout=1.0
             )
             self.logger.debug(f"Updated KV cache: total_count={count}")
-            
         except Exception as e:
             self.logger.warning(f"Failed to update KV cache: {e}")
