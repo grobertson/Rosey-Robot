@@ -154,6 +154,10 @@ class DatabaseService:
                                         cb=self._handle_row_insert),
                 await self.nats.subscribe('rosey.db.row.*.select',
                                         cb=self._handle_row_select),
+                await self.nats.subscribe('rosey.db.row.*.update',
+                                        cb=self._handle_row_update),
+                await self.nats.subscribe('rosey.db.row.*.delete',
+                                        cb=self._handle_row_delete),
             ])
 
             self._running = True
@@ -1335,6 +1339,214 @@ class DatabaseService:
             
         except Exception as e:
             self.logger.error(f"Unexpected error in row_select: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error"
+                    }
+                }).encode())
+            except:
+                pass
+
+    async def _handle_row_update(self, msg):
+        """
+        Handle rosey.db.row.{plugin}.update requests.
+        
+        Request:
+            {
+                "table": str,
+                "id": int,
+                "data": dict
+            }
+        
+        Response:
+            {"success": true, "id": 42, "updated": true}
+            or
+            {"success": true, "exists": false}
+            or
+            {"success": false, "error": {...}}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Extract plugin from subject
+            parts = msg.subject.split('.')
+            plugin_name = parts[3]  # rosey.db.row.{plugin}.update
+            
+            # Validate required fields
+            table_name = request.get('table')
+            row_id = request.get('id')
+            data = request.get('data')
+            
+            if not table_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'table' missing"
+                    }
+                }).encode())
+                return
+            
+            if row_id is None:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'id' missing"
+                    }
+                }).encode())
+                return
+            
+            if data is None:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'data' missing"
+                    }
+                }).encode())
+                return
+            
+            # Update
+            try:
+                result = await self.db.row_update(plugin_name, table_name, row_id, data)
+            except ValueError as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": str(e)
+                    }
+                }).encode())
+                return
+            except Exception as e:
+                self.logger.error(f"Update failed: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "DATABASE_ERROR",
+                        "message": "Update operation failed"
+                    }
+                }).encode())
+                return
+            
+            # Success
+            response = {"success": True, **result}
+            await msg.respond(json.dumps(response).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in row_update: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error"
+                    }
+                }).encode())
+            except:
+                pass
+
+    async def _handle_row_delete(self, msg):
+        """
+        Handle rosey.db.row.{plugin}.delete requests.
+        
+        Request:
+            {
+                "table": str,
+                "id": int
+            }
+        
+        Response:
+            {"success": true, "deleted": true/false}
+            or
+            {"success": false, "error": {...}}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Extract plugin from subject
+            parts = msg.subject.split('.')
+            plugin_name = parts[3]  # rosey.db.row.{plugin}.delete
+            
+            # Validate required fields
+            table_name = request.get('table')
+            row_id = request.get('id')
+            
+            if not table_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'table' missing"
+                    }
+                }).encode())
+                return
+            
+            if row_id is None:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'id' missing"
+                    }
+                }).encode())
+                return
+            
+            # Delete
+            try:
+                result = await self.db.row_delete(plugin_name, table_name, row_id)
+            except ValueError as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": str(e)
+                    }
+                }).encode())
+                return
+            except Exception as e:
+                self.logger.error(f"Delete failed: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "DATABASE_ERROR",
+                        "message": "Delete operation failed"
+                    }
+                }).encode())
+                return
+            
+            # Success
+            response = {"success": True, **result}
+            await msg.respond(json.dumps(response).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in row_delete: {e}", exc_info=True)
             try:
                 await msg.respond(json.dumps({
                     "success": False,

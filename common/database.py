@@ -62,6 +62,9 @@ class BotDatabase:
         db = BotDatabase('postgresql+asyncpg://user:pass@host/db')
         await db.connect()
     """
+    
+    # Fields that cannot be updated (immutable)
+    IMMUTABLE_FIELDS = {"id", "created_at"}
 
     def __init__(self, database_url='sqlite+aiosqlite:///bot_data.db'):
         """
@@ -1537,13 +1540,14 @@ class BotDatabase:
         
         return self._table_cache[full_table_name]
 
-    def _validate_and_coerce_row(self, data: dict, schema: dict) -> dict:
+    def _validate_and_coerce_row(self, data: dict, schema: dict, is_update: bool = False) -> dict:
         """
         Validate row data against schema and coerce types.
         
         Args:
             data: Row data to validate
             schema: Schema definition from SchemaRegistry
+            is_update: If True, skip required field validation (partial updates allowed)
         
         Returns:
             Validated and coerced data dict
@@ -1561,10 +1565,11 @@ class BotDatabase:
         result = {}
         schema_fields = {f['name']: f for f in schema['fields']}
         
-        # Check required fields
-        for field in schema['fields']:
-            if field.get('required', False) and field['name'] not in data:
-                raise ValueError(f"Missing required field: {field['name']}")
+        # Check required fields (skip for updates since they're partial)
+        if not is_update:
+            for field in schema['fields']:
+                if field.get('required', False) and field['name'] not in data:
+                    raise ValueError(f"Missing required field: {field['name']}")
         
         # Validate and coerce each field in data
         for key, value in data.items():
@@ -1776,3 +1781,138 @@ class BotDatabase:
                 return {
                     "exists": False
                 }
+
+    async def row_update(
+        self,
+        plugin_name: str,
+        table_name: str,
+        row_id: int,
+        data: dict
+    ) -> dict:
+        """
+        Update row by primary key ID (partial update).
+        
+        Only specified fields are updated; unspecified fields remain unchanged.
+        Immutable fields (id, created_at) cannot be updated.
+        The updated_at field is automatically set to current timestamp.
+        
+        Args:
+            plugin_name: Plugin identifier (e.g., "quote_db")
+            table_name: Table name without plugin prefix (e.g., "quotes")
+            row_id: Primary key ID
+            data: Fields to update (partial dict)
+        
+        Returns:
+            {"id": 42, "updated": True} if row existed and was updated
+            {"exists": False} if row not found
+        
+        Raises:
+            ValueError: If table not registered, data invalid, or immutable field update attempted
+        
+        Example:
+            # Update just the author field
+            result = await db.row_update("quote_db", "quotes", 1, {"author": "NewAuthor"})
+            # {"id": 1, "updated": True}
+        """
+        # Verify table exists
+        schema = self.schema_registry.get_schema(plugin_name, table_name)
+        if not schema:
+            raise ValueError(
+                f"Table '{table_name}' not registered for plugin '{plugin_name}'"
+            )
+        
+        # Check for empty update
+        if not data:
+            raise ValueError("No data provided for update")
+        
+        # Check for immutable field updates
+        immutable_attempted = self.IMMUTABLE_FIELDS.intersection(data.keys())
+        if immutable_attempted:
+            raise ValueError(
+                f"Cannot update immutable fields: {', '.join(sorted(immutable_attempted))}"
+            )
+        
+        # Validate and coerce update data (partial update, no required field check)
+        validated_data = self._validate_and_coerce_row(data, schema, is_update=True)
+        
+        # Add updated_at timestamp
+        validated_data['updated_at'] = datetime.now()
+        
+        # Get table
+        full_table_name = f"{plugin_name}_{table_name}"
+        table = await self.get_table(full_table_name)
+        
+        # Check if row exists and update
+        async with self._get_session() as session:
+            # Check existence
+            check_stmt = select(table.c.id).where(table.c.id == row_id)
+            result = await session.execute(check_stmt)
+            exists = result.scalar() is not None
+            
+            if not exists:
+                return {"exists": False}
+            
+            # Perform update
+            stmt = (
+                update(table)
+                .where(table.c.id == row_id)
+                .values(**validated_data)
+            )
+            await session.execute(stmt)
+            
+            return {
+                "id": row_id,
+                "updated": True
+            }
+
+    async def row_delete(
+        self,
+        plugin_name: str,
+        table_name: str,
+        row_id: int
+    ) -> dict:
+        """
+        Delete row by primary key ID (idempotent).
+        
+        Args:
+            plugin_name: Plugin identifier (e.g., "quote_db")
+            table_name: Table name without plugin prefix (e.g., "quotes")
+            row_id: Primary key ID
+        
+        Returns:
+            {"deleted": True} if row existed and was deleted
+            {"deleted": False} if row did not exist
+        
+        Raises:
+            ValueError: If table not registered
+        
+        Example:
+            result = await db.row_delete("quote_db", "quotes", 1)
+            # {"deleted": True}
+            
+            # Calling again is safe (idempotent)
+            result = await db.row_delete("quote_db", "quotes", 1)
+            # {"deleted": False}
+        """
+        # Verify table exists
+        schema = self.schema_registry.get_schema(plugin_name, table_name)
+        if not schema:
+            raise ValueError(
+                f"Table '{table_name}' not registered for plugin '{plugin_name}'"
+            )
+        
+        # Get table
+        full_table_name = f"{plugin_name}_{table_name}"
+        table = await self.get_table(full_table_name)
+        
+        # Delete
+        async with self._get_session() as session:
+            stmt = delete(table).where(table.c.id == row_id)
+            result = await session.execute(stmt)
+            
+            # Check if any rows were deleted
+            deleted = result.rowcount > 0
+            
+            return {
+                "deleted": deleted
+            }
