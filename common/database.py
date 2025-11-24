@@ -65,6 +65,9 @@ class BotDatabase:
     
     # Fields that cannot be updated (immutable)
     IMMUTABLE_FIELDS = {"id", "created_at"}
+    
+    # Maximum rows per search operation
+    MAX_SEARCH_LIMIT = 1000
 
     def __init__(self, database_url='sqlite+aiosqlite:///bot_data.db'):
         """
@@ -1915,4 +1918,144 @@ class BotDatabase:
             
             return {
                 "deleted": deleted
+            }
+
+    async def row_search(
+        self,
+        plugin_name: str,
+        table_name: str,
+        filters: Optional[dict] = None,
+        sort: Optional[dict] = None,
+        limit: int = 100,
+        offset: int = 0
+    ) -> dict:
+        """
+        Search rows with filters, sorting, and pagination.
+        
+        Searches a plugin's table using equality filters (AND logic), sorting,
+        and pagination. Returns matching rows with metadata about truncation.
+        
+        Args:
+            plugin_name: Plugin identifier (e.g., "quote_db")
+            table_name: Table name without plugin prefix (e.g., "quotes")
+            filters: Optional field equality filters (AND logic), e.g., {"status": "active"}
+            sort: Optional sorting spec, e.g., {"field": "created_at", "order": "desc"}
+            limit: Maximum rows to return (default 100, max 1000)
+            offset: Pagination offset (default 0)
+        
+        Returns:
+            {
+                "rows": [...],          # Array of row dicts with serialized datetimes
+                "count": int,           # Number of rows in this page
+                "truncated": bool       # True if more rows available beyond this page
+            }
+        
+        Raises:
+            ValueError: If table not registered, invalid filter field, invalid sort field,
+                       or invalid limit (<1)
+        
+        Example:
+            # Search all rows
+            result = await db.row_search("quote_db", "quotes")
+            # {"rows": [...], "count": 5, "truncated": False}
+            
+            # Search with filters
+            result = await db.row_search("quote_db", "quotes", filters={"author": "Alice"})
+            
+            # Search with sorting
+            result = await db.row_search(
+                "quote_db", "quotes",
+                sort={"field": "created_at", "order": "desc"}
+            )
+            
+            # Paginated search
+            page1 = await db.row_search("quote_db", "quotes", limit=10, offset=0)
+            page2 = await db.row_search("quote_db", "quotes", limit=10, offset=10)
+        """
+        # Verify table exists
+        schema = self.schema_registry.get_schema(plugin_name, table_name)
+        if not schema:
+            raise ValueError(
+                f"Table '{table_name}' not registered for plugin '{plugin_name}'"
+            )
+        
+        # Enforce limit bounds
+        if limit < 1:
+            raise ValueError("Limit must be at least 1")
+        if limit > self.MAX_SEARCH_LIMIT:
+            limit = self.MAX_SEARCH_LIMIT
+        
+        # Get table
+        full_table_name = f"{plugin_name}_{table_name}"
+        table = await self.get_table(full_table_name)
+        
+        # Build SELECT statement
+        stmt = select(table)
+        
+        # Build set of valid fields (schema fields + auto fields)
+        schema_fields = {f['name'] for f in schema['fields']}
+        schema_fields.update({"id", "created_at", "updated_at"})
+        
+        # Apply filters (AND logic)
+        if filters:
+            for field, value in filters.items():
+                # Validate field exists
+                if field not in schema_fields:
+                    raise ValueError(
+                        f"Cannot filter on non-existent field: {field}"
+                    )
+                
+                # Apply equality filter
+                stmt = stmt.where(table.c[field] == value)
+        
+        # Apply sorting
+        if sort:
+            sort_field = sort.get('field')
+            sort_order = sort.get('order', 'asc').lower()
+            
+            if not sort_field:
+                raise ValueError("Sort field must be specified")
+            
+            # Validate sort field exists
+            if sort_field not in schema_fields:
+                raise ValueError(
+                    f"Cannot sort on non-existent field: {sort_field}"
+                )
+            
+            # Apply ORDER BY
+            if sort_order == 'desc':
+                stmt = stmt.order_by(table.c[sort_field].desc())
+            else:
+                stmt = stmt.order_by(table.c[sort_field])
+        
+        # Apply pagination with truncation detection
+        # Fetch limit+1 to detect if more rows exist
+        stmt = stmt.limit(limit + 1).offset(offset)
+        
+        # Execute query
+        async with self._get_session() as session:
+            result = await session.execute(stmt)
+            rows = result.fetchall()
+            
+            # Check truncation
+            truncated = len(rows) > limit
+            if truncated:
+                rows = rows[:limit]  # Trim to actual limit
+            
+            # Convert to dicts and serialize datetimes
+            serialized_rows = []
+            for row in rows:
+                row_dict = dict(row._mapping)
+                
+                # Serialize datetime objects to ISO strings
+                for key, value in row_dict.items():
+                    if isinstance(value, datetime):
+                        row_dict[key] = value.isoformat()
+                
+                serialized_rows.append(row_dict)
+            
+            return {
+                "rows": serialized_rows,
+                "count": len(serialized_rows),
+                "truncated": truncated
             }

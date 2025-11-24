@@ -757,3 +757,385 @@ class TestRowDeleteNATS:
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "MISSING_FIELD"
+
+
+# ==================== Search NATS Tests ====================
+
+class TestRowSearchNATS:
+    """Integration tests for row search via NATS."""
+    
+    async def test_search_all_rows_via_nats(self, nats_client, db_service):
+        """Test basic search returning all rows via NATS."""
+        # Register schema
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {
+                    "fields": [{"name": "name", "type": "string", "required": True}]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Insert data
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "items",
+                "data": [
+                    {"name": "Item 1"},
+                    {"name": "Item 2"},
+                    {"name": "Item 3"}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Search all
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({"table": "items"}).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is True
+        assert result['count'] == 3
+        assert result['truncated'] is False
+        assert len(result['rows']) == 3
+    
+    async def test_search_with_filters_via_nats(self, nats_client, db_service):
+        """Test search with filters via NATS."""
+        # Register schema
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {
+                    "fields": [
+                        {"name": "category", "type": "string", "required": True},
+                        {"name": "active", "type": "boolean", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Insert data
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "items",
+                "data": [
+                    {"category": "A", "active": True},
+                    {"category": "A", "active": False},
+                    {"category": "B", "active": True}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Search for active A items
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "items",
+                "filters": {"category": "A", "active": True}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is True
+        assert result['count'] == 1
+        assert result['rows'][0]['category'] == "A"
+        assert result['rows'][0]['active'] is True
+    
+    async def test_search_with_sorting_via_nats(self, nats_client, db_service):
+        """Test search with sorting via NATS."""
+        # Register and insert
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "events",
+                "schema": {
+                    "fields": [{"name": "value", "type": "integer", "required": True}]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "events",
+                "data": [
+                    {"value": 30},
+                    {"value": 10},
+                    {"value": 20}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Search sorted descending
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "events",
+                "sort": {"field": "value", "order": "desc"}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is True
+        values = [row['value'] for row in result['rows']]
+        assert values == [30, 20, 10]
+    
+    async def test_search_with_pagination_via_nats(self, nats_client, db_service):
+        """Test paginated search via NATS."""
+        # Register and insert
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "data",
+                "schema": {
+                    "fields": [{"name": "val", "type": "integer", "required": True}]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "data",
+                "data": [{"val": i} for i in range(10)]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Page 1
+        page1_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "data",
+                "limit": 3,
+                "offset": 0,
+                "sort": {"field": "val", "order": "asc"}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        page1 = json.loads(page1_resp.data.decode())
+        assert page1['success'] is True
+        assert page1['count'] == 3
+        assert page1['truncated'] is True
+        assert [r['val'] for r in page1['rows']] == [0, 1, 2]
+        
+        # Page 2
+        page2_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "data",
+                "limit": 3,
+                "offset": 3,
+                "sort": {"field": "val", "order": "asc"}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        page2 = json.loads(page2_resp.data.decode())
+        assert page2['success'] is True
+        assert page2['count'] == 3
+        assert page2['truncated'] is True
+        assert [r['val'] for r in page2['rows']] == [3, 4, 5]
+    
+    async def test_search_empty_results_via_nats(self, nats_client, db_service):
+        """Test search with no matches via NATS."""
+        # Register and insert
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {
+                    "fields": [{"name": "status", "type": "string", "required": True}]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "items",
+                "data": [{"status": "active"}]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Search for non-existent
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "items",
+                "filters": {"status": "deleted"}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is True
+        assert result['count'] == 0
+        assert result['rows'] == []
+        assert result['truncated'] is False
+    
+    async def test_search_invalid_filter_field_via_nats(self, nats_client, db_service):
+        """Test that invalid filter field returns error via NATS."""
+        # Register
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {
+                    "fields": [{"name": "name", "type": "string", "required": True}]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Search with invalid filter
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "items",
+                "filters": {"invalid_field": "value"}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is False
+        assert result['error']['code'] == "VALIDATION_ERROR"
+        assert "non-existent field" in result['error']['message']
+    
+    async def test_search_invalid_sort_field_via_nats(self, nats_client, db_service):
+        """Test that invalid sort field returns error via NATS."""
+        # Register
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {
+                    "fields": [{"name": "name", "type": "string", "required": True}]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Search with invalid sort
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "items",
+                "sort": {"field": "invalid_field"}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is False
+        assert result['error']['code'] == "VALIDATION_ERROR"
+        assert "non-existent field" in result['error']['message']
+    
+    async def test_search_missing_table_via_nats(self, nats_client, db_service):
+        """Test that missing table returns error via NATS."""
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({}).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is False
+        assert result['error']['code'] == "MISSING_FIELD"
+    
+    async def test_search_unregistered_table_via_nats(self, nats_client, db_service):
+        """Test that searching unregistered table returns error via NATS."""
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({"table": "nonexistent"}).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is False
+        assert result['error']['code'] == "VALIDATION_ERROR"
+        assert "not registered" in result['error']['message']
+    
+    async def test_search_invalid_json_via_nats(self, nats_client, db_service):
+        """Test that invalid JSON returns error via NATS."""
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            b"not json",
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is False
+        assert result['error']['code'] == "INVALID_JSON"
+    
+    async def test_search_combined_filters_sort_pagination_via_nats(self, nats_client, db_service):
+        """Test search with filters, sorting, and pagination combined via NATS."""
+        # Register
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "tasks",
+                "schema": {
+                    "fields": [
+                        {"name": "status", "type": "string", "required": True},
+                        {"name": "priority", "type": "integer", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Insert mixed data
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "tasks",
+                "data": [
+                    {"status": "active", "priority": 1},
+                    {"status": "active", "priority": 3},
+                    {"status": "done", "priority": 2},
+                    {"status": "active", "priority": 2},
+                    {"status": "active", "priority": 4}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Search active tasks, sorted by priority desc, first page
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "tasks",
+                "filters": {"status": "active"},
+                "sort": {"field": "priority", "order": "desc"},
+                "limit": 2,
+                "offset": 0
+            }).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(search_resp.data.decode())
+        assert result['success'] is True
+        assert result['count'] == 2
+        assert result['truncated'] is True
+        priorities = [row['priority'] for row in result['rows']]
+        assert priorities == [4, 3]

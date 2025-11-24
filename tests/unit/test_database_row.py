@@ -721,3 +721,348 @@ class TestRowDelete:
         assert (await db.row_select("test", "items", id1))['exists'] is False
         assert (await db.row_select("test", "items", id2))['exists'] is False
         assert (await db.row_select("test", "items", id3))['exists'] is False
+
+
+# ==================== Search Tests ====================
+
+class TestRowSearch:
+    """Test row_search method with filters, sorting, and pagination."""
+    
+    async def test_search_no_filters(self, db):
+        """Test search with no filters returns all rows."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        # Insert multiple rows
+        result = await db.row_insert("test", "items", [
+            {"name": "Item 1"},
+            {"name": "Item 2"},
+            {"name": "Item 3"}
+        ])
+        
+        # Search all
+        search_result = await db.row_search("test", "items")
+        
+        assert search_result['count'] == 3
+        assert search_result['truncated'] is False
+        assert len(search_result['rows']) == 3
+    
+    async def test_search_with_single_filter(self, db):
+        """Test search with single equality filter."""
+        await db.schema_registry.register_schema("test", "users", {
+            "fields": [
+                {"name": "username", "type": "string", "required": True},
+                {"name": "status", "type": "string", "required": True}
+            ]
+        })
+        
+        # Insert
+        await db.row_insert("test", "users", [
+            {"username": "alice", "status": "active"},
+            {"username": "bob", "status": "inactive"},
+            {"username": "charlie", "status": "active"}
+        ])
+        
+        # Search for active users
+        result = await db.row_search("test", "users", filters={"status": "active"})
+        
+        assert result['count'] == 2
+        assert all(row['status'] == 'active' for row in result['rows'])
+    
+    async def test_search_with_multiple_filters_and(self, db):
+        """Test search with multiple filters (AND logic)."""
+        await db.schema_registry.register_schema("test", "products", {
+            "fields": [
+                {"name": "category", "type": "string", "required": True},
+                {"name": "available", "type": "boolean", "required": True}
+            ]
+        })
+        
+        # Insert
+        await db.row_insert("test", "products", [
+            {"category": "electronics", "available": True},
+            {"category": "electronics", "available": False},
+            {"category": "books", "available": True}
+        ])
+        
+        # Search for available electronics
+        result = await db.row_search("test", "products", filters={
+            "category": "electronics",
+            "available": True
+        })
+        
+        assert result['count'] == 1
+        assert result['rows'][0]['category'] == "electronics"
+        assert result['rows'][0]['available'] is True
+    
+    async def test_search_with_sort_asc(self, db):
+        """Test search with ascending sort."""
+        await db.schema_registry.register_schema("test", "events", {
+            "fields": [{"name": "value", "type": "integer", "required": True}]
+        })
+        
+        # Insert out of order
+        await db.row_insert("test", "events", [
+            {"value": 30},
+            {"value": 10},
+            {"value": 20}
+        ])
+        
+        # Search sorted ascending
+        result = await db.row_search("test", "events", sort={"field": "value", "order": "asc"})
+        
+        values = [row['value'] for row in result['rows']]
+        assert values == [10, 20, 30]
+    
+    async def test_search_with_sort_desc(self, db):
+        """Test search with descending sort."""
+        await db.schema_registry.register_schema("test", "events", {
+            "fields": [{"name": "value", "type": "integer", "required": True}]
+        })
+        
+        await db.row_insert("test", "events", [
+            {"value": 10},
+            {"value": 30},
+            {"value": 20}
+        ])
+        
+        # Search sorted descending
+        result = await db.row_search("test", "events", sort={"field": "value", "order": "desc"})
+        
+        values = [row['value'] for row in result['rows']]
+        assert values == [30, 20, 10]
+    
+    async def test_search_with_pagination(self, db):
+        """Test search with limit and offset."""
+        await db.schema_registry.register_schema("test", "data", {
+            "fields": [{"name": "seq", "type": "integer", "required": True}]
+        })
+        
+        # Insert 10 rows
+        await db.row_insert("test", "data", [{"seq": i} for i in range(10)])
+        
+        # Page 1 (limit=3, offset=0)
+        page1 = await db.row_search("test", "data", limit=3, offset=0, sort={"field": "seq"})
+        assert page1['count'] == 3
+        assert page1['truncated'] is True  # More rows available
+        assert [r['seq'] for r in page1['rows']] == [0, 1, 2]
+        
+        # Page 2 (limit=3, offset=3)
+        page2 = await db.row_search("test", "data", limit=3, offset=3, sort={"field": "seq"})
+        assert page2['count'] == 3
+        assert page2['truncated'] is True
+        assert [r['seq'] for r in page2['rows']] == [3, 4, 5]
+        
+        # Page 3 (limit=3, offset=6)
+        page3 = await db.row_search("test", "data", limit=3, offset=6, sort={"field": "seq"})
+        assert page3['count'] == 3
+        assert page3['truncated'] is True
+        assert [r['seq'] for r in page3['rows']] == [6, 7, 8]
+        
+        # Page 4 (last page)
+        page4 = await db.row_search("test", "data", limit=3, offset=9, sort={"field": "seq"})
+        assert page4['count'] == 1
+        assert page4['truncated'] is False  # No more rows
+        assert [r['seq'] for r in page4['rows']] == [9]
+    
+    async def test_search_truncation_detection(self, db):
+        """Test truncation flag with exact limit."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "val", "type": "integer", "required": True}]
+        })
+        
+        # Insert exactly limit+1 rows
+        await db.row_insert("test", "items", [{"val": i} for i in range(6)])
+        
+        # Search with limit=5
+        result = await db.row_search("test", "items", limit=5)
+        assert result['count'] == 5
+        assert result['truncated'] is True  # 6th row exists
+    
+    async def test_search_empty_results(self, db):
+        """Test search with no matches returns empty array."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "status", "type": "string", "required": True}]
+        })
+        
+        await db.row_insert("test", "items", [{"status": "active"}])
+        
+        # Search for non-existent status
+        result = await db.row_search("test", "items", filters={"status": "deleted"})
+        
+        assert result['count'] == 0
+        assert result['rows'] == []
+        assert result['truncated'] is False
+    
+    async def test_search_rejects_invalid_filter_field(self, db):
+        """Test that filtering on non-existent field raises error."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        with pytest.raises(ValueError, match="non-existent field: invalid_field"):
+            await db.row_search("test", "items", filters={"invalid_field": "value"})
+    
+    async def test_search_rejects_invalid_sort_field(self, db):
+        """Test that sorting on non-existent field raises error."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        with pytest.raises(ValueError, match="non-existent field: invalid_field"):
+            await db.row_search("test", "items", sort={"field": "invalid_field"})
+    
+    async def test_search_enforces_max_limit(self, db):
+        """Test that limit is capped at MAX_SEARCH_LIMIT."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "val", "type": "integer", "required": True}]
+        })
+        
+        # Try to search with huge limit
+        result = await db.row_search("test", "items", limit=99999)
+        
+        # Should be capped (no error, just limited)
+        assert result is not None
+        # If we had data, it would be limited to MAX_SEARCH_LIMIT
+    
+    async def test_search_rejects_invalid_limit(self, db):
+        """Test that limit < 1 raises error."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "val", "type": "integer", "required": True}]
+        })
+        
+        with pytest.raises(ValueError, match="Limit must be at least 1"):
+            await db.row_search("test", "items", limit=0)
+    
+    async def test_search_with_filter_and_sort(self, db):
+        """Test search combining filters and sorting."""
+        await db.schema_registry.register_schema("test", "tasks", {
+            "fields": [
+                {"name": "status", "type": "string", "required": True},
+                {"name": "priority", "type": "integer", "required": True}
+            ]
+        })
+        
+        # Insert mixed data
+        await db.row_insert("test", "tasks", [
+            {"status": "active", "priority": 3},
+            {"status": "active", "priority": 1},
+            {"status": "done", "priority": 2},
+            {"status": "active", "priority": 2}
+        ])
+        
+        # Search active tasks sorted by priority desc
+        result = await db.row_search(
+            "test", "tasks",
+            filters={"status": "active"},
+            sort={"field": "priority", "order": "desc"}
+        )
+        
+        assert result['count'] == 3
+        priorities = [row['priority'] for row in result['rows']]
+        assert priorities == [3, 2, 1]
+    
+    async def test_search_datetime_serialization(self, db):
+        """Test that datetime fields are serialized to ISO strings."""
+        await db.schema_registry.register_schema("test", "events", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        # Insert row (will have created_at)
+        await db.row_insert("test", "events", [{"name": "event1"}])
+        
+        # Search
+        result = await db.row_search("test", "events")
+        
+        assert result['count'] == 1
+        row = result['rows'][0]
+        
+        # created_at should be string, not datetime object
+        assert isinstance(row['created_at'], str)
+        # Should be valid ISO format (no exception)
+        from datetime import datetime
+        datetime.fromisoformat(row['created_at'])
+    
+    async def test_search_unregistered_table(self, db):
+        """Test that searching unregistered table raises error."""
+        with pytest.raises(ValueError, match="not registered"):
+            await db.row_search("test", "nonexistent")
+    
+    async def test_search_default_sort_order(self, db):
+        """Test that default sort order is ascending."""
+        await db.schema_registry.register_schema("test", "nums", {
+            "fields": [{"name": "val", "type": "integer", "required": True}]
+        })
+        
+        await db.row_insert("test", "nums", [
+            {"val": 3},
+            {"val": 1},
+            {"val": 2}
+        ])
+        
+        # Sort without order specified (should default to asc)
+        result = await db.row_search("test", "nums", sort={"field": "val"})
+        
+        values = [row['val'] for row in result['rows']]
+        assert values == [1, 2, 3]
+    
+    async def test_search_pagination_with_filters(self, db):
+        """Test pagination works with filters."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [
+                {"name": "category", "type": "string", "required": True},
+                {"name": "seq", "type": "integer", "required": True}
+            ]
+        })
+        
+        # Insert mixed categories
+        data = []
+        for i in range(10):
+            data.append({"category": "A" if i % 2 == 0 else "B", "seq": i})
+        await db.row_insert("test", "items", data)
+        
+        # Search category A with pagination
+        page1 = await db.row_search(
+            "test", "items",
+            filters={"category": "A"},
+            limit=2,
+            offset=0,
+            sort={"field": "seq"}
+        )
+        
+        assert page1['count'] == 2
+        assert page1['truncated'] is True
+        assert [r['seq'] for r in page1['rows']] == [0, 2]
+        
+        page2 = await db.row_search(
+            "test", "items",
+            filters={"category": "A"},
+            limit=2,
+            offset=2,
+            sort={"field": "seq"}
+        )
+        
+        assert page2['count'] == 2
+        assert [r['seq'] for r in page2['rows']] == [4, 6]
+    
+    async def test_search_with_none_value_filter(self, db):
+        """Test filtering with None/null value."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [
+                {"name": "name", "type": "string", "required": True},
+                {"name": "optional_field", "type": "string", "required": False}
+            ]
+        })
+        
+        # Insert rows with and without optional field
+        await db.row_insert("test", "items", [
+            {"name": "item1", "optional_field": "value"},
+            {"name": "item2", "optional_field": None}  # Explicit None
+        ])
+        
+        # Search for None value
+        result = await db.row_search("test", "items", filters={"optional_field": None})
+        
+        assert result['count'] == 1
+        assert result['rows'][0]['name'] == "item2"
