@@ -17,8 +17,8 @@ try:
     WATCHDOG_AVAILABLE = True
 except ImportError:
     WATCHDOG_AVAILABLE = False
-    Observer = None
-    FileSystemEventHandler = object
+    Observer = None  # type: ignore[assignment,misc]
+    FileSystemEventHandler = object  # type: ignore[assignment,misc]
 
 from .manager import PluginManager
 
@@ -242,10 +242,10 @@ class HotReloadWatcher:
         self.logger = logger or logging.getLogger("plugin.hot_reload")
 
         # Watchdog observer
-        self._observer: Optional[Observer] = None
+        self._observer: Optional["Observer"] = None  # type: ignore[name-defined]
 
         # Reload handler
-        self._handler: Optional[ReloadHandler] = None
+        self._handler: Optional["ReloadHandler"] = None  # type: ignore[name-defined]
 
         # State
         self._enabled = False

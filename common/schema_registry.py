@@ -276,15 +276,15 @@ class SchemaRegistry:
             nullable = not field.get('required', False)
 
             columns.append(
-                Column(field['name'], col_type, nullable=nullable)
+                Column(field['name'], col_type, nullable=nullable)  # type: ignore[arg-type]
             )
 
         # Add timestamps
         columns.append(
-            Column('created_at', DateTime(timezone=True), nullable=False, server_default='CURRENT_TIMESTAMP')
+            Column('created_at', DateTime(timezone=True), nullable=False, server_default='CURRENT_TIMESTAMP')  # type: ignore[arg-type]
         )
         columns.append(
-            Column('updated_at', DateTime(timezone=True), nullable=False, server_default='CURRENT_TIMESTAMP')
+            Column('updated_at', DateTime(timezone=True), nullable=False, server_default='CURRENT_TIMESTAMP')  # type: ignore[arg-type]
         )
 
         # Create table

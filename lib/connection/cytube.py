@@ -262,7 +262,7 @@ class CyTubeConnection(ConnectionAdapter):
         except (KeyError, ValueError):
             self.logger.warning(f"Handler not found for {event}")
 
-    async def recv_events(self) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:
+    async def recv_events(self) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:  # type: ignore[override]
         """
         Async iterator yielding normalized events.
 
@@ -541,7 +541,7 @@ class CyTubeConnection(ConnectionAdapter):
         # Handlers must use user['username'] instead of treating user as string
         elif event == 'userlist':
             return ('user_list', {
-                'users': [self._normalize_cytube_user(u) for u in data],
+                'users': [self._normalize_cytube_user(u) for u in data],  # type: ignore[arg-type]
                 'count': len(data),
                 'platform_data': data
             })

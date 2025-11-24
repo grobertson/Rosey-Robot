@@ -759,7 +759,7 @@ class OperatorParser:
 
             # Generate aggregate expression
             agg_func = self.AGGREGATION_FUNCS[func_name]
-            agg_exprs.append(agg_func(column).label(result_name))
+            agg_exprs.append(agg_func(column).label(result_name))  # type: ignore[operator]
 
         return agg_exprs
 

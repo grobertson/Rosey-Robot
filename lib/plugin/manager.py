@@ -674,7 +674,7 @@ class PluginManager:
         """
         # Stop hot reload first
         if self._hot_reload:
-            self._hot_reload.stop()
+            self._hot_reload.stop()  # type: ignore[attr-defined]
             self._hot_reload = None
 
         for name in list(self._plugins.keys()):
