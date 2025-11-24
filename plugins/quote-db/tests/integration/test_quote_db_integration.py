@@ -37,7 +37,12 @@ async def test_full_workflow():
     try:
         # 1. Initialize plugin
         plugin = QuoteDBPlugin(nc)
-        await plugin.initialize()
+        try:
+            await plugin.initialize()
+        except RuntimeError as e:
+            if "no responders" in str(e) or "migration status" in str(e):
+                pytest.skip(f"Database service not available: {e}")
+            raise
         print("✓ Plugin initialized")
         
         # 2. Add quote
@@ -104,7 +109,12 @@ async def test_retry_logic():
     
     try:
         plugin = QuoteDBPlugin(nc)
-        await plugin.initialize()
+        try:
+            await plugin.initialize()
+        except RuntimeError as e:
+            if "no responders" in str(e) or "migration status" in str(e):
+                pytest.skip(f"Database service not available: {e}")
+            raise
         
         # Test successful add with retry wrapper
         quote_id = await plugin.add_quote_safe(
@@ -138,7 +148,12 @@ async def test_random_quote():
     
     try:
         plugin = QuoteDBPlugin(nc)
-        await plugin.initialize()
+        try:
+            await plugin.initialize()
+        except RuntimeError as e:
+            if "no responders" in str(e) or "migration status" in str(e):
+                pytest.skip(f"Database service not available: {e}")
+            raise
         
         # Get random quote
         quote = await plugin.random_quote()
