@@ -100,7 +100,7 @@ class MigrationExecutor:
         Apply migration UP section to database.
 
         Executes migration SQL within session transaction. If dry_run=True,
-        raises DryRunRollback after execution to trigger automatic rollback.
+        raises DryRunRollbackError after execution to trigger automatic rollback.
 
         Records result in plugin_schema_migrations table (except for dry-run).
 
@@ -115,7 +115,7 @@ class MigrationExecutor:
             MigrationResult with success status and execution time
 
         Raises:
-            DryRunRollback: If dry_run=True (triggers transaction rollback)
+            DryRunRollbackError: If dry_run=True (triggers transaction rollback)
             Exception: On SQL execution failure
 
         Example:
@@ -153,7 +153,7 @@ class MigrationExecutor:
                     execution_time_ms
                 )
                 # Raise exception to trigger rollback
-                raise DryRunRollback('Dry-run mode: rolling back transaction')
+                raise DryRunRollbackError('Dry-run mode: rolling back transaction')
 
             # Record successful migration
             await self._record_migration(
@@ -181,7 +181,7 @@ class MigrationExecutor:
                 error_message=None
             )
 
-        except DryRunRollback:
+        except DryRunRollbackError:
             # Expected in dry-run mode
             execution_time_ms = int((time.time() - start_time) * 1000)
             return MigrationResult(
@@ -240,7 +240,7 @@ class MigrationExecutor:
         Rollback migration DOWN section from database.
 
         Executes migration DOWN SQL within session transaction. If dry_run=True,
-        raises DryRunRollback after execution to trigger automatic rollback.
+        raises DryRunRollbackError after execution to trigger automatic rollback.
 
         Records result in plugin_schema_migrations table (except for dry-run).
 
@@ -255,7 +255,7 @@ class MigrationExecutor:
             MigrationResult with success status and execution time
 
         Raises:
-            DryRunRollback: If dry_run=True (triggers transaction rollback)
+            DryRunRollbackError: If dry_run=True (triggers transaction rollback)
             Exception: On SQL execution failure
 
         Example:
@@ -293,7 +293,7 @@ class MigrationExecutor:
                     execution_time_ms
                 )
                 # Raise exception to trigger rollback
-                raise DryRunRollback('Dry-run mode: rolling back transaction')
+                raise DryRunRollbackError('Dry-run mode: rolling back transaction')
 
             # Record rollback
             await self._record_migration(
@@ -321,7 +321,7 @@ class MigrationExecutor:
                 error_message=None
             )
 
-        except DryRunRollback:
+        except DryRunRollbackError:
             # Expected in dry-run mode
             execution_time_ms = int((time.time() - start_time) * 1000)
             return MigrationResult(

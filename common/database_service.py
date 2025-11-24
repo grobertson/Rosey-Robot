@@ -30,7 +30,7 @@ except ImportError:
 
 from common.database import BotDatabase
 from common.migrations import (
-    DryRunRollback,
+    DryRunRollbackError,
     MigrationExecutor,
     MigrationManager,
     MigrationValidator,
@@ -1925,7 +1925,7 @@ class DatabaseService:
                             if not dry_run:
                                 current_version = result.version
 
-                        except DryRunRollback:
+                        except DryRunRollbackError:
                             # Expected for dry-run mode
                             pass
 
@@ -2094,7 +2094,7 @@ class DatabaseService:
                             if not dry_run:
                                 current_version = migration.version - 1
 
-                        except DryRunRollback:
+                        except DryRunRollbackError:
                             # Expected for dry-run mode
                             pass
 

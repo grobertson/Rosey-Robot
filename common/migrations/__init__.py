@@ -7,7 +7,7 @@ This package provides:
 - MigrationManager: Discovery, parsing, and tracking of migrations
 - MigrationExecutor: Execution of migrations with transaction safety
 - MigrationResult: Data model for execution results
-- DryRunRollback: Exception for dry-run mode
+- DryRunRollbackError: Exception for dry-run mode
 - MigrationValidator: Validation for safety and compatibility
 - ValidationWarning: Data model for validation warnings
 - WarningLevel: Severity levels for warnings (INFO, WARNING, ERROR)
@@ -15,7 +15,7 @@ This package provides:
 
 from .migration import AppliedMigration, Migration
 from .migration_executor import (
-    DryRunRollback,
+    DryRunRollbackError,
     MigrationExecutor,
     MigrationResult,
 )
@@ -32,7 +32,7 @@ __all__ = [
     'MigrationManager',
     'MigrationExecutor',
     'MigrationResult',
-    'DryRunRollback',
+    'DryRunRollbackError',
     'MigrationValidator',
     'ValidationWarning',
     'WarningLevel',
