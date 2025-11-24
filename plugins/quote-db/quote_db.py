@@ -675,28 +675,99 @@ class QuoteDBPlugin:
             return rows[0] if rows else None
             
         except asyncio.TimeoutError:
-            self.logger.error("NATS timeout getting random quote")
+            self.logger.error("NATS timeout getting random quote fallback")
             raise asyncio.TimeoutError("NATS request timed out: random_quote")
         except json.JSONDecodeError as e:
             self.logger.error(f"Invalid JSON response: {e}")
             raise Exception("Invalid JSON response from NATS")
     
-    async def increment_score(self, quote_id: int, amount: int = 1) -> bool:
+    # ===== Placeholder Methods =====
+    
+    async def find_by_author(self, author: str) -> List[Dict[str, Any]]:
         """
-        Atomically increment a quote's score.
+        Find all quotes by a specific author.
         
-        Note: This method is a placeholder. Use upvote_quote() or downvote_quote()
-        for actual score manipulation.
+        This is a convenience wrapper around search_quotes() that performs
+        an author name search.
         
         Args:
-            quote_id: Quote ID
-            amount: Amount to increment (can be negative)
+            author: Author name to search for
             
         Returns:
-            True if successful, False if quote not found
+            List of quote dicts matching the author
+            
+        Raises:
+            RuntimeError: If plugin not initialized
+            asyncio.TimeoutError: If NATS request times out
+        
+        Example:
+            >>> quotes = await plugin.find_by_author("Einstein")
+            >>> print(f"Found {len(quotes)} quotes by Einstein")
         """
         self._ensure_initialized()
-        raise NotImplementedError("Use upvote_quote() or downvote_quote() instead")
+        
+        # Use search_quotes() which handles author searches
+        return await self.search_quotes(author, limit=100)
+    
+    async def increment_score(self, quote_id: int, amount: int = 1) -> int:
+        """
+        Atomically increment a quote's score by any amount.
+        
+        This is a general-purpose score manipulation method. For simple
+        upvote/downvote operations, consider using upvote_quote() or 
+        downvote_quote() instead.
+        
+        Args:
+            quote_id: Quote ID to modify
+            amount: Amount to increment (can be negative for decrement)
+            
+        Returns:
+            The updated score after increment
+            
+        Raises:
+            ValueError: If quote not found
+            RuntimeError: If plugin not initialized
+            asyncio.TimeoutError: If NATS request times out
+        
+        Example:
+            >>> new_score = await plugin.increment_score(42, 5)
+            >>> print(f"Score increased by 5, now: {new_score}")
+        """
+        self._ensure_initialized()
+        
+        # Atomic increment via $inc
+        payload = {
+            "table": "quotes",
+            "filters": {"id": {"$eq": quote_id}},
+            "operations": {"score": {"$inc": amount}}
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.update",
+                json.dumps(payload).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            
+            if result.get("updated", 0) == 0:
+                raise ValueError(f"Quote {quote_id} not found")
+            
+            # Retrieve updated score
+            quote = await self.get_quote(quote_id)
+            score = quote["score"]
+            
+            self.logger.info(
+                f"Incremented quote {quote_id} by {amount}, new score: {score}"
+            )
+            return score
+            
+        except asyncio.TimeoutError:
+            self.logger.error(f"NATS timeout incrementing score for quote {quote_id}")
+            raise asyncio.TimeoutError("NATS request timed out: increment_score")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
     
     # ===== KV Caching Methods =====
     # Implemented in Sortie 3
@@ -789,6 +860,5 @@ class QuoteDBPlugin:
                 timeout=1.0
             )
             self.logger.debug(f"Updated KV cache: total_count={count}")
-            
         except Exception as e:
             self.logger.warning(f"Failed to update KV cache: {e}")
