@@ -277,6 +277,379 @@ DATABASE_URL=postgresql+asyncpg://rosey:password@localhost/rosey_production
 
 See [DATABASE_SETUP.md](DATABASE_SETUP.md) for complete PostgreSQL setup guide and [MIGRATIONS.md](MIGRATIONS.md) for Alembic migration workflow.
 
+### Schema Migrations
+
+**Purpose**: Plugin-specific database schema version control and management
+
+**Added**: Sprint 15 - Schema Migrations
+
+#### Overview
+
+Rosey now supports per-plugin schema migrations, enabling plugins to:
+- Create and modify their own database tables
+- Version-control schema changes with sequential migration files
+- Apply migrations via NATS commands (no manual SQL execution)
+- Roll back migrations safely if issues occur
+- Validate SQL before execution (prevent destructive operations)
+
+**Why Plugin Migrations?**
+- **Independence**: Each plugin manages its own schema
+- **Safety**: Validation prevents accidental data loss
+- **Versioning**: Track schema changes over time
+- **Automation**: No manual database access needed
+- **Rollback**: Undo schema changes when needed
+- **Multi-Database**: Works with SQLite and PostgreSQL
+
+#### Components
+
+**Migration Manager** (`common/migrations/migration_manager.py`):
+- Discovers migration files in plugin directories
+- Tracks applied migrations in database
+- Provides status information (pending, applied, failed)
+- Coordinates with executor and validator
+
+**Migration Executor** (`common/migrations/migration_executor.py`):
+- Executes UP and DOWN SQL statements
+- Runs migrations in transactions (atomic)
+- Handles dry-run mode (validation without execution)
+- Computes and stores checksums for tamper detection
+- Records migration history with timestamps and user
+
+**Migration Validator** (`common/migrations/migration_validator.py`):
+- Validates SQL syntax before execution
+- Detects SQLite limitations (DROP COLUMN, ALTER COLUMN, ADD CONSTRAINT)
+- Checks for destructive operations (DROP TABLE, DELETE)
+- Provides validation reports with INFO/WARNING/ERROR levels
+- Prevents execution if ERROR-level issues found
+
+**Database Service Handlers** (`common/database_service.py`):
+- NATS request handlers for migration operations
+- Subjects:
+  - `rosey.db.migrate.<plugin>.apply` - Apply migrations (all or to version)
+  - `rosey.db.migrate.<plugin>.rollback` - Rollback migrations (single or to version)
+  - `rosey.db.migrate.<plugin>.status` - Get migration status
+- Integration with Migration Manager, Executor, and Validator
+
+#### Data Flow
+
+```text
+Plugin Developer
+  ↓ (creates migration file)
+plugins/<plugin>/migrations/001_create_table.sql
+  ↓
+NATS Request: rosey.db.migrate.<plugin>.apply
+  ↓
+DatabaseService Handler
+  ↓
+Migration Manager (discover migrations)
+  ↓
+Migration Validator (validate SQL)
+  ↓ (if valid)
+Migration Executor (execute in transaction)
+  ↓
+Database (SQLite or PostgreSQL)
+  ↓
+NATS Response: {success: true, migrations_applied: 3}
+```
+
+#### Migration File Format
+
+**Location**: `plugins/<plugin-name>/migrations/NNN_description.sql`
+
+**Naming Convention**: `{version:03d}_{description}.sql`
+- `001_create_quotes_table.sql`
+- `002_add_category_column.sql`
+- `010_drop_deprecated_table.sql`
+
+**Structure**:
+
+```sql
+-- UP
+-- SQL statements to apply the migration
+CREATE TABLE IF NOT EXISTS quotes (
+    id INTEGER PRIMARY KEY,
+    text TEXT NOT NULL,
+    author TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_quotes_author ON quotes(author);
+
+-- DOWN
+-- SQL statements to reverse the migration
+DROP INDEX IF EXISTS idx_quotes_author;
+DROP TABLE IF EXISTS quotes;
+```
+
+**Rules**:
+- File must contain `-- UP` and `-- DOWN` sections
+- UP SQL executed when applying migration
+- DOWN SQL executed when rolling back
+- Each section can contain multiple SQL statements
+- Empty lines and comments allowed
+- Use `IF NOT EXISTS` / `IF EXISTS` for idempotency
+
+#### Migration States
+
+Migrations tracked in `plugin_schema_migrations` table:
+
+| State | Description |
+|-------|-------------|
+| `pending` | Migration file exists, not yet applied |
+| `applied` | Migration successfully applied to database |
+| `rolled_back` | Migration was applied then rolled back |
+| `failed` | Migration execution failed (transaction rolled back) |
+
+**Database Schema**:
+
+```sql
+CREATE TABLE plugin_schema_migrations (
+    id INTEGER PRIMARY KEY,
+    plugin_name TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    description TEXT NOT NULL,
+    checksum TEXT NOT NULL,  -- SHA-256 of file contents
+    applied_at TIMESTAMP,
+    applied_by TEXT,
+    rolled_back_at TIMESTAMP,
+    rolled_back_by TEXT,
+    status TEXT NOT NULL,  -- 'applied', 'rolled_back', 'failed'
+    UNIQUE (plugin_name, version)
+);
+```
+
+#### Applying Migrations
+
+**Via NATS** (recommended):
+
+```python
+import nats
+import json
+
+nc = await nats.connect("nats://localhost:4222")
+
+# Apply all pending migrations
+response = await nc.request(
+    "rosey.db.migrate.quote-db.apply",
+    json.dumps({}).encode(),
+    timeout=30.0
+)
+
+result = json.loads(response.data)
+# {
+#   "success": true,
+#   "migrations_applied": 3,
+#   "final_version": 3,
+#   "warnings": ["Migration 002 drops column (data loss)"]
+# }
+```
+
+**Options**:
+- `{"to_version": 2}` - Apply up to version 2 only
+- `{"dry_run": true}` - Validate without executing
+- `{}` - Apply all pending migrations
+
+#### Rolling Back Migrations
+
+**Via NATS**:
+
+```python
+# Rollback single migration (latest)
+response = await nc.request(
+    "rosey.db.migrate.quote-db.rollback",
+    json.dumps({"count": 1}).encode(),
+    timeout=30.0
+)
+
+# Rollback to specific version
+response = await nc.request(
+    "rosey.db.migrate.quote-db.rollback",
+    json.dumps({"to_version": 1}).encode(),
+    timeout=30.0
+)
+
+# Dry-run rollback
+response = await nc.request(
+    "rosey.db.migrate.quote-db.rollback",
+    json.dumps({"count": 1, "dry_run": true}).encode(),
+    timeout=30.0
+)
+```
+
+**Rollback Safety**:
+- Rollbacks execute in reverse order (newest first)
+- Each rollback runs in transaction (atomic)
+- Dry-run validates before executing
+- Destructive operations warned in validation
+
+#### Checking Migration Status
+
+```python
+response = await nc.request(
+    "rosey.db.migrate.quote-db.status",
+    json.dumps({}).encode(),
+    timeout=5.0
+)
+
+result = json.loads(response.data)
+# {
+#   "success": true,
+#   "current_version": 3,
+#   "available_version": 5,
+#   "pending_migrations": [
+#     {"version": 4, "description": "add indexes"},
+#     {"version": 5, "description": "add foreign keys"}
+#   ],
+#   "applied_migrations": [
+#     {"version": 1, "applied_at": "2025-11-24T10:00:00Z", ...},
+#     {"version": 2, "applied_at": "2025-11-24T10:01:00Z", ...},
+#     {"version": 3, "applied_at": "2025-11-24T10:02:00Z", ...}
+#   ]
+# }
+```
+
+#### Validation System
+
+**Automatic Validation**:
+- All migrations validated before execution
+- Validation runs even in non-dry-run mode
+- Execution blocked if ERROR-level issues found
+
+**Validation Levels**:
+- **INFO**: Informational notes (e.g., "CREATE TABLE uses IF NOT EXISTS")
+- **WARNING**: Potential issues (e.g., "DROP TABLE will lose data")
+- **ERROR**: Blocking issues (e.g., "SQLite does not support DROP COLUMN")
+
+**Common Validations**:
+
+| Check | Level | Example |
+|-------|-------|---------|
+| SQLite DROP COLUMN | ERROR | `ALTER TABLE DROP COLUMN` not supported |
+| SQLite ALTER COLUMN | ERROR | `ALTER TABLE ALTER COLUMN` not supported |
+| SQLite ADD CONSTRAINT | ERROR | `ALTER TABLE ADD CONSTRAINT` not supported |
+| DROP TABLE | WARNING | Data will be permanently deleted |
+| DELETE without WHERE | WARNING | Deletes all rows |
+| Syntax errors | ERROR | Unmatched parentheses, unknown keywords |
+
+**Workaround for SQLite Limitations**:
+
+Use table recreation pattern (see [Migration Best Practices](guides/MIGRATION_BEST_PRACTICES.md)):
+
+```sql
+-- UP (drop column workaround)
+CREATE TABLE table_new (
+    id INTEGER PRIMARY KEY,
+    kept_col TEXT
+    -- Omit dropped_col
+);
+
+INSERT INTO table_new SELECT id, kept_col FROM table;
+DROP TABLE table;
+ALTER TABLE table_new RENAME TO table;
+```
+
+#### Security Features
+
+**Checksum Verification**:
+- SHA-256 checksum computed for each migration file
+- Stored in database when migration applied
+- Verified on every status check
+- Detects tampering or accidental modification
+- Blocks execution if checksum mismatch
+
+**Transaction Safety**:
+- All migrations execute in transactions
+- If any statement fails, entire migration rolls back
+- Database left in consistent state
+- No partial migrations
+
+**User Tracking**:
+- Records who applied/rolled back each migration
+- `applied_by` and `rolled_back_by` fields
+- Audit trail for schema changes
+
+**Dry-Run Mode**:
+- Validates SQL without executing
+- Tests migrations safely before production
+- Returns validation report
+- No database changes
+
+#### Error Handling
+
+**Common Errors**:
+
+| Error Code | Cause | Solution |
+|------------|-------|----------|
+| `LOCK_TIMEOUT` | Another migration in progress | Wait and retry |
+| `VALIDATION_FAILED` | SQL validation errors | Fix SQL syntax or workaround |
+| `MIGRATION_FAILED` | SQL execution error | Check logs, fix SQL, retry |
+| `CHECKSUM_MISMATCH` | File modified after apply | Never modify applied migrations |
+
+**Recovery**:
+- Failed migrations automatically roll back transaction
+- Database remains in consistent state
+- Fix migration file, re-apply
+- If data corrupted, restore from backup
+
+#### Integration with Plugins
+
+**Plugin Directory Structure**:
+
+```text
+plugins/quote-db/
+├── __init__.py
+├── plugin.py
+└── migrations/
+    ├── 001_create_quotes_table.sql
+    ├── 002_add_category_column.sql
+    └── 003_add_indexes.sql
+```
+
+**Plugin Initialization**:
+
+```python
+# In plugin startup
+async def initialize_schema():
+    """Apply any pending migrations."""
+    nc = await nats.connect("nats://localhost:4222")
+    
+    # Check status
+    response = await nc.request(
+        "rosey.db.migrate.quote-db.status",
+        json.dumps({}).encode()
+    )
+    status = json.loads(response.data)
+    
+    # Apply if pending
+    if status['pending_migrations']:
+        response = await nc.request(
+            "rosey.db.migrate.quote-db.apply",
+            json.dumps({}).encode()
+        )
+        result = json.loads(response.data)
+        if not result['success']:
+            raise RuntimeError(f"Migration failed: {result['error']}")
+```
+
+#### Best Practices
+
+1. **Never modify applied migrations** - Create new migration instead
+2. **Write idempotent SQL** - Use `IF NOT EXISTS`, `IF EXISTS`
+3. **Test on staging first** - Always test migrations before production
+4. **Backup before destructive operations** - DROP TABLE, DELETE, etc.
+5. **Keep migrations small** - One logical change per file
+6. **Write reversible DOWN SQL** - Enable safe rollback
+7. **Handle SQLite limitations** - Use table recreation pattern
+8. **Use dry-run mode** - Validate before executing
+9. **Document intent** - Explain why changes are being made
+10. **Version incrementally** - Don't skip version numbers
+
+#### Documentation
+
+- **[Plugin Migration Guide](guides/PLUGIN_MIGRATIONS.md)** - Complete guide for plugin developers
+- **[Migration Best Practices](guides/MIGRATION_BEST_PRACTICES.md)** - Detailed best practices and patterns
+- **[Migration Examples](../examples/migrations/)** - 10 example migration files covering common patterns
+- **[NATS Messages](NATS_MESSAGES.md)** - Message format reference for migration handlers
+
 ## Event Flow
 
 ### Message Flow Example
