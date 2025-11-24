@@ -15,7 +15,6 @@ import time
 import asyncio
 import random
 from typing import Optional, List, Dict, Any
-from datetime import datetime
 
 try:
     from nats.aio.client import Client as NATS
@@ -192,8 +191,8 @@ class QuoteDBPlugin:
     # ===== CRUD Operations =====
     # Implemented in Sortie 2
     
-    async def add_quote(self, text: str, author: Optional[str] = None, 
-                       added_by: str = "unknown") -> int:
+    async def add_quote(self, text: str, author: Optional[str] = None,
+                        added_by: str = "unknown") -> int:
         """
         Add a new quote to the database.
         
@@ -244,7 +243,7 @@ class QuoteDBPlugin:
             
         except asyncio.TimeoutError:
             self.logger.error(f"NATS timeout adding quote by {author}")
-            raise asyncio.TimeoutError(f"NATS request timed out: add_quote")
+            raise asyncio.TimeoutError("NATS request timed out: add_quote")
         except json.JSONDecodeError as e:
             self.logger.error(f"Invalid JSON response: {e}")
             raise Exception("Invalid JSON response from NATS")
@@ -292,7 +291,7 @@ class QuoteDBPlugin:
                 
         except asyncio.TimeoutError:
             self.logger.error(f"NATS timeout getting quote {quote_id}")
-            raise asyncio.TimeoutError(f"NATS request timed out: get_quote")
+            raise asyncio.TimeoutError("NATS request timed out: get_quote")
         except json.JSONDecodeError as e:
             self.logger.error(f"Invalid JSON response: {e}")
             raise Exception("Invalid JSON response from NATS")
@@ -338,7 +337,7 @@ class QuoteDBPlugin:
             
         except asyncio.TimeoutError:
             self.logger.error(f"NATS timeout deleting quote {quote_id}")
-            raise asyncio.TimeoutError(f"NATS request timed out: delete_quote")
+            raise asyncio.TimeoutError("NATS request timed out: delete_quote")
         except json.JSONDecodeError as e:
             self.logger.error(f"Invalid JSON response: {e}")
             raise Exception("Invalid JSON response from NATS")
