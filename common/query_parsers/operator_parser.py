@@ -11,6 +11,8 @@ Supports:
 - Existence operators: $exists, $null (Sprint 14 Sortie 2)
 - Update operators: $set, $inc, $dec, $mul, $max, $min (Sprint 14 Sortie 3)
 - Compound logic: $and, $or, $not (Sprint 14 Sortie 3)
+- Aggregation functions: $count, $sum, $avg, $min, $max (Sprint 14 Sortie 4)
+- Multi-field sorting with priority order (Sprint 14 Sortie 4)
 - Type validation based on table schema
 - Clear error messages for invalid operations
 
@@ -53,7 +55,7 @@ Example:
     >>> expressions = parser.parse_update_operations(updates, table)
 """
 
-from typing import Any, Dict, List, Callable
+from typing import Any, Dict, List, Callable, Union
 from sqlalchemy import Column, and_, or_, not_, func
 
 
@@ -127,6 +129,21 @@ class OperatorParser:
     
     # Compound logical operators (Sortie 3)
     LOGICAL_OPS = {'$and', '$or', '$not'}
+    
+    # Aggregation functions (Sortie 4)
+    AGGREGATION_FUNCS = {
+        '$count': func.count,
+        '$sum': func.sum,
+        '$avg': func.avg,
+        '$min': func.min,
+        '$max': func.max,
+    }
+    
+    # Functions requiring numeric types
+    NUMERIC_AGGREGATIONS = {'$sum', '$avg'}
+    
+    # Functions supporting comparable types (numeric, datetime, text)
+    COMPARABLE_AGGREGATIONS = {'$min', '$max'}
     
     # Operators that require numeric or datetime types
     RANGE_OPS = {'$gt', '$gte', '$lt', '$lte'}
@@ -626,3 +643,217 @@ class OperatorParser:
             updates[field_name] = self.UPDATE_OPS[operator](column, value)
         
         return updates
+    
+    def parse_aggregations(
+        self, 
+        aggregates: Dict[str, Dict[str, str]], 
+        table
+    ) -> List:
+        """
+        Parse aggregation specifications into SQLAlchemy aggregate expressions.
+        
+        Supports COUNT, SUM, AVG, MIN, MAX with custom result names.
+        All aggregations include type validation (Sortie 4).
+        
+        Args:
+            aggregates: Dict of {result_name: {function: field}}
+                Example: {
+                    'total_count': {'$count': '*'},
+                    'total_score': {'$sum': 'score'},
+                    'avg_score': {'$avg': 'score'},
+                    'max_score': {'$max': 'score'}
+                }
+            table: SQLAlchemy Table object
+        
+        Returns:
+            List of SQLAlchemy aggregate expressions with labels
+            Example: [
+                func.count().label('total_count'),
+                func.sum(Column('score')).label('total_score'),
+                func.avg(Column('score')).label('avg_score'),
+                func.max(Column('score')).label('max_score')
+            ]
+        
+        Raises:
+            ValueError: If function unknown, field invalid, or spec malformed
+            TypeError: If function incompatible with field type
+        
+        Example:
+            >>> parser = OperatorParser(schema)
+            >>> aggs = {
+            ...     'total': {'$count': '*'},
+            ...     'avg_score': {'$avg': 'score'}
+            ... }
+            >>> agg_exprs = parser.parse_aggregations(aggs, users_table)
+            >>> stmt = select(*agg_exprs).where(...)
+        """
+        agg_exprs = []
+        
+        for result_name, agg_spec in aggregates.items():
+            # Validate result name
+            if not result_name or not isinstance(result_name, str):
+                raise ValueError("Aggregation result name must be a non-empty string")
+            
+            # Validate spec format
+            if not isinstance(agg_spec, dict):
+                raise TypeError(
+                    f"Aggregation spec must be dict {{function: field}}, "
+                    f"got {type(agg_spec).__name__} for '{result_name}'"
+                )
+            
+            if len(agg_spec) != 1:
+                raise ValueError(
+                    f"Aggregation spec must have exactly one function, "
+                    f"got {len(agg_spec)} for '{result_name}'"
+                )
+            
+            func_name, field = next(iter(agg_spec.items()))
+            
+            # Validate function exists
+            if func_name not in self.AGGREGATION_FUNCS:
+                raise ValueError(
+                    f"Unknown aggregation function: {func_name}. "
+                    f"Supported: {', '.join(sorted(self.AGGREGATION_FUNCS.keys()))}"
+                )
+            
+            # Handle COUNT special case (can be COUNT(*) or COUNT(field))
+            if func_name == '$count':
+                if field == '*':
+                    agg_exprs.append(func.count().label(result_name))
+                else:
+                    if field not in self.fields:
+                        raise ValueError(
+                            f"Field '{field}' not in schema. "
+                            f"Available fields: {', '.join(sorted(self.fields.keys()))}"
+                        )
+                    agg_exprs.append(func.count(table.c[field]).label(result_name))
+                continue
+            
+            # Other aggregations require valid field
+            if field not in self.fields:
+                raise ValueError(
+                    f"Field '{field}' not in schema. "
+                    f"Available fields: {', '.join(sorted(self.fields.keys()))}"
+                )
+            
+            field_type = self.fields[field]['type']
+            column = table.c[field]
+            
+            # Type validation for numeric aggregations
+            if func_name in self.NUMERIC_AGGREGATIONS:
+                if field_type not in self.NUMERIC_TYPES:
+                    raise TypeError(
+                        f"Aggregation {func_name} requires numeric field, "
+                        f"but field '{field}' has type {field_type}"
+                    )
+            
+            # MIN/MAX support numeric, datetime, text
+            if func_name in self.COMPARABLE_AGGREGATIONS:
+                comparable_types = self.NUMERIC_TYPES | {'timestamp', 'date', 'datetime', 'string', 'text'}
+                if field_type not in comparable_types:
+                    raise TypeError(
+                        f"Aggregation {func_name} requires numeric, datetime, or text field, "
+                        f"but field '{field}' has type {field_type}"
+                    )
+            
+            # Generate aggregate expression
+            agg_func = self.AGGREGATION_FUNCS[func_name]
+            agg_exprs.append(agg_func(column).label(result_name))
+        
+        return agg_exprs
+    
+    def parse_sort(
+        self, 
+        sort_spec: Union[Dict[str, str], List[Dict[str, str]]], 
+        table
+    ) -> List:
+        """
+        Parse sort specification into SQLAlchemy order_by clauses.
+        
+        Supports both single-field (dict) and multi-field (list) sorting.
+        Multi-field sorts are applied in priority order (first = primary sort).
+        Sortie 4 feature.
+        
+        Args:
+            sort_spec: Single dict or list of dicts with format:
+                {'field': 'field_name', 'order': 'asc'|'desc'}
+                
+                Single-field example:
+                {'field': 'score', 'order': 'desc'}
+                
+                Multi-field example:
+                [
+                    {'field': 'status', 'order': 'asc'},
+                    {'field': 'score', 'order': 'desc'},
+                    {'field': 'username', 'order': 'asc'}
+                ]
+            
+            table: SQLAlchemy Table object
+        
+        Returns:
+            List of SQLAlchemy order_by clauses in priority order
+        
+        Raises:
+            ValueError: If field not in schema or order invalid
+            TypeError: If sort_spec format invalid
+        
+        Example:
+            >>> parser = OperatorParser(schema)
+            >>> # Multi-field sort: status ASC, then score DESC
+            >>> sort = [
+            ...     {'field': 'status', 'order': 'asc'},
+            ...     {'field': 'score', 'order': 'desc'}
+            ... ]
+            >>> order_clauses = parser.parse_sort(sort, users_table)
+            >>> stmt = select(users_table).order_by(*order_clauses)
+        """
+        # Backward compatibility: convert single dict to list
+        if isinstance(sort_spec, dict):
+            sort_spec = [sort_spec]
+        
+        if not isinstance(sort_spec, list):
+            raise TypeError(
+                f"Sort spec must be dict or list of dicts, "
+                f"got {type(sort_spec).__name__}"
+            )
+        
+        if not sort_spec:
+            raise ValueError("Sort spec list cannot be empty")
+        
+        order_clauses = []
+        
+        for i, sort_item in enumerate(sort_spec):
+            if not isinstance(sort_item, dict):
+                raise TypeError(
+                    f"Sort item {i} must be dict, got {type(sort_item).__name__}"
+                )
+            
+            # Validate required 'field' key
+            if 'field' not in sort_item:
+                raise ValueError(f"Sort item {i} missing required 'field' key")
+            
+            field = sort_item['field']
+            order = sort_item.get('order', 'asc').lower()
+            
+            # Validate field exists
+            if field not in self.fields:
+                raise ValueError(
+                    f"Sort field '{field}' not in schema. "
+                    f"Available fields: {', '.join(sorted(self.fields.keys()))}"
+                )
+            
+            # Validate order
+            if order not in ('asc', 'desc'):
+                raise ValueError(
+                    f"Sort order must be 'asc' or 'desc', got '{order}' "
+                    f"for field '{field}'"
+                )
+            
+            # Generate order clause
+            column = table.c[field]
+            if order == 'desc':
+                order_clauses.append(column.desc())
+            else:
+                order_clauses.append(column.asc())
+        
+        return order_clauses

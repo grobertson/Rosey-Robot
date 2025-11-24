@@ -1095,3 +1095,286 @@ class TestCompoundLogic:
         clauses = parser.parse_filters(filters, sample_table)
         
         assert len(clauses) == 1
+
+
+class TestAggregations:
+    """Test aggregation function parsing (Sortie 4)."""
+    
+    def test_count_all(self, sample_schema, sample_table):
+        """Test COUNT(*) aggregation."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'total': {'$count': '*'}}
+        
+        exprs = parser.parse_aggregations(aggs, sample_table)
+        
+        assert len(exprs) == 1
+        assert exprs[0].name == 'total'
+    
+    def test_count_field(self, sample_schema, sample_table):
+        """Test COUNT(field) aggregation."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'user_count': {'$count': 'username'}}
+        
+        exprs = parser.parse_aggregations(aggs, sample_table)
+        
+        assert len(exprs) == 1
+        assert exprs[0].name == 'user_count'
+    
+    def test_sum_aggregation(self, sample_schema, sample_table):
+        """Test SUM aggregation."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'total_score': {'$sum': 'score'}}
+        
+        exprs = parser.parse_aggregations(aggs, sample_table)
+        
+        assert len(exprs) == 1
+        assert exprs[0].name == 'total_score'
+    
+    def test_avg_aggregation(self, sample_schema, sample_table):
+        """Test AVG aggregation."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'avg_rating': {'$avg': 'rating'}}
+        
+        exprs = parser.parse_aggregations(aggs, sample_table)
+        
+        assert len(exprs) == 1
+        assert exprs[0].name == 'avg_rating'
+    
+    def test_min_aggregation(self, sample_schema, sample_table):
+        """Test MIN aggregation."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'min_score': {'$min': 'score'}}
+        
+        exprs = parser.parse_aggregations(aggs, sample_table)
+        
+        assert len(exprs) == 1
+        assert exprs[0].name == 'min_score'
+    
+    def test_max_aggregation(self, sample_schema, sample_table):
+        """Test MAX aggregation."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'max_score': {'$max': 'score'}}
+        
+        exprs = parser.parse_aggregations(aggs, sample_table)
+        
+        assert len(exprs) == 1
+        assert exprs[0].name == 'max_score'
+    
+    def test_multiple_aggregations(self, sample_schema, sample_table):
+        """Test multiple aggregations in one query."""
+        parser = OperatorParser(sample_schema)
+        aggs = {
+            'total': {'$count': '*'},
+            'total_score': {'$sum': 'score'},
+            'avg_score': {'$avg': 'score'},
+            'min_score': {'$min': 'score'},
+            'max_score': {'$max': 'score'},
+        }
+        
+        exprs = parser.parse_aggregations(aggs, sample_table)
+        
+        assert len(exprs) == 5
+        names = [expr.name for expr in exprs]
+        assert 'total' in names
+        assert 'avg_score' in names
+    
+    def test_min_on_datetime_field(self, sample_schema, sample_table):
+        """Test MIN on datetime field (valid)."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'earliest': {'$min': 'joined_at'}}
+        
+        exprs = parser.parse_aggregations(aggs, sample_table)
+        
+        assert len(exprs) == 1
+        assert exprs[0].name == 'earliest'
+    
+    def test_max_on_string_field(self, sample_schema, sample_table):
+        """Test MAX on string field (valid - lexicographic comparison)."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'last_name': {'$max': 'username'}}
+        
+        exprs = parser.parse_aggregations(aggs, sample_table)
+        
+        assert len(exprs) == 1
+        assert exprs[0].name == 'last_name'
+    
+    def test_sum_on_non_numeric_field(self, sample_schema, sample_table):
+        """Test error when SUM applied to non-numeric field."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'total': {'$sum': 'username'}}
+        
+        with pytest.raises(TypeError, match="requires numeric field"):
+            parser.parse_aggregations(aggs, sample_table)
+    
+    def test_avg_on_string_field(self, sample_schema, sample_table):
+        """Test error when AVG applied to string field."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'avg_name': {'$avg': 'username'}}
+        
+        with pytest.raises(TypeError, match="requires numeric field"):
+            parser.parse_aggregations(aggs, sample_table)
+    
+    def test_avg_on_boolean_field(self, sample_schema, sample_table):
+        """Test error when AVG applied to boolean field."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'avg_active': {'$avg': 'active'}}
+        
+        with pytest.raises(TypeError, match="requires numeric field"):
+            parser.parse_aggregations(aggs, sample_table)
+    
+    def test_unknown_function(self, sample_schema, sample_table):
+        """Test error on unknown aggregation function."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'result': {'$median': 'score'}}
+        
+        with pytest.raises(ValueError, match="Unknown aggregation function"):
+            parser.parse_aggregations(aggs, sample_table)
+    
+    def test_invalid_field_name(self, sample_schema, sample_table):
+        """Test error on invalid field name."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'total': {'$sum': 'nonexistent'}}
+        
+        with pytest.raises(ValueError, match="not in schema"):
+            parser.parse_aggregations(aggs, sample_table)
+    
+    def test_malformed_spec_not_dict(self, sample_schema, sample_table):
+        """Test error when spec is not a dict."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'total': '$count'}  # Should be {'$count': '*'}
+        
+        with pytest.raises(TypeError, match="must be dict"):
+            parser.parse_aggregations(aggs, sample_table)
+    
+    def test_malformed_spec_multiple_functions(self, sample_schema, sample_table):
+        """Test error when spec has multiple functions."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'result': {'$sum': 'score', '$avg': 'score'}}
+        
+        with pytest.raises(ValueError, match="exactly one function"):
+            parser.parse_aggregations(aggs, sample_table)
+    
+    def test_empty_result_name(self, sample_schema, sample_table):
+        """Test error on empty result name."""
+        parser = OperatorParser(sample_schema)
+        aggs = {'': {'$count': '*'}}
+        
+        with pytest.raises(ValueError, match="non-empty string"):
+            parser.parse_aggregations(aggs, sample_table)
+
+
+class TestMultiFieldSorting:
+    """Test multi-field sorting (Sortie 4)."""
+    
+    def test_single_field_dict(self, sample_schema, sample_table):
+        """Test backward compatible single-field sort dict."""
+        parser = OperatorParser(sample_schema)
+        sort = {'field': 'score', 'order': 'desc'}
+        
+        clauses = parser.parse_sort(sort, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_single_field_list(self, sample_schema, sample_table):
+        """Test single-field sort as list."""
+        parser = OperatorParser(sample_schema)
+        sort = [{'field': 'username', 'order': 'asc'}]
+        
+        clauses = parser.parse_sort(sort, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_multi_field_two_sorts(self, sample_schema, sample_table):
+        """Test two-field sort."""
+        parser = OperatorParser(sample_schema)
+        sort = [
+            {'field': 'active', 'order': 'asc'},
+            {'field': 'score', 'order': 'desc'}
+        ]
+        
+        clauses = parser.parse_sort(sort, sample_table)
+        
+        assert len(clauses) == 2
+    
+    def test_multi_field_three_sorts(self, sample_schema, sample_table):
+        """Test three-field sort with priority order."""
+        parser = OperatorParser(sample_schema)
+        sort = [
+            {'field': 'active', 'order': 'asc'},
+            {'field': 'score', 'order': 'desc'},
+            {'field': 'username', 'order': 'asc'}
+        ]
+        
+        clauses = parser.parse_sort(sort, sample_table)
+        
+        assert len(clauses) == 3
+    
+    def test_default_order_asc(self, sample_schema, sample_table):
+        """Test default order is 'asc' when not specified."""
+        parser = OperatorParser(sample_schema)
+        sort = [{'field': 'score'}]  # No 'order' key
+        
+        clauses = parser.parse_sort(sort, sample_table)
+        
+        assert len(clauses) == 1
+    
+    def test_mixed_asc_desc(self, sample_schema, sample_table):
+        """Test mixed ascending and descending sorts."""
+        parser = OperatorParser(sample_schema)
+        sort = [
+            {'field': 'score', 'order': 'desc'},
+            {'field': 'username', 'order': 'asc'},
+            {'field': 'rating', 'order': 'desc'}
+        ]
+        
+        clauses = parser.parse_sort(sort, sample_table)
+        
+        assert len(clauses) == 3
+    
+    def test_invalid_field_name(self, sample_schema, sample_table):
+        """Test error on invalid field name."""
+        parser = OperatorParser(sample_schema)
+        sort = [{'field': 'nonexistent', 'order': 'asc'}]
+        
+        with pytest.raises(ValueError, match="not in schema"):
+            parser.parse_sort(sort, sample_table)
+    
+    def test_invalid_order_value(self, sample_schema, sample_table):
+        """Test error on invalid order value."""
+        parser = OperatorParser(sample_schema)
+        sort = [{'field': 'score', 'order': 'ascending'}]
+        
+        with pytest.raises(ValueError, match="must be 'asc' or 'desc'"):
+            parser.parse_sort(sort, sample_table)
+    
+    def test_missing_field_key(self, sample_schema, sample_table):
+        """Test error when 'field' key missing."""
+        parser = OperatorParser(sample_schema)
+        sort = [{'order': 'asc'}]  # No 'field' key
+        
+        with pytest.raises(ValueError, match="missing required 'field' key"):
+            parser.parse_sort(sort, sample_table)
+    
+    def test_empty_sort_list(self, sample_schema, sample_table):
+        """Test error on empty sort list."""
+        parser = OperatorParser(sample_schema)
+        sort = []
+        
+        with pytest.raises(ValueError, match="cannot be empty"):
+            parser.parse_sort(sort, sample_table)
+    
+    def test_invalid_sort_type(self, sample_schema, sample_table):
+        """Test error when sort is not dict or list."""
+        parser = OperatorParser(sample_schema)
+        sort = "score"
+        
+        with pytest.raises(TypeError, match="must be dict or list"):
+            parser.parse_sort(sort, sample_table)
+    
+    def test_sort_item_not_dict(self, sample_schema, sample_table):
+        """Test error when sort list item is not dict."""
+        parser = OperatorParser(sample_schema)
+        sort = ['score', 'username']  # Should be list of dicts
+        
+        with pytest.raises(TypeError, match="must be dict"):
+            parser.parse_sort(sort, sample_table)
