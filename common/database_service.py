@@ -47,6 +47,13 @@ class DatabaseService:
         rosey.db.action.pm_command     - Log PM command (pub/sub)
         rosey.db.messages.outbound.get - Query outbound messages (request/reply)
         rosey.db.stats.recent_chat.get - Get recent chat (request/reply)
+        rosey.db.kv.set                - Set KV pair (request/reply)
+        rosey.db.kv.get                - Get KV pair (request/reply)
+        rosey.db.kv.delete             - Delete KV pair (request/reply)
+        rosey.db.kv.list               - List KV keys (request/reply)
+
+    Background Tasks:
+        - KV cleanup: Removes expired keys every 5 minutes (configurable)
 
     Example:
         # Start database service
@@ -58,21 +65,26 @@ class DatabaseService:
         # Can run in separate process from bot
     """
 
-    def __init__(self, nats_client, db_path: str = 'bot_data.db'):
+    def __init__(self, nats_client, db_path: str = 'bot_data.db', 
+                 cleanup_interval_seconds: int = 300):
         """Initialize database service.
 
         Args:
             nats_client: Connected NATS client instance
             db_path: Path to SQLite database file
+            cleanup_interval_seconds: Interval for KV cleanup task (default 300 = 5 minutes)
         """
         if NATS is None:
             raise ImportError("NATS not available - install nats-py package")
 
         self.nats = nats_client
         self.db = BotDatabase(db_path)
+        self.cleanup_interval_seconds = cleanup_interval_seconds
         self.logger = logging.getLogger(__name__)
         self._subscriptions = []
         self._running = False
+        self._cleanup_task = None
+        self._shutdown = False
 
     async def start(self):
         """Subscribe to all database subjects and start handling events.
@@ -134,8 +146,14 @@ class DatabaseService:
             ])
 
             self._running = True
+            
+            # Start background cleanup task
+            self._shutdown = False
+            self._cleanup_task = asyncio.create_task(self._kv_cleanup_loop())
+            
             self.logger.info(
-                f"DatabaseService started with {len(self._subscriptions)} subscriptions"
+                f"DatabaseService started with {len(self._subscriptions)} subscriptions "
+                f"(KV cleanup interval: {self.cleanup_interval_seconds}s)"
             )
 
         except Exception as e:
@@ -147,12 +165,24 @@ class DatabaseService:
     async def stop(self):
         """Unsubscribe from all subjects and stop service.
 
-        Performs graceful shutdown by unsubscribing from all NATS subjects.
+        Performs graceful shutdown by unsubscribing from all NATS subjects
+        and cancelling background tasks.
         """
         if not self._running and not self._subscriptions:
             return
 
         self.logger.info("Stopping DatabaseService...")
+
+        # Signal shutdown
+        self._shutdown = True
+        
+        # Cancel cleanup task
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
 
         for sub in self._subscriptions:
             try:
@@ -966,6 +996,59 @@ class DatabaseService:
                 }).encode())
             except:
                 pass
+
+    # ==================== Background Tasks ====================
+
+    async def _kv_cleanup_loop(self):
+        """
+        Background task to clean up expired KV entries.
+        
+        Runs every cleanup_interval_seconds and deletes expired entries.
+        Errors are logged but don't stop the loop.
+        """
+        self.logger.info(
+            f"Starting KV cleanup background task "
+            f"(interval: {self.cleanup_interval_seconds}s)"
+        )
+        
+        while not self._shutdown:
+            try:
+                # Wait for next cleanup interval
+                await asyncio.sleep(self.cleanup_interval_seconds)
+                
+                if self._shutdown:
+                    break
+                
+                # Run cleanup
+                import time
+                start_time = time.time()
+                deleted_count = await self.db.kv_cleanup_expired()
+                elapsed_ms = (time.time() - start_time) * 1000
+                
+                if deleted_count > 0:
+                    self.logger.info(
+                        f"KV cleanup: deleted {deleted_count} expired keys "
+                        f"in {elapsed_ms:.1f}ms"
+                    )
+                else:
+                    self.logger.debug(
+                        f"KV cleanup: no expired keys found ({elapsed_ms:.1f}ms)"
+                    )
+                
+            except asyncio.CancelledError:
+                # Task cancelled during shutdown
+                break
+            except Exception as e:
+                # Log error but continue cleanup loop
+                self.logger.error(
+                    f"Error in KV cleanup task: {e}",
+                    exc_info=True
+                )
+                # Brief backoff on error
+                if not self._shutdown:
+                    await asyncio.sleep(60)
+        
+        self.logger.info("KV cleanup background task stopped")
 
 
 async def main():
