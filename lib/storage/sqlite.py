@@ -46,7 +46,7 @@ class SQLiteStorage(StorageAdapter):
         """
         super().__init__(logger)
         self.db_path = db_path
-        self.conn = None
+        self.conn: Optional[sqlite3.Connection] = None
 
     async def connect(self) -> None:
         """
@@ -100,6 +100,7 @@ class SQLiteStorage(StorageAdapter):
         Raises:
             MigrationError: If migration fails
         """
+        assert self.conn is not None, "Database not connected"
         try:
             cursor = self.conn.cursor()
 

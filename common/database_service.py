@@ -26,7 +26,7 @@ from typing import Dict
 try:
     from nats.aio.client import Client as NATS  # noqa: N814 (NATS convention)
 except ImportError:
-    NATS = None
+    NATS = None  # type: ignore[assignment,misc]
 
 from common.database import BotDatabase
 from common.migrations import (
@@ -89,7 +89,7 @@ class DatabaseService:
         self.db = BotDatabase(db_path)
         self.cleanup_interval_seconds = cleanup_interval_seconds
         self.logger = logging.getLogger(__name__)
-        self._subscriptions = []
+        self._subscriptions: List[Any] = []
         self._running = False
         self._cleanup_task = None
         self._shutdown = False

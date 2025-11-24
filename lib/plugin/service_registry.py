@@ -33,7 +33,7 @@ Example:
 """
 
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from packaging.version import parse
 
@@ -457,7 +457,7 @@ class ServiceRegistry:
 
         return result
 
-    def list_services(self) -> List[Dict[str, any]]:
+    def list_services(self) -> List[Dict[str, Any]]:
         """List all registered services with their metadata.
 
         Returns:

@@ -237,7 +237,7 @@ class EventBus:
         Returns:
             Dict mapping event patterns to list of plugin names
         """
-        result = defaultdict(list)
+        result: Dict[str, List[str]] = defaultdict(list)
 
         for pattern, subscribers in self._subscriptions.items():
             for name, _ in subscribers:

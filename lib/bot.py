@@ -19,7 +19,7 @@ from .user import User
 try:
     from common.database import BotDatabase
 except ImportError:
-    BotDatabase = None
+    BotDatabase = None  # type: ignore[assignment,misc]
 
 
 class Bot:
@@ -189,7 +189,7 @@ class Bot:
             self.loop = asyncio.get_running_loop()
         except RuntimeError:
             self.loop = asyncio.new_event_loop()
-        self.handlers = collections.defaultdict(list)
+        self.handlers: Dict[str, List] = collections.defaultdict(list)
         self.start_time = time.time()  # Track bot start time
         self.connect_time = None  # Track connection time
         self._history_task = None  # Background task for logging user counts
