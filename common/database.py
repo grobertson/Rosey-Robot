@@ -1693,7 +1693,7 @@ class BotDatabase:
 
         # Handle bulk vs single
         is_bulk = isinstance(data, list)
-        rows: List[Dict[str, Any]] = data if is_bulk else [data]  # type: ignore[assignment]
+        rows: List[Dict[str, Any]] = data if is_bulk else [data]  # type: ignore[assignment,list-item]
 
         if len(rows) == 0:
             raise ValueError("No data provided for insert")
