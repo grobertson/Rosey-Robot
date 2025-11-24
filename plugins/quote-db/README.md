@@ -11,6 +11,75 @@ The quote-db plugin is a comprehensive example showing how to build stateful plu
 
 This plugin serves as the canonical reference for migrating legacy plugins from direct SQLite access to the modern storage API.
 
+---
+
+**Quick Navigation:**
+- 👤 [User Guide](#user-guide) - Chat commands for non-technical users
+- 🔧 [Installation](#installation) - Setup for administrators
+- 💻 [Developer Documentation](#schema-migrations) - Technical implementation details
+
+---
+
+## User Guide
+
+**For non-technical users who just want to use quotes in chat!**
+
+### What This Plugin Does
+
+The quote-db plugin lets you save, search, and share memorable quotes in your chat room. Think of it as a digital quote book that everyone can contribute to and enjoy.
+
+### Basic Commands
+
+Once the plugin is installed (ask your bot administrator), you can use these chat commands:
+
+**Add a Quote**:
+```
+!addquote "The only way to do great work is to love what you do." - Steve Jobs
+```
+
+**Get a Random Quote**:
+```
+!quote
+```
+This shows a random quote from the database.
+
+**Search for Quotes**:
+```
+!findquote einstein
+```
+This finds all quotes by Einstein or containing "einstein" in the text.
+
+**Vote on Quotes**:
+```
+!upvote 42       # Make quote #42 more popular
+!downvote 42     # Make quote #42 less popular
+```
+
+**See Top Quotes**:
+```
+!topquotes
+```
+Shows the most popular quotes (with the highest scores).
+
+**Delete a Quote** (moderators only):
+```
+!delquote 42     # Removes quote #42
+```
+
+### Tips
+
+- **Be specific with authors**: Use full names like "Albert Einstein" not just "Einstein"
+- **Keep quotes under 1000 characters**: Very long quotes won't be accepted
+- **Vote for your favorites**: Help great quotes rise to the top!
+- **Search is flexible**: Searching "space" will find quotes about space, from people with "space" in their name, etc.
+
+### Getting Help
+
+If a command doesn't work:
+1. Make sure you spelled the command correctly (they start with `!`)
+2. Check that the plugin is enabled (ask your bot admin)
+3. Ask your bot administrator for help
+
 ## Features
 
 - **Add Quotes**: Store quotes with author, text, timestamps
