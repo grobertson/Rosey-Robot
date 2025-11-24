@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from common.migrations.migration import Migration
 
 
-class DryRunRollback(Exception):
+class DryRunRollbackError(Exception):
     """Exception raised to trigger rollback during dry-run mode."""
     pass
 
