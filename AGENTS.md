@@ -30,7 +30,7 @@ Define the feature from a product perspective. Create comprehensive PRD document
 **Example**: [PRD-LLM-Integration.md](docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md)
 
 ### Phase 2: Technical Specifications (SPEC)
-Break down PRD into logical sorties of atomic, implementable commits. Each spec defines scope, requirements, design, implementation steps, tests, and acceptance criteria.
+Break down PRD into logical sorties (work units that may span multiple commits). Each spec defines scope, requirements, design, implementation steps, tests, and acceptance criteria.
 
 **Format**: `docs/sprints/{N}-{sprint-name}/SPEC-Sortie-{N}-{sortie-name}.md`  
 **Example**: [SPEC-Sortie-1-LLM-Foundation.md](docs/sprints/completed/2-start-me-up/SPEC-Sortie-1-LLM-Foundation.md)
@@ -115,10 +115,10 @@ Agent generates comprehensive PRD document.
 
 ```markdown
 Prompt: "Based on the [feature] PRD, create specs for a nano-sprint sortie.
-Break into logical commits: 1) Foundation, 2) Core feature, 3) Testing, 4) Documentation."
+Break into logical sorties: 1) Foundation, 2) Core feature, 3) Testing, 4) Documentation."
 ```
 
-Agent generates detailed SPEC files for each commit.
+Agent generates detailed SPEC files for each sortie.
 
 ### 3. Implement with Agent
 
@@ -192,7 +192,7 @@ Implements: SPEC-Sortie-N-Name.md
 Related: PRD-Feature-Name.md
 ```
 
-**Granularity**: One logical change per commit, compilable, testable, documented.
+**Granularity**: Commit as often as needed within a sortie. Each commit should be compilable and testable, but a sortie may contain multiple commits to complete its logical unit of work.
 
 ---
 
@@ -211,7 +211,8 @@ For comprehensive documentation, see:
 See [Sprint 2: LLM Integration (2-start-me-up)](docs/sprints/completed/2-start-me-up/) for complete example:
 
 - **Duration**: 3 days
-- **Commits**: 6 (Foundation → Remote Ollama → Triggers → Username → Deployment → Docs)
+- **Sorties**: 6 (Foundation → Remote Ollama → Triggers → Username → Deployment → Docs)
+- **Commits**: Multiple commits per sortie as needed
 - **Outcome**: Fully functional LLM chat integration with 95% test coverage
 - **Files**: [PRD-LLM-Integration.md](docs/sprints/completed/2-start-me-up/PRD-LLM-Integration.md), SPEC-Sortie-1 through SPEC-Sortie-6
 

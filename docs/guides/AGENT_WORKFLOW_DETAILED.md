@@ -70,14 +70,14 @@ project context and requirements.
 ## Phase 2: Technical Specifications (SPEC)
 
 ### Purpose
-Break down PRD into a logical sortie of atomic, implementable commits.
+Break down PRD into logical sorties (work units that may span multiple commits).
 
 ### Format
 `docs/sprints/{N}-{sprint-name}/SPEC-Sortie-{N}-{sortie-name}.md`
 
 ### Contents per Sortie
 
-1. **Overview**: What this commit achieves
+1. **Overview**: What this sortie achieves
 2. **Scope and Non-Goals**: What's included/excluded
 3. **Requirements**: Functional and non-functional
 4. **Design**: Architecture diagrams, data structures, API interactions
@@ -94,7 +94,7 @@ See [`docs/sprints/completed/2-start-me-up/SPEC-Sortie-1-LLM-Foundation.md`](../
 
 ```markdown
 Prompt: "Based on the LLM PRD at docs/sprints/2-start-me-up/PRD-LLM-Integration.md, 
-create specs for a nano-sprint sortie. Break it into 6 logical commits:
+create specs for a nano-sprint sortie. Break it into 6 logical sorties:
 
 1. Foundation - Basic LLM initialization and trigger detection
 2. Remote Ollama - Support for remote Ollama servers
@@ -103,7 +103,7 @@ create specs for a nano-sprint sortie. Break it into 6 logical commits:
 5. Deployment automation - Update systemd configuration
 6. Documentation - Complete all docs and create PR
 
-For each commit, create a detailed SPEC file following the template structure."
+For each sortie, create a detailed SPEC file following the template structure."
 
 Agent generates: 6 detailed SPEC files (SPEC-Sortie-1 through SPEC-Sortie-6) 
 with implementation plans.
@@ -111,8 +111,9 @@ with implementation plans.
 
 ### Best Practices
 
-- **Atomic Commits**: Each commit should be independently testable
-- **Clear Dependencies**: Specify which commits must come first
+- **Logical Sorties**: Each sortie should be a cohesive unit of work
+- **Flexible Commits**: Make commits as often as needed within a sortie
+- **Clear Dependencies**: Specify which sorties must come first
 - **Detailed Implementation**: List specific files, methods, and changes
 - **Comprehensive Testing**: Define unit tests, integration tests, manual checks
 - **Acceptance Criteria**: Concrete checkboxes that can be verified
@@ -677,7 +678,7 @@ Testing: All tests pass, manual testing completed with OpenAI and Ollama.
 This detailed workflow ensures:
 
 1. **Clear Planning**: PRDs define "what" and "why" before "how"
-2. **Structured Implementation**: SPECs break work into atomic, testable commits
+2. **Structured Implementation**: SPECs break work into logical, testable sorties
 3. **Quality Code**: Agent assistance maintains consistency and coverage
 4. **Living Documentation**: Docs stay current with implementation
 5. **Thorough Review**: Multi-layered checks catch issues before merge
