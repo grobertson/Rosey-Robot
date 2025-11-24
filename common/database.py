@@ -1263,7 +1263,7 @@ class BotDatabase:
                 )
             else:
                 # SQLite: INSERT ... ON CONFLICT DO UPDATE
-                stmt = sqlite_insert(PluginKVStorage).values(
+                stmt = sqlite_insert(PluginKVStorage).values(  # type: ignore[assignment]
                     plugin_name=plugin_name,
                     key=key,
                     value_json=value_json,
@@ -1577,7 +1577,7 @@ class BotDatabase:
             result = db._validate_and_coerce_row({'count': '42'}, schema)
             # result = {'count': 42}
         """
-        result = {}
+        result: Dict[str, Any] = {}
         schema_fields = {f['name']: f for f in schema['fields']}
 
         # Check required fields (skip for updates since they're partial)
@@ -1693,7 +1693,7 @@ class BotDatabase:
 
         # Handle bulk vs single
         is_bulk = isinstance(data, list)
-        rows = data if is_bulk else [data]
+        rows: List[Dict[str, Any]] = data if is_bulk else [data]
 
         if len(rows) == 0:
             raise ValueError("No data provided for insert")

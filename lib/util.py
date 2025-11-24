@@ -6,10 +6,11 @@ import logging
 from base64 import b64encode
 from collections.abc import Sequence
 from hashlib import md5
-from html.parser import HTMLParser, unescape
+from html import unescape
+from html.parser import HTMLParser
 from itertools import islice
 
-import requests
+import requests  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ if hasattr(asyncio.Queue, 'task_done'):
     Queue = asyncio.Queue
 else:
     # Wrapper to add task_done and join methods for older Python versions
-    class Queue(asyncio.Queue):
+    class Queue(asyncio.Queue):  # type: ignore[no-redef]
         def task_done(self):
             logger.debug('task_done %s', self)
 
@@ -30,7 +31,7 @@ else:
 try:
     current_task = asyncio.current_task
 except AttributeError:
-    current_task = asyncio.Task.current_task
+    current_task = asyncio.Task.current_task  # type: ignore[attr-defined]
 
 
 class MessageParser(HTMLParser):
