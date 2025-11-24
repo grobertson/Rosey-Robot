@@ -809,6 +809,112 @@ class PluginKVStorage(Base):
 
 
 # ============================================================================
+# Plugin Table Schemas (Sprint 13)
+# ============================================================================
+
+class PluginTableSchema(Base):
+    """
+    Stores table schemas for plugin row-based storage.
+    
+    Each plugin can register multiple tables. The schema_json field
+    defines the columns (name, type, required) for each table.
+    
+    Sprint: 13 (Row Operations Foundation)
+    Sortie: 1 (Schema Registry & Table Creation)
+    """
+    __tablename__ = 'plugin_table_schemas'
+    
+    # Primary key
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+        comment="Unique schema ID"
+    )
+    
+    # Plugin and table identification
+    plugin_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+        comment="Plugin identifier (e.g., 'quote-db', 'trivia')"
+    )
+    
+    table_name: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        comment="Table name within plugin namespace"
+    )
+    
+    # Schema definition (JSON)
+    schema_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="JSON schema: {'fields': [{'name': 'text', 'type': 'text', 'required': true}]}"
+    )
+    
+    # Version tracking
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default='1',
+        comment="Schema version (for migrations)"
+    )
+    
+    # Timestamps
+    created_at: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="Schema creation timestamp (Unix epoch)"
+    )
+    
+    updated_at: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="Schema last updated timestamp (Unix epoch)"
+    )
+    
+    # Table-level constraints and indexes
+    __table_args__ = (
+        # Unique constraint on (plugin_name, table_name)
+        Index('idx_plugin_table_unique', 'plugin_name', 'table_name', unique=True),
+        # Index for plugin schema lookups
+        Index('idx_plugin_name', 'plugin_name'),
+        {'comment': 'Plugin table schemas for row-based storage'}
+    )
+    
+    def __repr__(self) -> str:
+        return f"<PluginTableSchema(plugin={self.plugin_name}, table={self.table_name}, v{self.version})>"
+    
+    def get_schema(self) -> dict:
+        """
+        Deserialize schema_json to dict.
+        
+        Returns:
+            Schema dict with 'fields' key
+            
+        Raises:
+            json.JSONDecodeError: If schema_json is invalid JSON
+        """
+        import json
+        return json.loads(self.schema_json)
+    
+    def set_schema(self, schema: dict) -> None:
+        """
+        Serialize and store schema as JSON.
+        
+        Args:
+            schema: Schema dict with 'fields' key
+            
+        Raises:
+            TypeError: If schema is not JSON-serializable
+        """
+        import json
+        self.schema_json = json.dumps(schema)
+
+
+# ============================================================================
 # Utility Functions
 # ============================================================================
 
@@ -867,6 +973,7 @@ __all__ = [
     'OutboundMessage',
     'ApiToken',
     'PluginKVStorage',
+    'PluginTableSchema',
     'get_model_by_tablename',
     'get_all_models',
 ]
