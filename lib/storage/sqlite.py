@@ -220,6 +220,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None
 
         try:
             cursor = self.conn.cursor()
@@ -365,6 +366,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None
 
         try:
             cursor = self.conn.cursor()
@@ -535,6 +537,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None
 
         try:
             cursor = self.conn.cursor()
@@ -710,3 +713,7 @@ class SQLiteStorage(StorageAdapter):
         except sqlite3.Error as e:
             self.logger.error('Error clearing old messages: %s', e)
             raise QueryError(f"Failed to clear old messages: {e}")
+
+
+
+
