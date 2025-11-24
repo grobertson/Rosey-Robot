@@ -49,6 +49,14 @@ class QuoteDBPlugin:
     VERSION = "1.0.0"
     REQUIRED_MIGRATIONS = [1, 2, 3]  # Migration versions this code depends on
     
+    # Constants
+    DEFAULT_NATS_TIMEOUT = 2.0  # seconds
+    DEFAULT_KV_TIMEOUT = 1.0  # seconds
+    DEFAULT_MAX_RETRIES = 3
+    KV_CACHE_TTL = 300  # 5 minutes
+    MAX_SEARCH_LIMIT = 100
+    MIN_SEARCH_LIMIT = 1
+    
     def __init__(self, nats_client: NATS):
         """
         Initialize quote-db plugin.
@@ -335,9 +343,84 @@ class QuoteDBPlugin:
             self.logger.error(f"Invalid JSON response: {e}")
             raise Exception("Invalid JSON response from NATS")
     
+    async def add_quote_safe(
+        self,
+        text: str,
+        author: str,
+        added_by: str,
+        max_retries: int = None
+    ) -> Optional[int]:
+        """
+        Add quote with retry logic for transient failures.
+        
+        This method wraps add_quote() with exponential backoff retry logic
+        for handling transient NATS timeouts. Validation errors are not retried.
+        
+        Args:
+            text: Quote text (1-1000 characters)
+            author: Quote author (max 100 characters)
+            added_by: Username adding the quote
+            max_retries: Maximum retry attempts (default: DEFAULT_MAX_RETRIES)
+            
+        Returns:
+            Quote ID if successful, None if max retries exceeded
+            
+        Raises:
+            ValueError: If validation fails (no retry)
+            Exception: For unexpected errors (no retry)
+            
+        Example:
+            >>> quote_id = await plugin.add_quote_safe(
+            ...     "Test quote", "Author", "user", max_retries=3
+            ... )
+            >>> if quote_id:
+            ...     print(f"Added quote {quote_id}")
+            ... else:
+            ...     print("Max retries exceeded")
+        """
+        if max_retries is None:
+            max_retries = self.DEFAULT_MAX_RETRIES
+        
+        for attempt in range(max_retries):
+            try:
+                quote_id = await self.add_quote(text, author, added_by)
+                if attempt > 0:
+                    self.logger.info(f"Retry succeeded on attempt {attempt + 1}")
+                return quote_id
+                
+            except asyncio.TimeoutError:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    self.logger.warning(
+                        f"NATS timeout, retry {attempt + 1}/{max_retries} "
+                        f"in {wait_time}s: '{text[:50]}...'"
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    self.logger.error(
+                        f"Max retries ({max_retries}) exceeded for add_quote: "
+                        f"'{text[:50]}...'"
+                    )
+                    return None
+                    
+            except ValueError:
+                # Don't retry validation errors
+                self.logger.error(f"Validation error (no retry): {text[:50]}")
+                raise
+                
+            except Exception as e:
+                # Unexpected error, don't retry
+                self.logger.exception(f"Unexpected error adding quote: {e}")
+                raise
+        
+        return None
+    
     async def find_by_author(self, author: str) -> List[Dict[str, Any]]:
         """
         Find all quotes by a specific author.
+        
+        Note: This method is a placeholder demonstrating the plugin interface.
+        Use search_quotes() for actual author search functionality.
         
         Args:
             author: Author name (exact match)
@@ -346,8 +429,7 @@ class QuoteDBPlugin:
             List of quote dicts
         """
         self._ensure_initialized()
-        # TODO: Implement in Sortie 3
-        raise NotImplementedError("Sortie 3")
+        raise NotImplementedError("Use search_quotes() instead")
     
     async def search_quotes(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
@@ -604,6 +686,9 @@ class QuoteDBPlugin:
         """
         Atomically increment a quote's score.
         
+        Note: This method is a placeholder. Use upvote_quote() or downvote_quote()
+        for actual score manipulation.
+        
         Args:
             quote_id: Quote ID
             amount: Amount to increment (can be negative)
@@ -612,8 +697,7 @@ class QuoteDBPlugin:
             True if successful, False if quote not found
         """
         self._ensure_initialized()
-        # TODO: Implement in Sortie 3
-        raise NotImplementedError("Sortie 3")
+        raise NotImplementedError("Use upvote_quote() or downvote_quote() instead")
     
     # ===== KV Caching Methods =====
     # Implemented in Sortie 3
