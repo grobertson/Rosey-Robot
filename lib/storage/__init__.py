@@ -13,14 +13,39 @@ from .errors import (
     StorageConnectionError,
     StorageError,
 )
+from .sql_errors import (
+    ForbiddenStatementError,
+    NamespaceViolationError,
+    ParameterError,
+    SQLSyntaxError,
+    SQLValidationError,
+    StackedQueryError,
+    StatementType,
+    ValidationResult,
+)
+from .sql_parameter import ParameterBinder
+from .sql_validator import QueryValidator
 from .sqlite import SQLiteStorage
 
 __all__ = [
-    'StorageAdapter',
-    'SQLiteStorage',
-    'StorageError',
-    'StorageConnectionError',
-    'QueryError',
-    'MigrationError',
-    'IntegrityError',
+    # Storage adapters
+    "StorageAdapter",
+    "SQLiteStorage",
+    # Base errors
+    "StorageError",
+    "StorageConnectionError",
+    "QueryError",
+    "MigrationError",
+    "IntegrityError",
+    # SQL validation (Sprint 17)
+    "QueryValidator",
+    "ParameterBinder",
+    "ValidationResult",
+    "StatementType",
+    "SQLValidationError",
+    "SQLSyntaxError",
+    "ForbiddenStatementError",
+    "NamespaceViolationError",
+    "ParameterError",
+    "StackedQueryError",
 ]
