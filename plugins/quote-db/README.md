@@ -100,25 +100,81 @@ plugin = QuoteDBPlugin(nc)
 await plugin.initialize()
 ```
 
-### Commands
-
-**Note**: CRUD operations will be implemented in Sprint 16 Sortie 2.
+### Adding Quotes
 
 ```python
-# Add quote
+# Add a quote
 quote_id = await plugin.add_quote(
-    text="Keep circulating the tapes",
-    author="MST3K",
-    added_by="groberts"
+    text="The only way to do great work is to love what you do.",
+    author="Steve Jobs",
+    added_by="alice"
 )
+print(f"Added quote {quote_id}")
 
-# Get quote by ID
+# Author defaults to "Unknown" if empty
+quote_id = await plugin.add_quote(
+    text="Life is what you make it.",
+    author="",  # Will be stored as "Unknown"
+    added_by="bob"
+)
+```
+
+### Retrieving Quotes
+
+```python
+# Get a quote by ID
 quote = await plugin.get_quote(quote_id)
-# Returns: {"id": 1, "text": "...", "author": "MST3K", ...}
+if quote:
+    print(f"{quote['text']} - {quote['author']}")
+    print(f"Score: {quote['score']}, Added by: {quote['added_by']}")
+else:
+    print("Quote not found")
+```
 
-# Delete quote
+### Deleting Quotes
+
+```python
+# Delete a quote
 deleted = await plugin.delete_quote(quote_id)
+if deleted:
+    print("Quote deleted successfully")
+else:
+    print("Quote not found")
+```
 
+### Error Handling
+
+```python
+import asyncio
+
+# Validation errors
+try:
+    await plugin.add_quote("", "Author", "alice")  # Empty text
+except ValueError as e:
+    print(f"Validation error: {e}")
+
+try:
+    await plugin.add_quote("x" * 1001, "Author", "alice")  # Text too long
+except ValueError as e:
+    print(f"Validation error: {e}")
+
+try:
+    await plugin.add_quote("Text", "x" * 101, "alice")  # Author too long
+except ValueError as e:
+    print(f"Validation error: {e}")
+
+# NATS timeout errors
+try:
+    await plugin.add_quote("Text", "Author", "alice")
+except asyncio.TimeoutError as e:
+    print(f"NATS timeout: {e}")
+```
+
+### Commands
+
+**Note**: Advanced operations (search, scoring, tagging) will be implemented in Sprint 16 Sortie 3.
+
+```python
 # Find by author
 quotes = await plugin.find_by_author("MST3K")
 
@@ -207,7 +263,7 @@ Migration 001 inserts 5 example quotes for development and testing:
 ## Sprint Progress
 
 - ✅ **Sortie 1**: Foundation & Migrations (COMPLETE)
-- ⏳ **Sortie 2**: Core CRUD Operations (add, get, delete, list)
+- ✅ **Sortie 2**: Core CRUD Operations (COMPLETE - add, get, delete, validation)
 - ⏳ **Sortie 3**: Advanced Features (search, scoring, tags, KV cache)
 - ⏳ **Sortie 4**: Error Handling, Documentation, Polish
 

@@ -1,6 +1,8 @@
 """Unit tests for QuoteDBPlugin class."""
 import pytest
 import json
+import asyncio
+from unittest.mock import MagicMock
 from quote_db import QuoteDBPlugin
 
 
@@ -88,34 +90,200 @@ class TestEnsureInitialized:
             await plugin.delete_quote(1)
     
     @pytest.mark.asyncio
-    async def test_methods_work_after_initialization(self, initialized_plugin):
+    async def test_methods_work_after_initialization(self, initialized_plugin, mock_nats):
         """Test methods callable after initialization."""
+        # Mock NATS response for add_quote
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"id": 1}).encode()
+        mock_nats.request.return_value = mock_response
+        
         # Methods should not raise "not initialized" error
-        # They raise NotImplementedError because Sortie 1 doesn't implement them
-        with pytest.raises(NotImplementedError):
-            await initialized_plugin.add_quote("test quote")
+        quote_id = await initialized_plugin.add_quote("test quote", "Author", "user")
+        assert quote_id == 1
+
+
+class TestAddQuote:
+    """Test add_quote operation."""
+    
+    @pytest.mark.asyncio
+    async def test_add_quote_success(self, initialized_plugin, mock_nats):
+        """Test adding a quote successfully."""
+        # Mock NATS response
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"id": 42}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        # Add quote
+        quote_id = await initialized_plugin.add_quote("Test quote", "Alice", "bob")
+        
+        # Verify result
+        assert quote_id == 42
+        
+        # Verify NATS request
+        mock_nats.request.assert_called()
+        call_args = mock_nats.request.call_args
+        assert call_args[0][0] == "rosey.db.row.quote-db.insert"
+        
+        payload = json.loads(call_args[0][1].decode())
+        assert payload["table"] == "quotes"
+        assert payload["data"]["text"] == "Test quote"
+        assert payload["data"]["author"] == "Alice"
+        assert payload["data"]["added_by"] == "bob"
+        assert payload["data"]["score"] == 0
+        assert "timestamp" in payload["data"]
+    
+    @pytest.mark.asyncio
+    async def test_add_quote_author_defaults_to_unknown(self, initialized_plugin, mock_nats):
+        """Test that empty author defaults to 'Unknown'."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"id": 43}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        quote_id = await initialized_plugin.add_quote("Test", "", "bob")
+        assert quote_id == 43
+        
+        payload = json.loads(mock_nats.request.call_args[0][1].decode())
+        assert payload["data"]["author"] == "Unknown"
+    
+    @pytest.mark.asyncio
+    async def test_add_quote_timeout(self, initialized_plugin, mock_nats):
+        """Test handling of NATS timeout."""
+        mock_nats.request.side_effect = asyncio.TimeoutError()
+        
+        with pytest.raises(asyncio.TimeoutError, match="add_quote"):
+            await initialized_plugin.add_quote("Test", "Alice", "bob")
+
+
+class TestGetQuote:
+    """Test get_quote operation."""
+    
+    @pytest.mark.asyncio
+    async def test_get_quote_success(self, initialized_plugin, mock_nats):
+        """Test getting a quote by ID."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({
+            "rows": [{
+                "id": 42,
+                "text": "Test quote",
+                "author": "Alice",
+                "added_by": "bob",
+                "timestamp": 1234567890,
+                "score": 5
+            }]
+        }).encode()
+        mock_nats.request.return_value = mock_response
+        
+        quote = await initialized_plugin.get_quote(42)
+        
+        assert quote is not None
+        assert quote["id"] == 42
+        assert quote["text"] == "Test quote"
+        assert quote["author"] == "Alice"
+        assert quote["score"] == 5
+    
+    @pytest.mark.asyncio
+    async def test_get_quote_not_found(self, initialized_plugin, mock_nats):
+        """Test getting a non-existent quote."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"rows": []}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        quote = await initialized_plugin.get_quote(999)
+        assert quote is None
+    
+    @pytest.mark.asyncio
+    async def test_get_quote_timeout(self, initialized_plugin, mock_nats):
+        """Test handling of NATS timeout."""
+        mock_nats.request.side_effect = asyncio.TimeoutError()
+        
+        with pytest.raises(asyncio.TimeoutError, match="get_quote"):
+            await initialized_plugin.get_quote(42)
+
+
+class TestDeleteQuote:
+    """Test delete_quote operation."""
+    
+    @pytest.mark.asyncio
+    async def test_delete_quote_success(self, initialized_plugin, mock_nats):
+        """Test deleting a quote."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"deleted": 1}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        deleted = await initialized_plugin.delete_quote(42)
+        assert deleted is True
+        
+        # Verify NATS request
+        call_args = mock_nats.request.call_args
+        assert call_args[0][0] == "rosey.db.row.quote-db.delete"
+        payload = json.loads(call_args[0][1].decode())
+        assert payload["filters"]["id"]["$eq"] == 42
+    
+    @pytest.mark.asyncio
+    async def test_delete_quote_not_found(self, initialized_plugin, mock_nats):
+        """Test deleting a non-existent quote."""
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"deleted": 0}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        deleted = await initialized_plugin.delete_quote(999)
+        assert deleted is False
+    
+    @pytest.mark.asyncio
+    async def test_delete_quote_timeout(self, initialized_plugin, mock_nats):
+        """Test handling of NATS timeout."""
+        mock_nats.request.side_effect = asyncio.TimeoutError()
+        
+        with pytest.raises(asyncio.TimeoutError, match="delete_quote"):
+            await initialized_plugin.delete_quote(42)
+
+
+class TestValidation:
+    """Test input validation."""
+    
+    def test_validate_text_empty(self, plugin):
+        """Test validation of empty text."""
+        with pytest.raises(ValueError, match="cannot be empty"):
+            plugin._validate_text("")
+    
+    def test_validate_text_whitespace_only(self, plugin):
+        """Test validation of whitespace-only text."""
+        with pytest.raises(ValueError, match="cannot be empty"):
+            plugin._validate_text("   ")
+    
+    def test_validate_text_too_long(self, plugin):
+        """Test validation of text exceeding max length."""
+        with pytest.raises(ValueError, match="too long"):
+            plugin._validate_text("x" * 1001)
+    
+    def test_validate_text_success(self, plugin):
+        """Test validation of valid text."""
+        result = plugin._validate_text("  Valid quote  ")
+        assert result == "Valid quote"
+    
+    def test_validate_author_empty(self, plugin):
+        """Test validation of empty author."""
+        result = plugin._validate_author("")
+        assert result == "Unknown"
+    
+    def test_validate_author_none(self, plugin):
+        """Test validation of None author."""
+        result = plugin._validate_author(None)
+        assert result == "Unknown"
+    
+    def test_validate_author_too_long(self, plugin):
+        """Test validation of author exceeding max length."""
+        with pytest.raises(ValueError, match="too long"):
+            plugin._validate_author("x" * 101)
+    
+    def test_validate_author_success(self, plugin):
+        """Test validation of valid author."""
+        result = plugin._validate_author("  Alice  ")
+        assert result == "Alice"
 
 
 class TestPlaceholderMethods:
     """Test placeholder methods exist with correct signatures."""
-    
-    @pytest.mark.asyncio
-    async def test_add_quote_placeholder(self, initialized_plugin):
-        """Test add_quote placeholder exists."""
-        with pytest.raises(NotImplementedError):
-            await initialized_plugin.add_quote("test", author="Test Author")
-    
-    @pytest.mark.asyncio
-    async def test_get_quote_placeholder(self, initialized_plugin):
-        """Test get_quote placeholder exists."""
-        with pytest.raises(NotImplementedError):
-            await initialized_plugin.get_quote(1)
-    
-    @pytest.mark.asyncio
-    async def test_delete_quote_placeholder(self, initialized_plugin):
-        """Test delete_quote placeholder exists."""
-        with pytest.raises(NotImplementedError):
-            await initialized_plugin.delete_quote(1)
     
     @pytest.mark.asyncio
     async def test_find_by_author_placeholder(self, initialized_plugin):

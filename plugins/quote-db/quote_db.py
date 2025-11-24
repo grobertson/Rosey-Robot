@@ -11,6 +11,8 @@ Serves as canonical example for migrating plugins from direct SQLite access.
 """
 import logging
 import json
+import time
+import asyncio
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
@@ -132,8 +134,54 @@ class QuoteDBPlugin:
                 "Call initialize() before using methods."
             )
     
-    # ===== Placeholder methods for future implementation =====
-    # These will be implemented in Sorties 2 and 3
+    def _validate_text(self, text: str) -> str:
+        """
+        Validate quote text.
+        
+        Args:
+            text: The quote text to validate
+            
+        Returns:
+            Validated and trimmed text
+            
+        Raises:
+            ValueError: If text is empty or too long
+        """
+        if not text or not text.strip():
+            raise ValueError("Quote text cannot be empty")
+        
+        text = text.strip()
+        
+        if len(text) > 1000:
+            raise ValueError("Quote text too long (max 1000 chars)")
+        
+        return text
+    
+    def _validate_author(self, author: Optional[str]) -> str:
+        """
+        Validate author name.
+        
+        Args:
+            author: The author name to validate (can be None)
+            
+        Returns:
+            Validated and trimmed author name, or "Unknown" if empty
+            
+        Raises:
+            ValueError: If author name is too long
+        """
+        if not author or not author.strip():
+            return "Unknown"
+        
+        author = author.strip()
+        
+        if len(author) > 100:
+            raise ValueError("Author name too long (max 100 chars)")
+        
+        return author
+    
+    # ===== CRUD Operations =====
+    # Implemented in Sortie 2
     
     async def add_quote(self, text: str, author: Optional[str] = None, 
                        added_by: str = "unknown") -> int:
@@ -141,48 +189,150 @@ class QuoteDBPlugin:
         Add a new quote to the database.
         
         Args:
-            text: Quote text
-            author: Quote author (optional)
-            added_by: Username who added the quote
+            text: The quote text (1-1000 characters, trimmed)
+            author: The quote author (max 100 characters, defaults to "Unknown")
+            added_by: Username of the person adding the quote
             
         Returns:
-            ID of the newly created quote
+            The ID of the newly created quote
             
         Raises:
+            ValueError: If text is empty or too long, or author is too long
             RuntimeError: If plugin not initialized
-            ValueError: If text is empty
+            asyncio.TimeoutError: If NATS request times out
+            Exception: For other NATS/JSON errors
         """
         self._ensure_initialized()
-        # TODO: Implement in Sortie 2
-        raise NotImplementedError("Sortie 2")
+        
+        # Validate inputs
+        text = self._validate_text(text)
+        author = self._validate_author(author)
+        
+        # Prepare data
+        data = {
+            "table": "quotes",
+            "data": {
+                "text": text,
+                "author": author,
+                "added_by": added_by,
+                "timestamp": int(time.time()),
+                "score": 0
+            }
+        }
+        
+        # Insert via NATS
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.insert",
+                json.dumps(data).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            quote_id = result["id"]
+            
+            self.logger.info(f"Added quote {quote_id}: '{text[:50]}...' by {author}")
+            return quote_id
+            
+        except asyncio.TimeoutError:
+            self.logger.error(f"NATS timeout adding quote by {author}")
+            raise asyncio.TimeoutError(f"NATS request timed out: add_quote")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
     
     async def get_quote(self, quote_id: int) -> Optional[Dict[str, Any]]:
         """
         Retrieve a quote by ID.
         
         Args:
-            quote_id: Quote ID to retrieve
+            quote_id: The ID of the quote to retrieve
             
         Returns:
-            Quote dict or None if not found
+            Quote dictionary with keys: id, text, author, added_by, timestamp, score
+            Returns None if quote not found
+            
+        Raises:
+            RuntimeError: If plugin not initialized
+            asyncio.TimeoutError: If NATS request times out
+            Exception: For other NATS/JSON errors
         """
         self._ensure_initialized()
-        # TODO: Implement in Sortie 2
-        raise NotImplementedError("Sortie 2")
+        
+        # Query via NATS
+        query = {
+            "table": "quotes",
+            "filters": {"id": {"$eq": quote_id}},
+            "limit": 1
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.select",
+                json.dumps(query).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            rows = result.get("rows", [])
+            
+            if rows:
+                self.logger.info(f"Retrieved quote {quote_id}")
+                return rows[0]
+            else:
+                self.logger.info(f"Quote {quote_id} not found")
+                return None
+                
+        except asyncio.TimeoutError:
+            self.logger.error(f"NATS timeout getting quote {quote_id}")
+            raise asyncio.TimeoutError(f"NATS request timed out: get_quote")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
     
     async def delete_quote(self, quote_id: int) -> bool:
         """
         Delete a quote by ID.
         
         Args:
-            quote_id: Quote ID to delete
+            quote_id: The ID of the quote to delete
             
         Returns:
-            True if deleted, False if not found
+            True if quote was deleted, False if quote not found
+            
+        Raises:
+            RuntimeError: If plugin not initialized
+            asyncio.TimeoutError: If NATS request times out
+            Exception: For other NATS/JSON errors
         """
         self._ensure_initialized()
-        # TODO: Implement in Sortie 2
-        raise NotImplementedError("Sortie 2")
+        
+        # Delete via NATS
+        query = {
+            "table": "quotes",
+            "filters": {"id": {"$eq": quote_id}}
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.delete",
+                json.dumps(query).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            deleted = result.get("deleted", 0) > 0
+            
+            if deleted:
+                self.logger.info(f"Deleted quote {quote_id}")
+            else:
+                self.logger.info(f"Quote {quote_id} not found for deletion")
+            
+            return deleted
+            
+        except asyncio.TimeoutError:
+            self.logger.error(f"NATS timeout deleting quote {quote_id}")
+            raise asyncio.TimeoutError(f"NATS request timed out: delete_quote")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Invalid JSON response: {e}")
+            raise Exception("Invalid JSON response from NATS")
     
     async def find_by_author(self, author: str) -> List[Dict[str, Any]]:
         """
