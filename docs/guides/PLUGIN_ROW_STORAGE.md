@@ -1,8 +1,8 @@
 # Plugin Row Storage Guide
 
-**Version**: 1.0  
+**Version**: 2.0  
 **Last Updated**: November 24, 2025  
-**Sprint**: 13 (Row Operations Foundation)
+**Sprints**: 13 (Row Operations Foundation) + 14 (Advanced Query Operators)
 
 ---
 
@@ -218,6 +218,560 @@ Every table automatically includes these fields:
 | `updated_at` | TIMESTAMP | When row was last updated (UTC) |
 
 **Note:** These fields are **immutable** - you cannot modify `id` or `created_at`. The `updated_at` field is automatically set on every update.
+
+---
+
+## Advanced Query Operators (Sprint 14)
+
+**Version**: 2.0  
+**Added**: Sprint 14 (Advanced Query Operators)
+
+The Row Storage System now supports MongoDB-style query operators for powerful filtering, atomic updates, aggregations, and multi-field sorting.
+
+### Operator Categories
+
+1. **Comparison Operators**: $eq, $ne, $gt, $gte, $lt, $lte
+2. **Set Operators**: $in, $nin
+3. **Pattern Operators**: $like, $ilike
+4. **Existence Operators**: $exists, $null
+5. **Compound Logic**: $and, $or, $not
+6. **Update Operators**: $set, $inc, $dec, $mul, $max, $min
+7. **Aggregation Functions**: COUNT, SUM, AVG, MIN, MAX
+8. **Multi-Field Sorting**: Priority-based sorting
+
+### Quick Reference Table
+
+| Operator | Category | Types | Example |
+|----------|----------|-------|---------|
+| `$eq` | Comparison | All | `{'score': {'$eq': 100}}` |
+| `$ne` | Comparison | All | `{'status': {'$ne': 'deleted'}}` |
+| `$gt` | Comparison | Numeric, Datetime | `{'score': {'$gt': 50}}` |
+| `$gte` | Comparison | Numeric, Datetime | `{'age': {'$gte': 18}}` |
+| `$lt` | Comparison | Numeric, Datetime | `{'price': {'$lt': 100}}` |
+| `$lte` | Comparison | Numeric, Datetime | `{'score': {'$lte': 100}}` |
+| `$in` | Set | All | `{'status': {'$in': ['active', 'pending']}}` |
+| `$nin` | Set | All | `{'role': {'$nin': ['admin', 'mod']}}` |
+| `$like` | Pattern | Text | `{'email': {'$like': '%@example.com'}}` |
+| `$ilike` | Pattern | Text | `{'username': {'$ilike': 'alice%'}}` |
+| `$exists` | Existence | All | `{'email': {'$exists': True}}` |
+| `$null` | Existence | All | `{'deleted_at': {'$null': True}}` |
+| `$and` | Logic | - | `{'$and': [{'score': {'$gt': 50}}, {...}]}` |
+| `$or` | Logic | - | `{'$or': [{'status': 'active'}, {...}]}` |
+| `$not` | Logic | - | `{'$not': {'status': {'$eq': 'banned'}}}` |
+| `$set` | Update | All | `{'status': {'$set': 'active'}}` |
+| `$inc` | Update | Numeric | `{'score': {'$inc': 10}}` |
+| `$dec` | Update | Numeric | `{'lives': {'$dec': 1}}` |
+| `$mul` | Update | Numeric | `{'multiplier': {'$mul': 2}}` |
+| `$max` | Update | Numeric, Datetime | `{'high_score': {'$max': 100}}` |
+| `$min` | Update | Numeric, Datetime | `{'low_score': {'$min': 50}}` |
+
+### Comparison Operators
+
+Compare field values against constants:
+
+```python
+# Greater than
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"score": {"$gt": 100}}
+    }).encode()
+)
+
+# Between two values (using $gte and $lte)
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {
+            "$and": [
+                {"score": {"$gte": 50}},
+                {"score": {"$lte": 100}}
+            ]
+        }
+    }).encode()
+)
+
+# Not equal
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"status": {"$ne": "deleted"}}
+    }).encode()
+)
+```
+
+### Set Operators
+
+Check if field value is in or not in a list:
+
+```python
+# Match any status in list
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"status": {"$in": ["active", "pending", "trial"]}}
+    }).encode()
+)
+
+# Exclude specific roles
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"role": {"$nin": ["admin", "moderator"]}}
+    }).encode()
+)
+```
+
+### Pattern Operators
+
+Match text patterns using SQL LIKE syntax:
+
+```python
+# Case-sensitive pattern match
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"email": {"$like": "%@example.com"}}
+    }).encode()
+)
+
+# Case-insensitive pattern match
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"username": {"$ilike": "alice%"}}
+    }).encode()
+)
+
+# Wildcard patterns
+# % = any characters
+# _ = single character
+# Example: "a_ice%" matches "alice123" but not "ace"
+```
+
+### Existence Operators
+
+Check if field has a value or is NULL:
+
+```python
+# Find users with email addresses
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"email": {"$exists": True}}
+    }).encode()
+)
+
+# Find soft-deleted rows
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"deleted_at": {"$null": False}}  # deleted_at IS NOT NULL
+    }).encode()
+)
+```
+
+### Compound Logic
+
+Combine multiple conditions with AND, OR, NOT:
+
+```python
+# AND: All conditions must match
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {
+            "$and": [
+                {"status": {"$eq": "active"}},
+                {"score": {"$gte": 100}},
+                {"email": {"$exists": True}}
+            ]
+        }
+    }).encode()
+)
+
+# OR: Any condition must match
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {
+            "$or": [
+                {"role": {"$eq": "admin"}},
+                {"role": {"$eq": "moderator"}}
+            ]
+        }
+    }).encode()
+)
+
+# NOT: Negate a condition
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {
+            "$not": {"status": {"$eq": "banned"}}
+        }
+    }).encode()
+)
+
+# Nested compound logic
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {
+            "$and": [
+                {"score": {"$gte": 50}},
+                {
+                    "$or": [
+                        {"status": {"$eq": "active"}},
+                        {"status": {"$eq": "trial"}}
+                    ]
+                }
+            ]
+        }
+    }).encode()
+)
+```
+
+### Atomic Update Operators
+
+Perform atomic updates (prevents race conditions):
+
+```python
+# Increment a counter (atomic, no race condition)
+response = await nc.request(
+    "rosey.db.row.my-plugin.update",
+    json.dumps({
+        "table": "users",
+        "filters": {"username": {"$eq": "alice"}},
+        "operations": {"score": {"$inc": 10}}
+    }).encode()
+)
+
+# Decrement (e.g., lives in a game)
+response = await nc.request(
+    "rosey.db.row.my-plugin.update",
+    json.dumps({
+        "table": "game_state",
+        "filters": {"player_id": {"$eq": 42}},
+        "operations": {"lives": {"$dec": 1}}
+    }).encode()
+)
+
+# Update to maximum value (won't decrease if already higher)
+response = await nc.request(
+    "rosey.db.row.my-plugin.update",
+    json.dumps({
+        "table": "users",
+        "filters": {"username": {"$eq": "alice"}},
+        "operations": {"high_score": {"$max": 100}}
+    }).encode()
+)
+
+# Multiple atomic operations in one update
+response = await nc.request(
+    "rosey.db.row.my-plugin.update",
+    json.dumps({
+        "table": "users",
+        "filters": {"username": {"$eq": "alice"}},
+        "operations": {
+            "score": {"$inc": 5},
+            "high_score": {"$max": 105},
+            "status": {"$set": "active"}
+        }
+    }).encode()
+)
+```
+
+### Aggregation Functions
+
+Compute statistics across rows:
+
+```python
+# Count total active users
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"status": {"$eq": "active"}},
+        "aggregates": {
+            "total": {"$count": "*"}
+        }
+    }).encode()
+)
+
+result = json.loads(response.data.decode())
+print(f"Total active users: {result['total']}")
+
+# Multiple aggregations in one query
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"status": {"$eq": "active"}},
+        "aggregates": {
+            "total": {"$count": "*"},
+            "total_score": {"$sum": "score"},
+            "avg_score": {"$avg": "score"},
+            "min_score": {"$min": "score"},
+            "max_score": {"$max": "score"}
+        }
+    }).encode()
+)
+
+result = json.loads(response.data.decode())
+# Returns: {'total': 150, 'total_score': 12500, 'avg_score': 83.3, ...}
+```
+
+**Aggregation Types**:
+- `$count`: Count rows (use "*" or field name)
+- `$sum`: Sum numeric field values
+- `$avg`: Average of numeric field values
+- `$min`: Minimum value (numeric, datetime, or text)
+- `$max`: Maximum value (numeric, datetime, or text)
+
+### Multi-Field Sorting
+
+Sort by multiple fields with priority order:
+
+```python
+# Single-field sort (backward compatible)
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "sort": {"field": "score", "order": "desc"}
+    }).encode()
+)
+
+# Multi-field sort: status ascending, then score descending
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "sort": [
+            {"field": "status", "order": "asc"},
+            {"field": "score", "order": "desc"},
+            {"field": "username", "order": "asc"}
+        ]
+    }).encode()
+)
+# Results sorted by:
+# 1. status (ascending)
+# 2. score (descending) within each status
+# 3. username (ascending) within each status+score
+```
+
+### Common Query Patterns
+
+#### Pattern 1: Leaderboard (Top Scores)
+
+```python
+# Top 10 active users by score
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"status": {"$eq": "active"}},
+        "sort": [{"field": "score", "order": "desc"}],
+        "limit": 10
+    }).encode()
+)
+
+leaderboard = json.loads(response.data.decode())['rows']
+for i, user in enumerate(leaderboard, 1):
+    print(f"{i}. {user['username']}: {user['score']} points")
+```
+
+#### Pattern 2: Search with Multiple Criteria
+
+```python
+# Find premium users with high activity
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {
+            "$and": [
+                {"status": {"$in": ["active", "trial"]}},
+                {"score": {"$gte": 100}},
+                {"email": {"$exists": True}},
+                {"username": {"$ilike": "%gamer%"}}
+            ]
+        },
+        "sort": [
+            {"field": "score", "order": "desc"},
+            {"field": "created_at", "order": "desc"}
+        ],
+        "limit": 50
+    }).encode()
+)
+```
+
+#### Pattern 3: Analytics Dashboard
+
+```python
+# Dashboard statistics
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"status": {"$ne": "deleted"}},
+        "aggregates": {
+            "total_users": {"$count": "*"},
+            "total_score": {"$sum": "score"},
+            "avg_score": {"$avg": "score"},
+            "highest_score": {"$max": "score"}
+        }
+    }).encode()
+)
+
+stats = json.loads(response.data.decode())
+print(f"Dashboard:")
+print(f"  Total Users: {stats['total_users']}")
+print(f"  Average Score: {stats['avg_score']:.1f}")
+print(f"  Highest Score: {stats['highest_score']}")
+```
+
+#### Pattern 4: Atomic Counter (Views, Votes, etc.)
+
+```python
+# Increment view count atomically (safe for concurrent requests)
+response = await nc.request(
+    "rosey.db.row.my-plugin.update",
+    json.dumps({
+        "table": "posts",
+        "filters": {"id": {"$eq": post_id}},
+        "operations": {
+            "view_count": {"$inc": 1},
+            "last_viewed": {"$set": datetime.utcnow().isoformat()}
+        }
+    }).encode()
+)
+```
+
+#### Pattern 5: Soft Delete with Filtering
+
+```python
+# Mark as deleted (soft delete)
+response = await nc.request(
+    "rosey.db.row.my-plugin.update",
+    json.dumps({
+        "table": "users",
+        "filters": {"username": {"$eq": "alice"}},
+        "operations": {
+            "deleted_at": {"$set": datetime.utcnow().isoformat()},
+            "status": {"$set": "deleted"}
+        }
+    }).encode()
+)
+
+# Search excluding deleted users
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"deleted_at": {"$null": True}}  # deleted_at IS NULL
+    }).encode()
+)
+```
+
+#### Pattern 6: Recent Activity Feed
+
+```python
+# Get recent posts from followed users
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "posts",
+        "filters": {
+            "$and": [
+                {"author_id": {"$in": following_user_ids}},
+                {"status": {"$eq": "published"}},
+                {"created_at": {"$gte": one_week_ago.isoformat()}}
+            ]
+        },
+        "sort": [{"field": "created_at", "order": "desc"}],
+        "limit": 20
+    }).encode()
+)
+```
+
+### Type Compatibility Matrix
+
+| Operator | Integer | Float | String | Text | Boolean | Datetime |
+|----------|---------|-------|--------|------|---------|----------|
+| $eq, $ne | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| $gt, $gte, $lt, $lte | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| $in, $nin | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| $like, $ilike | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| $exists, $null | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| $inc, $dec, $mul | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| $max, $min | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ |
+| $set | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| $count | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| $sum, $avg | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+
+### Migration from Sprint 13 to Sprint 14
+
+Sprint 14 is 100% backward compatible. All Sprint 13 queries continue to work:
+
+**Sprint 13 (still works)**:
+```python
+# Simple equality filter
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"status": "active"}  # Simple string
+    }).encode()
+)
+```
+
+**Sprint 14 (new capability)**:
+```python
+# Advanced operators
+response = await nc.request(
+    "rosey.db.row.my-plugin.search",
+    json.dumps({
+        "table": "users",
+        "filters": {"status": {"$eq": "active"}}  # Using operator
+    }).encode()
+)
+```
+
+Both queries produce identical results. Upgrade at your own pace.
+
+### Performance Considerations
+
+**Query Performance**:
+- Comparison operators: Fast (uses indexes where available)
+- Pattern matching ($like, $ilike): Slower for leading wildcards (%abc)
+- Compound logic: Fast (compiled to single SQL WHERE clause)
+- Aggregations: Fast (single SQL query, no post-processing)
+
+**Update Performance**:
+- Atomic operations ($inc, $dec, etc.): Fast, single SQL UPDATE
+- Concurrent safety: Full ACID guarantees, no race conditions
+
+**Optimization Tips**:
+1. Put most selective filters first in $and clauses
+2. Use $in instead of multiple $or conditions
+3. Avoid leading wildcards in $like patterns (%abc is slow)
+4. Use aggregations instead of fetching all rows and computing in code
+5. Use atomic updates ($inc) instead of read-modify-write patterns
 
 ---
 
@@ -734,10 +1288,10 @@ await nc.request("rosey.db.row.my-plugin.insert", json.dumps({
 
 ### Current Limitations
 
-1. **No joins**: Cannot query across multiple tables
-2. **Equality filters only**: No range queries (>, <, BETWEEN)
-3. **Single-field sorting**: Cannot sort by multiple fields
-4. **No full-text search**: Use exact matches only
+1. **No GROUP BY operations**: Cannot group aggregations by fields
+2. **No HAVING clause**: Cannot filter aggregation results
+3. **No joins**: Cannot query across multiple tables
+4. **No full-text search**: Use pattern matching ($like, $ilike) instead
 5. **No transactions**: Operations are atomic but not transactional
 6. **No schema migrations**: Changing schemas requires manual migration
 
@@ -745,7 +1299,7 @@ await nc.request("rosey.db.row.my-plugin.insert", json.dumps({
 
 - Sprint 15: Schema migrations and versioning
 - Sprint 16: Indexes and compound keys
-- Sprint 17: Range filters and LIKE queries
+- Sprint 17: GROUP BY and HAVING clauses
 - Sprint 18: Multi-table joins
 - Sprint 19: Full-text search
 
@@ -769,6 +1323,8 @@ await nc.request("rosey.db.row.my-plugin.insert", json.dumps({
 
 ---
 
-**Document Version**: 1.0  
+**Document Version**: 2.0  
 **Last Updated**: November 24, 2025  
-**Sprint**: 13 (Row Operations Foundation) ✅ Complete
+**Sprints**:
+- Sprint 13: Row Operations Foundation ✅
+- Sprint 14: Advanced Query Operators ✅

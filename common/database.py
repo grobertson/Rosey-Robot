@@ -17,7 +17,7 @@ import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Optional, Dict, List, Union
 
 from sqlalchemy import delete, func, insert, literal_column, or_, select, text, update, MetaData, Table, and_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -1791,20 +1791,33 @@ class BotDatabase:
         plugin_name: str,
         table_name: str,
         row_id: int,
-        data: dict
+        data: Optional[dict] = None,
+        operations: Optional[dict] = None
     ) -> dict:
         """
-        Update row by primary key ID (partial update).
+        Update row by primary key ID (partial update or atomic operations).
+        
+        Supports two modes:
+        1. Simple update (data): Only specified fields are updated
+        2. Atomic operations (operations): Database-level atomic updates
         
         Only specified fields are updated; unspecified fields remain unchanged.
         Immutable fields (id, created_at) cannot be updated.
         The updated_at field is automatically set to current timestamp.
         
+        **Sprint 14 Sortie 3**: Supports atomic update operators ($set, $inc, $dec, 
+        $mul, $max, $min) for race-condition-free updates.
+        
         Args:
             plugin_name: Plugin identifier (e.g., "quote_db")
             table_name: Table name without plugin prefix (e.g., "quotes")
             row_id: Primary key ID
-            data: Fields to update (partial dict)
+            data: Fields to update (partial dict) - traditional mode
+            operations: Atomic update operations (Sprint 14)
+                Example: {
+                    'score': {'$inc': 10},
+                    'high_score': {'$max': 95}
+                }
         
         Returns:
             {"id": 42, "updated": True} if row existed and was updated
@@ -1812,10 +1825,20 @@ class BotDatabase:
         
         Raises:
             ValueError: If table not registered, data invalid, or immutable field update attempted
+            TypeError: If operation incompatible with field type
         
-        Example:
-            # Update just the author field
-            result = await db.row_update("quote_db", "quotes", 1, {"author": "NewAuthor"})
+        Examples:
+            # Traditional update
+            result = await db.row_update("quote_db", "quotes", 1, data={"author": "NewAuthor"})
+            
+            # Atomic operations (Sprint 14)
+            result = await db.row_update(
+                "trivia", "scores", 1,
+                operations={
+                    'score': {'$inc': 10},       # Increment score by 10
+                    'high_score': {'$max': 95}   # Set to 95 if higher
+                }
+            )
             # {"id": 1, "updated": True}
         """
         # Verify table exists
@@ -1825,6 +1848,58 @@ class BotDatabase:
                 f"Table '{table_name}' not registered for plugin '{plugin_name}'"
             )
         
+        # Must provide either data or operations
+        if not data and not operations:
+            raise ValueError("Must provide either 'data' or 'operations' for update")
+        
+        # Cannot provide both
+        if data and operations:
+            raise ValueError("Cannot provide both 'data' and 'operations' - choose one mode")
+        
+        # Get table
+        full_table_name = f"{plugin_name}_{table_name}"
+        table = await self.get_table(full_table_name)
+        
+        # Handle atomic operations mode (Sprint 14 Sortie 3)
+        if operations:
+            # Check for immutable field updates
+            immutable_attempted = self.IMMUTABLE_FIELDS.intersection(operations.keys())
+            if immutable_attempted:
+                raise ValueError(
+                    f"Cannot update immutable fields: {', '.join(sorted(immutable_attempted))}"
+                )
+            
+            # Parse atomic update operations
+            parser = OperatorParser(schema)
+            update_exprs = parser.parse_update_operations(operations, table)
+            
+            # Add updated_at timestamp
+            update_exprs['updated_at'] = datetime.now()
+            
+            # Check if row exists and update
+            async with self._get_session() as session:
+                # Check existence
+                check_stmt = select(table.c.id).where(table.c.id == row_id)
+                result = await session.execute(check_stmt)
+                exists = result.scalar() is not None
+                
+                if not exists:
+                    return {"exists": False}
+                
+                # Perform atomic update
+                stmt = (
+                    update(table)
+                    .where(table.c.id == row_id)
+                    .values(**update_exprs)
+                )
+                await session.execute(stmt)
+                
+                return {
+                    "id": row_id,
+                    "updated": True
+                }
+        
+        # Traditional data mode
         # Check for empty update
         if not data:
             raise ValueError("No data provided for update")
@@ -1842,10 +1917,6 @@ class BotDatabase:
         # Add updated_at timestamp
         validated_data['updated_at'] = datetime.now()
         
-        # Get table
-        full_table_name = f"{plugin_name}_{table_name}"
-        table = await self.get_table(full_table_name)
-        
         # Check if row exists and update
         async with self._get_session() as session:
             # Check existence
@@ -1856,7 +1927,7 @@ class BotDatabase:
             if not exists:
                 return {"exists": False}
             
-            # Perform update
+            # Perform traditional update
             stmt = (
                 update(table)
                 .where(table.c.id == row_id)
@@ -1926,18 +1997,21 @@ class BotDatabase:
         plugin_name: str,
         table_name: str,
         filters: Optional[dict] = None,
-        sort: Optional[dict] = None,
+        sort: Optional[Union[dict, List[dict]]] = None,
         limit: int = 100,
-        offset: int = 0
-    ) -> dict:
+        offset: int = 0,
+        aggregates: Optional[dict] = None
+    ) -> Union[dict, Dict[str, Any]]:
         """
-        Search rows with filters, sorting, and pagination.
+        Search rows with filters, sorting, pagination, and aggregations.
         
         Searches a plugin's table using filters (with MongoDB-style operators),
         sorting, and pagination. Returns matching rows with metadata about truncation.
         
-        **Sprint 14 Enhancement**: Now supports MongoDB-style query operators
-        ($eq, $ne, $gt, $gte, $lt, $lte) in addition to simple equality filters.
+        **Sprint 14 Complete**: Supports all advanced query operators including
+        filters ($eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $like, $ilike, $exists, $null),
+        compound logic ($and, $or, $not), multi-field sorting, and aggregations
+        (COUNT, SUM, AVG, MIN, MAX).
         
         Args:
             plugin_name: Plugin identifier (e.g., "quote_db")
@@ -2020,42 +2094,42 @@ class BotDatabase:
         # Get table
         full_table_name = f"{plugin_name}_{table_name}"
         table = await self.get_table(full_table_name)
+        parser = OperatorParser(schema)
         
-        # Build SELECT statement
+        # Handle aggregation queries (Sprint 14 Sortie 4)
+        if aggregates:
+            agg_exprs = parser.parse_aggregations(aggregates, table)
+            stmt = select(*agg_exprs)
+            
+            # Apply filters if provided
+            if filters:
+                clauses = parser.parse_filters(filters, table)
+                if clauses:
+                    stmt = stmt.where(and_(*clauses))
+            
+            # Execute aggregation query
+            async with self._get_session() as session:
+                result = await session.execute(stmt)
+                row = result.fetchone()
+                
+                # Return dict with custom result names
+                return dict(zip([agg.name for agg in agg_exprs], row))
+        
+        # Regular query
         stmt = select(table)
         
         # Apply filters using OperatorParser (Sprint 14)
         if filters:
-            parser = OperatorParser(schema)
             clauses = parser.parse_filters(filters, table)
             
             # Combine all clauses with AND
             if clauses:
                 stmt = stmt.where(and_(*clauses))
         
-        # Build set of valid fields for sorting validation
-        schema_fields = {f['name'] for f in schema['fields']}
-        schema_fields.update({"id", "created_at", "updated_at"})
-        
-        # Apply sorting
+        # Apply sorting using parse_sort (Sprint 14 Sortie 4 - supports multi-field)
         if sort:
-            sort_field = sort.get('field')
-            sort_order = sort.get('order', 'asc').lower()
-            
-            if not sort_field:
-                raise ValueError("Sort field must be specified")
-            
-            # Validate sort field exists
-            if sort_field not in schema_fields:
-                raise ValueError(
-                    f"Cannot sort on non-existent field: {sort_field}"
-                )
-            
-            # Apply ORDER BY
-            if sort_order == 'desc':
-                stmt = stmt.order_by(table.c[sort_field].desc())
-            else:
-                stmt = stmt.order_by(table.c[sort_field])
+            order_clauses = parser.parse_sort(sort, table)
+            stmt = stmt.order_by(*order_clauses)
         
         # Apply pagination with truncation detection
         # Fetch limit+1 to detect if more rows exist
