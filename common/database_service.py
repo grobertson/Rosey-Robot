@@ -96,7 +96,9 @@ class DatabaseService:
         self._shutdown = False
         
         # Migration support (Sprint 15 Sorties 2-3)
-        self.migration_manager = MigrationManager(self.db)
+        from pathlib import Path
+        plugins_dir = Path(__file__).parent.parent / 'plugins'
+        self.migration_manager = MigrationManager(plugins_dir)
         self.migration_executor = MigrationExecutor(self.db)
         self.migration_validator = MigrationValidator(db_type='sqlite')
         self.migration_locks: Dict[str, asyncio.Lock] = {}  # Per-plugin locks
