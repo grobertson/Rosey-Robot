@@ -435,3 +435,34 @@ class MigrationManager:
                         f"File has been modified after application. "
                         f"Expected: {expected}, Got: {migration.checksum}"
                     )
+    
+    def find_migration(self, plugin_name: str, version: int) -> Migration:
+        """
+        Find a specific migration by plugin name and version.
+        
+        Used for checksum verification when comparing file vs database.
+        
+        Args:
+            plugin_name: Name of plugin
+            version: Migration version number
+            
+        Returns:
+            Migration object
+            
+        Raises:
+            FileNotFoundError: If migration file not found
+            
+        Example:
+            >>> manager = MigrationManager('/path/to/plugins')
+            >>> migration = manager.find_migration('quotes', 3)
+            >>> print(migration.checksum)
+        """
+        all_migrations = self.discover_migrations(plugin_name)
+        
+        for migration in all_migrations:
+            if migration.version == version:
+                return migration
+        
+        raise FileNotFoundError(
+            f"Migration not found: {plugin_name} version {version}"
+        )

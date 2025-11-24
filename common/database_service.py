@@ -29,7 +29,14 @@ except ImportError:
     NATS = None
 
 from common.database import BotDatabase
-from common.migrations import MigrationManager, MigrationExecutor, DryRunRollback
+from common.migrations import (
+    MigrationManager,
+    MigrationExecutor,
+    DryRunRollback,
+    MigrationValidator,
+    ValidationWarning,
+    WarningLevel,
+)
 
 
 class DatabaseService:
@@ -88,9 +95,10 @@ class DatabaseService:
         self._cleanup_task = None
         self._shutdown = False
         
-        # Migration support (Sprint 15 Sortie 2)
+        # Migration support (Sprint 15 Sorties 2-3)
         self.migration_manager = MigrationManager(self.db)
         self.migration_executor = MigrationExecutor(self.db)
+        self.migration_validator = MigrationValidator(db_type='sqlite')
         self.migration_locks: Dict[str, asyncio.Lock] = {}  # Per-plugin locks
 
     async def start(self):
@@ -1852,6 +1860,35 @@ class DatabaseService:
                     }).encode())
                     return
                 
+                # Validate migrations (Sprint 15 Sortie 3)
+                all_warnings = []
+                has_errors = False
+                
+                for migration in migrations:
+                    warnings = self.migration_validator.validate_migration(migration)
+                    
+                    for warning in warnings:
+                        all_warnings.append(warning.to_dict())
+                        if warning.level == WarningLevel.ERROR:
+                            has_errors = True
+                
+                # Reject if validation errors found
+                if has_errors:
+                    error_warnings = [w for w in all_warnings if w['level'] == 'ERROR']
+                    warning_warnings = [w for w in all_warnings if w['level'] == 'WARNING']
+                    
+                    await msg.respond(json.dumps({
+                        "success": False,
+                        "error": {
+                            "code": "VALIDATION_FAILED",
+                            "message": f"Migrations failed validation: {len(error_warnings)} error(s)"
+                        },
+                        "errors": error_warnings,
+                        "warnings": warning_warnings,
+                        "current_version": current_version
+                    }).encode())
+                    return
+                
                 # Apply migrations
                 applied = []
                 for migration in migrations:
@@ -1899,6 +1936,11 @@ class DatabaseService:
                 }
                 if dry_run:
                     response["message"] = "Dry-run: migrations not committed"
+                
+                # Include warnings if any (but not errors - those were already rejected)
+                warning_warnings = [w for w in all_warnings if w['level'] == 'WARNING']
+                if warning_warnings:
+                    response["warnings"] = warning_warnings
                 
                 await msg.respond(json.dumps(response).encode())
                 
@@ -2158,8 +2200,32 @@ class DatabaseService:
             except Exception as e:
                 self.logger.error(f"Failed to get applied migrations: {e}")
             
+            # Verify checksums for applied migrations (Sprint 15 Sortie 3)
+            checksum_warnings = []
+            for applied in applied_migrations:
+                try:
+                    migration = self.migration_manager.find_migration(
+                        plugin_name, applied['version']
+                    )
+                    warnings = self.migration_validator.verify_checksums(
+                        migration, applied['checksum']
+                    )
+                    checksum_warnings.extend([w.to_dict() for w in warnings])
+                except FileNotFoundError:
+                    # Migration file no longer exists
+                    checksum_warnings.append({
+                        'level': 'ERROR',
+                        'message': f"Migration file not found for applied version {applied['version']}",
+                        'migration_version': applied['version'],
+                        'migration_name': applied['name'],
+                        'category': 'checksum'
+                    })
+                except Exception as e:
+                    self.logger.error(f"Checksum verification error: {e}")
+            
             # Get pending migrations
             pending_migrations = []
+            pending_warnings = []
             try:
                 migrations = await self.migration_manager.get_pending_migrations(
                     plugin_name=plugin_name,
@@ -2171,6 +2237,11 @@ class DatabaseService:
                         "name": migration.name,
                         "filename": migration.filename
                     })
+                    
+                    # Validate pending migrations
+                    warnings = self.migration_validator.validate_migration(migration)
+                    pending_warnings.extend([w.to_dict() for w in warnings])
+                    
             except Exception as e:
                 self.logger.error(f"Failed to get pending migrations: {e}")
             
@@ -2181,6 +2252,13 @@ class DatabaseService:
                 "applied_migrations": applied_migrations,
                 "pending_migrations": pending_migrations
             }
+            
+            # Include warnings if any
+            if checksum_warnings:
+                response["checksum_warnings"] = checksum_warnings
+            if pending_warnings:
+                response["pending_warnings"] = pending_warnings
+            
             await msg.respond(json.dumps(response).encode())
             
         except Exception as e:
