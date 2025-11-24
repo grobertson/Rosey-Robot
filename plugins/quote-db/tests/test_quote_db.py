@@ -283,19 +283,60 @@ class TestValidation:
 
 
 class TestPlaceholderMethods:
-    """Test placeholder methods exist with correct signatures."""
+    """Test convenience wrapper methods."""
     
     @pytest.mark.asyncio
-    async def test_find_by_author_placeholder(self, initialized_plugin):
-        """Test find_by_author placeholder exists."""
-        with pytest.raises(NotImplementedError):
-            await initialized_plugin.find_by_author("Test Author")
+    async def test_find_by_author_success(self, initialized_plugin, mock_nats):
+        """Test find_by_author calls search_quotes."""
+        mock_nats.reset_mock()
+        
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({
+            "rows": [
+                {"id": 1, "text": "Test quote", "author": "Einstein", "score": 5}
+            ]
+        }).encode()
+        mock_nats.request.return_value = mock_response
+        
+        quotes = await initialized_plugin.find_by_author("Einstein")
+        
+        assert len(quotes) == 1
+        assert quotes[0]["author"] == "Einstein"
+        mock_nats.request.assert_called_once()
     
     @pytest.mark.asyncio
-    async def test_increment_score_placeholder(self, initialized_plugin):
-        """Test increment_score placeholder exists."""
-        with pytest.raises(NotImplementedError):
-            await initialized_plugin.increment_score(1, amount=5)
+    async def test_increment_score_success(self, initialized_plugin, mock_nats):
+        """Test increment_score increases score by custom amount."""
+        mock_nats.reset_mock()
+        
+        # Mock update response
+        update_response = MagicMock()
+        update_response.data = json.dumps({"updated": 1}).encode()
+        
+        # Mock get_quote response
+        get_response = MagicMock()
+        get_response.data = json.dumps({
+            "rows": [{"id": 1, "text": "Test", "author": "Author", "score": 15}]
+        }).encode()
+        
+        mock_nats.request.side_effect = [update_response, get_response]
+        
+        score = await initialized_plugin.increment_score(1, amount=10)
+        
+        assert score == 15
+        assert mock_nats.request.call_count == 2
+    
+    @pytest.mark.asyncio
+    async def test_increment_score_not_found(self, initialized_plugin, mock_nats):
+        """Test increment_score raises ValueError when quote not found."""
+        mock_nats.reset_mock()
+        
+        mock_response = MagicMock()
+        mock_response.data = json.dumps({"updated": 0}).encode()
+        mock_nats.request.return_value = mock_response
+        
+        with pytest.raises(ValueError, match="Quote 999 not found"):
+            await initialized_plugin.increment_score(999, amount=5)
 
 
 class TestSearchQuotes:
