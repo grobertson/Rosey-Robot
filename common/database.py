@@ -30,6 +30,7 @@ from common.models import (
     CurrentStatus,
     OutboundMessage,
     PluginKVStorage,
+    PluginTableSchema,
     RecentChat,
     UserAction,
     UserCountHistory,
@@ -153,6 +154,11 @@ class BotDatabase:
         )
 
         self._is_connected = False
+        
+        # Initialize schema registry (Sprint 13)
+        from common.schema_registry import SchemaRegistry
+        self.schema_registry = SchemaRegistry(self)
+        
         self.logger.info(
             'Database engine initialized: %s (pool: %d+%d)',
             'PostgreSQL' if self.is_postgresql else 'SQLite',
@@ -189,6 +195,9 @@ class BotDatabase:
             count = result.scalar()
             self._is_connected = True
             self.logger.info('Database connected (%d users)', count)
+        
+        # Load schema registry cache (Sprint 13)
+        await self.schema_registry.load_cache()
 
     async def close(self) -> None:
         """
