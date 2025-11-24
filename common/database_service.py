@@ -145,6 +145,17 @@ class DatabaseService:
                                         cb=self._handle_kv_list),
             ])
 
+            # Row Storage handlers (request/reply) - Sprint 13
+            # Wildcard subscriptions for plugin-specific operations
+            self._subscriptions.extend([
+                await self.nats.subscribe('rosey.db.row.*.schema.register',
+                                        cb=self._handle_schema_register),
+                await self.nats.subscribe('rosey.db.row.*.insert',
+                                        cb=self._handle_row_insert),
+                await self.nats.subscribe('rosey.db.row.*.select',
+                                        cb=self._handle_row_select),
+            ])
+
             self._running = True
             
             # Start background cleanup task
@@ -992,6 +1003,344 @@ class DatabaseService:
                     "error": {
                         "code": "INTERNAL_ERROR",
                         "message": "Unexpected error occurred"
+                    }
+                }).encode())
+            except:
+                pass
+
+    # ==================== Row Storage Handlers (Sprint 13) ====================
+
+    async def _handle_schema_register(self, msg):
+        """
+        Handle rosey.db.row.{plugin}.schema.register requests.
+        
+        NATS Subject: rosey.db.row.{plugin}.schema.register (request/reply)
+        
+        Request:
+            {
+                "table": str,
+                "schema": {
+                    "fields": [
+                        {"name": str, "type": str, "required": bool}
+                    ]
+                }
+            }
+        
+        Response:
+            {"success": true} or {"success": false, "error": {...}}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Extract plugin from subject
+            parts = msg.subject.split('.')
+            if len(parts) < 5:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_SUBJECT",
+                        "message": "Invalid subject format"
+                    }
+                }).encode())
+                return
+            
+            plugin_name = parts[3]  # rosey.db.row.{plugin}.schema.register
+            
+            # Validate required fields
+            table_name = request.get('table')
+            schema = request.get('schema')
+            
+            if not table_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'table' missing"
+                    }
+                }).encode())
+                return
+            
+            if not schema:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'schema' missing"
+                    }
+                }).encode())
+                return
+            
+            # Register schema
+            try:
+                await self.db.schema_registry.register_schema(
+                    plugin_name,
+                    table_name,
+                    schema
+                )
+            except ValueError as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": str(e)
+                    }
+                }).encode())
+                return
+            except Exception as e:
+                self.logger.error(f"Schema registration failed: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Schema registration failed"
+                    }
+                }).encode())
+                return
+            
+            # Success
+            await msg.respond(json.dumps({
+                "success": True
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in schema_register: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error"
+                    }
+                }).encode())
+            except:
+                pass
+
+    async def _handle_row_insert(self, msg):
+        """
+        Handle rosey.db.row.{plugin}.insert requests.
+        
+        NATS Subject: rosey.db.row.{plugin}.insert (request/reply)
+        
+        Request:
+            {
+                "table": str,
+                "data": dict | list[dict]
+            }
+        
+        Response:
+            Single: {"success": true, "id": 42, "created": true}
+            Bulk: {"success": true, "ids": [42, 43], "created": 2}
+            Error: {"success": false, "error": {...}}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Extract plugin from subject
+            parts = msg.subject.split('.')
+            if len(parts) < 4:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_SUBJECT",
+                        "message": "Invalid subject format"
+                    }
+                }).encode())
+                return
+            
+            plugin_name = parts[3]  # rosey.db.row.{plugin}.insert
+            
+            # Validate required fields
+            table_name = request.get('table')
+            data = request.get('data')
+            
+            if not table_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'table' missing"
+                    }
+                }).encode())
+                return
+            
+            if data is None:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'data' missing"
+                    }
+                }).encode())
+                return
+            
+            # Insert
+            try:
+                result = await self.db.row_insert(plugin_name, table_name, data)
+            except ValueError as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": str(e)
+                    }
+                }).encode())
+                return
+            except Exception as e:
+                self.logger.error(f"Insert failed: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "DATABASE_ERROR",
+                        "message": "Insert operation failed"
+                    }
+                }).encode())
+                return
+            
+            # Success
+            response = {"success": True, **result}
+            await msg.respond(json.dumps(response).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in row_insert: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error"
+                    }
+                }).encode())
+            except:
+                pass
+
+    async def _handle_row_select(self, msg):
+        """
+        Handle rosey.db.row.{plugin}.select requests.
+        
+        NATS Subject: rosey.db.row.{plugin}.select (request/reply)
+        
+        Request:
+            {
+                "table": str,
+                "id": int
+            }
+        
+        Response:
+            {"success": true, "exists": true, "data": {...}}
+            or
+            {"success": true, "exists": false}
+            or
+            {"success": false, "error": {...}}
+        """
+        try:
+            # Parse request
+            try:
+                request = json.loads(msg.data.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_JSON",
+                        "message": f"Invalid JSON: {str(e)}"
+                    }
+                }).encode())
+                return
+            
+            # Extract plugin from subject
+            parts = msg.subject.split('.')
+            if len(parts) < 4:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INVALID_SUBJECT",
+                        "message": "Invalid subject format"
+                    }
+                }).encode())
+                return
+            
+            plugin_name = parts[3]  # rosey.db.row.{plugin}.select
+            
+            # Validate required fields
+            table_name = request.get('table')
+            row_id = request.get('id')
+            
+            if not table_name:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'table' missing"
+                    }
+                }).encode())
+                return
+            
+            if row_id is None:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "MISSING_FIELD",
+                        "message": "Required field 'id' missing"
+                    }
+                }).encode())
+                return
+            
+            # Select
+            try:
+                result = await self.db.row_select(plugin_name, table_name, row_id)
+            except ValueError as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "VALIDATION_ERROR",
+                        "message": str(e)
+                    }
+                }).encode())
+                return
+            except Exception as e:
+                self.logger.error(f"Select failed: {e}", exc_info=True)
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "DATABASE_ERROR",
+                        "message": "Select operation failed"
+                    }
+                }).encode())
+                return
+            
+            # Success
+            response = {"success": True, **result}
+            await msg.respond(json.dumps(response).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Unexpected error in row_select: {e}", exc_info=True)
+            try:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": {
+                        "code": "INTERNAL_ERROR",
+                        "message": "Unexpected error"
                     }
                 }).encode())
             except:
