@@ -292,6 +292,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None  # Type narrowing for mypy
 
         try:
             cursor = self.conn.cursor()
@@ -327,6 +328,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None  # Type narrowing for mypy
 
         try:
             cursor = self.conn.cursor()
@@ -402,6 +404,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None  # Type narrowing for mypy
 
         try:
             cursor = self.conn.cursor()
@@ -448,6 +451,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None  # Type narrowing for mypy
 
         try:
             cursor = self.conn.cursor()
@@ -496,6 +500,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None  # Type narrowing for mypy
 
         try:
             cursor = self.conn.cursor()
@@ -572,6 +577,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None  # Type narrowing for mypy
 
         try:
             cursor = self.conn.cursor()
@@ -618,6 +624,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None  # Type narrowing for mypy
 
         try:
             cursor = self.conn.cursor()
@@ -650,6 +657,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None  # Type narrowing for mypy
 
         try:
             cursor = self.conn.cursor()
@@ -681,6 +689,7 @@ class SQLiteStorage(StorageAdapter):
         """
         if not self.is_connected:
             raise QueryError("Not connected to database")
+        assert self.conn is not None  # Type narrowing for mypy
 
         try:
             cursor = self.conn.cursor()

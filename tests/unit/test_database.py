@@ -44,7 +44,7 @@ def db(temp_db_path):
 
 
 @pytest.fixture
-def db_with_users(db):
+async def db_with_users(db):
     """Database with sample users"""
     await db.user_joined("alice")
     await db.user_joined("bob")
@@ -67,7 +67,7 @@ def db_with_history(db):
 
 
 @pytest.fixture
-def db_with_messages(db):
+async def db_with_messages(db):
     """Database with outbound messages"""
     await db.enqueue_outbound_message("Hello world")
     await db.enqueue_outbound_message("Test message")
@@ -75,7 +75,7 @@ def db_with_messages(db):
 
 
 @pytest.fixture
-def db_with_tokens(db):
+async def db_with_tokens(db):
     """Database with API tokens"""
     token1 = await db.generate_api_token("Test token 1")
     token2 = await db.generate_api_token("Test token 2")
