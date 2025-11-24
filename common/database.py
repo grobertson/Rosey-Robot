@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import delete, func, literal_column, or_, select, text, update
+from sqlalchemy import delete, func, insert, literal_column, or_, select, text, update, MetaData, Table
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -158,6 +158,9 @@ class BotDatabase:
         # Initialize schema registry (Sprint 13)
         from common.schema_registry import SchemaRegistry
         self.schema_registry = SchemaRegistry(self)
+        
+        # Table cache for row operations (Sprint 13 Sortie 2)
+        self._table_cache = {}
         
         self.logger.info(
             'Database engine initialized: %s (pool: %d+%d)',
@@ -1501,3 +1504,275 @@ class BotDatabase:
         except Exception as e:
             self.logger.error('Database maintenance error: %s', e)
             raise
+
+    # ==================== Row Storage Operations (Sprint 13) ====================
+
+    async def get_table(self, full_table_name: str) -> Table:
+        """
+        Get SQLAlchemy Table object for plugin table (with caching).
+        
+        Args:
+            full_table_name: Full table name (e.g., "quote_db_quotes")
+        
+        Returns:
+            SQLAlchemy Table object
+        
+        Example:
+            table = await db.get_table("myplugin_data")
+            # Use table for queries
+        """
+        if full_table_name not in self._table_cache:
+            # Reflect table from database using async connection
+            metadata = MetaData()
+            async with self.engine.connect() as conn:
+                await conn.run_sync(
+                    lambda sync_conn: metadata.reflect(
+                        bind=sync_conn,
+                        only=[full_table_name]
+                    )
+                )
+            
+            table = metadata.tables[full_table_name]
+            self._table_cache[full_table_name] = table
+        
+        return self._table_cache[full_table_name]
+
+    def _validate_and_coerce_row(self, data: dict, schema: dict) -> dict:
+        """
+        Validate row data against schema and coerce types.
+        
+        Args:
+            data: Row data to validate
+            schema: Schema definition from SchemaRegistry
+        
+        Returns:
+            Validated and coerced data dict
+        
+        Raises:
+            ValueError: If validation fails or type coercion impossible
+        
+        Example:
+            schema = {'fields': [
+                {'name': 'count', 'type': 'integer', 'required': True}
+            ]}
+            result = db._validate_and_coerce_row({'count': '42'}, schema)
+            # result = {'count': 42}
+        """
+        result = {}
+        schema_fields = {f['name']: f for f in schema['fields']}
+        
+        # Check required fields
+        for field in schema['fields']:
+            if field.get('required', False) and field['name'] not in data:
+                raise ValueError(f"Missing required field: {field['name']}")
+        
+        # Validate and coerce each field in data
+        for key, value in data.items():
+            if key not in schema_fields:
+                raise ValueError(f"Unknown field: {key}")
+            
+            field_def = schema_fields[key]
+            field_type = field_def['type']
+            
+            # Handle None values
+            if value is None:
+                if field_def.get('required', False):
+                    raise ValueError(f"Field '{key}' cannot be null")
+                result[key] = None
+                continue
+            
+            # Type coercion
+            try:
+                if field_type == 'string':
+                    result[key] = str(value)
+                
+                elif field_type == 'text':
+                    result[key] = str(value)
+                
+                elif field_type == 'integer':
+                    if isinstance(value, str):
+                        result[key] = int(value)
+                    elif isinstance(value, (int, float)):
+                        result[key] = int(value)
+                    else:
+                        raise ValueError(f"Cannot convert {type(value).__name__} to integer")
+                
+                elif field_type == 'float':
+                    result[key] = float(value)
+                
+                elif field_type == 'boolean':
+                    if isinstance(value, bool):
+                        result[key] = value
+                    elif isinstance(value, str):
+                        result[key] = value.lower() in ('true', '1', 'yes', 'on')
+                    else:
+                        result[key] = bool(value)
+                
+                elif field_type == 'datetime':
+                    if isinstance(value, datetime):
+                        result[key] = value
+                    elif isinstance(value, str):
+                        # Try ISO 8601 format
+                        result[key] = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                    else:
+                        raise ValueError(f"Cannot convert {type(value).__name__} to datetime")
+            
+            except (ValueError, TypeError) as e:
+                raise ValueError(
+                    f"Field '{key}': Cannot convert value to {field_type}: {e}"
+                )
+        
+        return result
+
+    async def row_insert(
+        self,
+        plugin_name: str,
+        table_name: str,
+        data: dict | list[dict]
+    ) -> dict:
+        """
+        Insert row(s) into plugin table.
+        
+        Args:
+            plugin_name: Plugin identifier (e.g., "quote_db")
+            table_name: Table name without plugin prefix (e.g., "quotes")
+            data: Single dict or list of dicts to insert
+        
+        Returns:
+            Single insert: {"id": 42, "created": True}
+            Bulk insert: {"ids": [42, 43, 44], "created": 3}
+        
+        Raises:
+            ValueError: If table not registered or data invalid
+        
+        Example:
+            # Single insert
+            result = await db.row_insert(
+                "quote_db", "quotes",
+                {"text": "Hello world", "author": "Alice"}
+            )
+            # result = {"id": 1, "created": True}
+            
+            # Bulk insert
+            result = await db.row_insert(
+                "quote_db", "quotes",
+                [
+                    {"text": "Quote 1", "author": "Bob"},
+                    {"text": "Quote 2", "author": "Charlie"}
+                ]
+            )
+            # result = {"ids": [2, 3], "created": 2}
+        """
+        # Get schema
+        schema = self.schema_registry.get_schema(plugin_name, table_name)
+        if not schema:
+            raise ValueError(
+                f"Table '{table_name}' not registered for plugin '{plugin_name}'. "
+                f"Register schema first using schema_register."
+            )
+        
+        # Handle bulk vs single
+        is_bulk = isinstance(data, list)
+        rows = data if is_bulk else [data]
+        
+        if len(rows) == 0:
+            raise ValueError("No data provided for insert")
+        
+        # Validate and coerce all rows
+        validated_rows = []
+        for i, row in enumerate(rows):
+            try:
+                validated = self._validate_and_coerce_row(row, schema)
+                # Add timestamps if not present
+                now = datetime.now()
+                if 'created_at' not in validated:
+                    validated['created_at'] = now
+                if 'updated_at' not in validated:
+                    validated['updated_at'] = now
+                validated_rows.append(validated)
+            except ValueError as e:
+                raise ValueError(f"Row {i}: {e}")
+        
+        # Get table
+        full_table_name = f"{plugin_name}_{table_name}"
+        table = await self.get_table(full_table_name)
+        
+        # Insert with transaction
+        async with self._get_session() as session:
+            if is_bulk:
+                # Bulk insert with RETURNING
+                stmt = insert(table).returning(table.c.id)
+                result = await session.execute(stmt, validated_rows)
+                ids = [row[0] for row in result.fetchall()]
+                
+                return {
+                    "ids": ids,
+                    "created": len(ids)
+                }
+            else:
+                # Single insert
+                stmt = insert(table).values(**validated_rows[0]).returning(table.c.id)
+                result = await session.execute(stmt)
+                row_id = result.scalar()
+                
+                return {
+                    "id": row_id,
+                    "created": True
+                }
+
+    async def row_select(
+        self,
+        plugin_name: str,
+        table_name: str,
+        row_id: int
+    ) -> dict:
+        """
+        Select row by primary key ID.
+        
+        Args:
+            plugin_name: Plugin identifier (e.g., "quote_db")
+            table_name: Table name without plugin prefix (e.g., "quotes")
+            row_id: Primary key ID
+        
+        Returns:
+            {"exists": True, "data": {...}} if found
+            {"exists": False} if not found
+        
+        Example:
+            result = await db.row_select("quote_db", "quotes", 1)
+            if result['exists']:
+                print(result['data'])  # {'id': 1, 'text': '...', ...}
+        """
+        # Verify table exists
+        schema = self.schema_registry.get_schema(plugin_name, table_name)
+        if not schema:
+            raise ValueError(
+                f"Table '{table_name}' not registered for plugin '{plugin_name}'"
+            )
+        
+        # Get table and select
+        full_table_name = f"{plugin_name}_{table_name}"
+        table = await self.get_table(full_table_name)
+        
+        async with self._get_session() as session:
+            stmt = select(table).where(table.c.id == row_id)
+            result = await session.execute(stmt)
+            row = result.fetchone()
+            
+            if row:
+                # Convert to dict and serialize datetimes
+                data = dict(row._mapping)
+                
+                # Convert datetime objects to ISO strings
+                for key, value in data.items():
+                    if isinstance(value, datetime):
+                        data[key] = value.isoformat()
+                
+                return {
+                    "exists": True,
+                    "data": data
+                }
+            else:
+                return {
+                    "exists": False
+                }
