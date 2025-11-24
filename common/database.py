@@ -16,7 +16,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Optional, Dict, List, Union
 
 from sqlalchemy import delete, func, insert, literal_column, or_, select, text, update, MetaData, Table, and_
@@ -31,7 +31,6 @@ from common.models import (
     CurrentStatus,
     OutboundMessage,
     PluginKVStorage,
-    PluginTableSchema,
     RecentChat,
     UserAction,
     UserCountHistory,
@@ -63,10 +62,10 @@ class BotDatabase:
         db = BotDatabase('postgresql+asyncpg://user:pass@host/db')
         await db.connect()
     """
-    
+
     # Fields that cannot be updated (immutable)
     IMMUTABLE_FIELDS = {"id", "created_at"}
-    
+
     # Maximum rows per search operation
     MAX_SEARCH_LIMIT = 1000
 
@@ -161,14 +160,14 @@ class BotDatabase:
         )
 
         self._is_connected = False
-        
+
         # Initialize schema registry (Sprint 13)
         from common.schema_registry import SchemaRegistry
         self.schema_registry = SchemaRegistry(self)
-        
+
         # Table cache for row operations (Sprint 13 Sortie 2)
         self._table_cache = {}
-        
+
         self.logger.info(
             'Database engine initialized: %s (pool: %d+%d)',
             'PostgreSQL' if self.is_postgresql else 'SQLite',
@@ -205,7 +204,7 @@ class BotDatabase:
             count = result.scalar()
             self._is_connected = True
             self.logger.info('Database connected (%d users)', count)
-        
+
         # Load schema registry cache (Sprint 13)
         await self.schema_registry.load_cache()
 
@@ -1194,17 +1193,17 @@ class BotDatabase:
     ) -> None:
         """
         Set a key-value pair for a plugin with optional TTL.
-        
+
         Args:
             plugin_name: Plugin identifier
             key: Key name
             value: Any JSON-serializable value
             ttl_seconds: Optional TTL in seconds (None = no expiration)
-            
+
         Raises:
             ValueError: If value exceeds 64KB when serialized
             TypeError: If value is not JSON-serializable
-            
+
         Example:
             await db.kv_set('trivia', 'config', {'theme': 'dark'})
             await db.kv_set('trivia', 'session', data, ttl_seconds=1800)
@@ -1214,22 +1213,22 @@ class BotDatabase:
             value_json = json.dumps(value)
         except (TypeError, ValueError) as e:
             raise TypeError(f"Value is not JSON-serializable: {e}")
-        
+
         # Check size limit (64KB)
         size_bytes = len(value_json.encode('utf-8'))
         if size_bytes > 65536:
             raise ValueError(
                 f"Value size ({size_bytes} bytes) exceeds 64KB limit (65536 bytes)"
             )
-        
+
         # Calculate expiration timestamp
         expires_at = None
         if ttl_seconds is not None and ttl_seconds > 0:
             expires_at = int(time.time()) + ttl_seconds
-        
+
         # Get current timestamp
         now = int(time.time())
-        
+
         async with self._get_session() as session:
             # Use dialect-specific insert for upsert
             if self.is_postgresql:
@@ -1268,7 +1267,7 @@ class BotDatabase:
                         'updated_at': now
                     }
                 )
-            
+
             await session.execute(stmt)
 
     async def kv_get(
@@ -1278,15 +1277,15 @@ class BotDatabase:
     ) -> dict:
         """
         Get a key-value pair for a plugin.
-        
+
         Args:
             plugin_name: Plugin identifier
             key: Key name
-        
+
         Returns:
             {'exists': bool, 'value': Any}
             If key doesn't exist or is expired: {'exists': False}
-            
+
         Example:
             result = await db.kv_get('trivia', 'config')
             if result['exists']:
@@ -1300,14 +1299,14 @@ class BotDatabase:
                 )
             )
             row = result.scalar_one_or_none()
-            
+
             if row is None:
                 return {'exists': False}
-            
+
             # Check expiration
             if row.is_expired:
                 return {'exists': False}
-            
+
             # Deserialize value
             try:
                 value = json.loads(row.value_json)
@@ -1317,7 +1316,7 @@ class BotDatabase:
                     f"Failed to deserialize KV value for {plugin_name}/{key}: {e}"
                 )
                 return {'exists': False}
-            
+
             return {
                 'exists': True,
                 'value': value
@@ -1330,14 +1329,14 @@ class BotDatabase:
     ) -> bool:
         """
         Delete a key-value pair for a plugin.
-        
+
         Args:
             plugin_name: Plugin identifier
             key: Key name
-        
+
         Returns:
             True if key was deleted, False if didn't exist
-            
+
         Example:
             deleted = await db.kv_delete('trivia', 'old_session')
             if deleted:
@@ -1360,28 +1359,28 @@ class BotDatabase:
     ) -> dict:
         """
         List keys for a plugin with optional prefix filter.
-        
+
         Args:
             plugin_name: Plugin identifier
             prefix: Optional key prefix filter
             limit: Maximum keys to return (default 1000)
-        
+
         Returns:
             {
                 'keys': [str],           # List of key names
                 'count': int,            # Number of keys returned
                 'truncated': bool        # True if more results available
             }
-            
+
         Example:
             # List all keys
             result = await db.kv_list('trivia')
-            
+
             # List keys with prefix
             result = await db.kv_list('trivia', prefix='user:')
         """
         now = int(time.time())
-        
+
         async with self._get_session() as session:
             # Build query
             stmt = select(PluginKVStorage.key).where(
@@ -1392,22 +1391,22 @@ class BotDatabase:
                     PluginKVStorage.expires_at > now
                 )
             )
-            
+
             # Apply prefix filter if provided
             if prefix:
                 stmt = stmt.where(PluginKVStorage.key.like(f'{prefix}%'))
-            
+
             # Order by key and fetch limit+1 to detect truncation
             stmt = stmt.order_by(PluginKVStorage.key).limit(limit + 1)
-            
+
             result = await session.execute(stmt)
             keys = [row[0] for row in result.fetchall()]
-            
+
             # Check if results were truncated
             truncated = len(keys) > limit
             if truncated:
                 keys = keys[:limit]
-            
+
             return {
                 'keys': keys,
                 'count': len(keys),
@@ -1417,16 +1416,16 @@ class BotDatabase:
     async def kv_cleanup_expired(self) -> int:
         """
         Remove all expired keys across all plugins.
-        
+
         Returns:
             Number of keys deleted
-            
+
         Example:
             deleted = await db.kv_cleanup_expired()
             print(f'Cleaned up {deleted} expired keys')
         """
         now = int(time.time())
-        
+
         async with self._get_session() as session:
             result = await session.execute(
                 delete(PluginKVStorage).where(
@@ -1517,13 +1516,13 @@ class BotDatabase:
     async def get_table(self, full_table_name: str) -> Table:
         """
         Get SQLAlchemy Table object for plugin table (with caching).
-        
+
         Args:
             full_table_name: Full table name (e.g., "quote_db_quotes")
-        
+
         Returns:
             SQLAlchemy Table object
-        
+
         Example:
             table = await db.get_table("myplugin_data")
             # Use table for queries
@@ -1538,27 +1537,27 @@ class BotDatabase:
                         only=[full_table_name]
                     )
                 )
-            
+
             table = metadata.tables[full_table_name]
             self._table_cache[full_table_name] = table
-        
+
         return self._table_cache[full_table_name]
 
     def _validate_and_coerce_row(self, data: dict, schema: dict, is_update: bool = False) -> dict:
         """
         Validate row data against schema and coerce types.
-        
+
         Args:
             data: Row data to validate
             schema: Schema definition from SchemaRegistry
             is_update: If True, skip required field validation (partial updates allowed)
-        
+
         Returns:
             Validated and coerced data dict
-        
+
         Raises:
             ValueError: If validation fails or type coercion impossible
-        
+
         Example:
             schema = {'fields': [
                 {'name': 'count', 'type': 'integer', 'required': True}
@@ -1568,36 +1567,36 @@ class BotDatabase:
         """
         result = {}
         schema_fields = {f['name']: f for f in schema['fields']}
-        
+
         # Check required fields (skip for updates since they're partial)
         if not is_update:
             for field in schema['fields']:
                 if field.get('required', False) and field['name'] not in data:
                     raise ValueError(f"Missing required field: {field['name']}")
-        
+
         # Validate and coerce each field in data
         for key, value in data.items():
             if key not in schema_fields:
                 raise ValueError(f"Unknown field: {key}")
-            
+
             field_def = schema_fields[key]
             field_type = field_def['type']
-            
+
             # Handle None values
             if value is None:
                 if field_def.get('required', False):
                     raise ValueError(f"Field '{key}' cannot be null")
                 result[key] = None
                 continue
-            
+
             # Type coercion
             try:
                 if field_type == 'string':
                     result[key] = str(value)
-                
+
                 elif field_type == 'text':
                     result[key] = str(value)
-                
+
                 elif field_type == 'integer':
                     if isinstance(value, str):
                         result[key] = int(value)
@@ -1605,10 +1604,10 @@ class BotDatabase:
                         result[key] = int(value)
                     else:
                         raise ValueError(f"Cannot convert {type(value).__name__} to integer")
-                
+
                 elif field_type == 'float':
                     result[key] = float(value)
-                
+
                 elif field_type == 'boolean':
                     if isinstance(value, bool):
                         result[key] = value
@@ -1616,7 +1615,7 @@ class BotDatabase:
                         result[key] = value.lower() in ('true', '1', 'yes', 'on')
                     else:
                         result[key] = bool(value)
-                
+
                 elif field_type == 'datetime':
                     if isinstance(value, datetime):
                         result[key] = value
@@ -1625,12 +1624,12 @@ class BotDatabase:
                         result[key] = datetime.fromisoformat(value.replace('Z', '+00:00'))
                     else:
                         raise ValueError(f"Cannot convert {type(value).__name__} to datetime")
-            
+
             except (ValueError, TypeError) as e:
                 raise ValueError(
                     f"Field '{key}': Cannot convert value to {field_type}: {e}"
                 )
-        
+
         return result
 
     async def row_insert(
@@ -1641,19 +1640,19 @@ class BotDatabase:
     ) -> dict:
         """
         Insert row(s) into plugin table.
-        
+
         Args:
             plugin_name: Plugin identifier (e.g., "quote_db")
             table_name: Table name without plugin prefix (e.g., "quotes")
             data: Single dict or list of dicts to insert
-        
+
         Returns:
             Single insert: {"id": 42, "created": True}
             Bulk insert: {"ids": [42, 43, 44], "created": 3}
-        
+
         Raises:
             ValueError: If table not registered or data invalid
-        
+
         Example:
             # Single insert
             result = await db.row_insert(
@@ -1661,7 +1660,7 @@ class BotDatabase:
                 {"text": "Hello world", "author": "Alice"}
             )
             # result = {"id": 1, "created": True}
-            
+
             # Bulk insert
             result = await db.row_insert(
                 "quote_db", "quotes",
@@ -1679,14 +1678,14 @@ class BotDatabase:
                 f"Table '{table_name}' not registered for plugin '{plugin_name}'. "
                 f"Register schema first using schema_register."
             )
-        
+
         # Handle bulk vs single
         is_bulk = isinstance(data, list)
         rows = data if is_bulk else [data]
-        
+
         if len(rows) == 0:
             raise ValueError("No data provided for insert")
-        
+
         # Validate and coerce all rows
         validated_rows = []
         for i, row in enumerate(rows):
@@ -1701,11 +1700,11 @@ class BotDatabase:
                 validated_rows.append(validated)
             except ValueError as e:
                 raise ValueError(f"Row {i}: {e}")
-        
+
         # Get table
         full_table_name = f"{plugin_name}_{table_name}"
         table = await self.get_table(full_table_name)
-        
+
         # Insert with transaction
         async with self._get_session() as session:
             if is_bulk:
@@ -1713,7 +1712,7 @@ class BotDatabase:
                 stmt = insert(table).returning(table.c.id)
                 result = await session.execute(stmt, validated_rows)
                 ids = [row[0] for row in result.fetchall()]
-                
+
                 return {
                     "ids": ids,
                     "created": len(ids)
@@ -1723,7 +1722,7 @@ class BotDatabase:
                 stmt = insert(table).values(**validated_rows[0]).returning(table.c.id)
                 result = await session.execute(stmt)
                 row_id = result.scalar()
-                
+
                 return {
                     "id": row_id,
                     "created": True
@@ -1737,16 +1736,16 @@ class BotDatabase:
     ) -> dict:
         """
         Select row by primary key ID.
-        
+
         Args:
             plugin_name: Plugin identifier (e.g., "quote_db")
             table_name: Table name without plugin prefix (e.g., "quotes")
             row_id: Primary key ID
-        
+
         Returns:
             {"exists": True, "data": {...}} if found
             {"exists": False} if not found
-        
+
         Example:
             result = await db.row_select("quote_db", "quotes", 1)
             if result['exists']:
@@ -1758,25 +1757,25 @@ class BotDatabase:
             raise ValueError(
                 f"Table '{table_name}' not registered for plugin '{plugin_name}'"
             )
-        
+
         # Get table and select
         full_table_name = f"{plugin_name}_{table_name}"
         table = await self.get_table(full_table_name)
-        
+
         async with self._get_session() as session:
             stmt = select(table).where(table.c.id == row_id)
             result = await session.execute(stmt)
             row = result.fetchone()
-            
+
             if row:
                 # Convert to dict and serialize datetimes
                 data = dict(row._mapping)
-                
+
                 # Convert datetime objects to ISO strings
                 for key, value in data.items():
                     if isinstance(value, datetime):
                         data[key] = value.isoformat()
-                
+
                 return {
                     "exists": True,
                     "data": data
@@ -1796,18 +1795,18 @@ class BotDatabase:
     ) -> dict:
         """
         Update row by primary key ID (partial update or atomic operations).
-        
+
         Supports two modes:
         1. Simple update (data): Only specified fields are updated
         2. Atomic operations (operations): Database-level atomic updates
-        
+
         Only specified fields are updated; unspecified fields remain unchanged.
         Immutable fields (id, created_at) cannot be updated.
         The updated_at field is automatically set to current timestamp.
-        
+
         **Sprint 14 Sortie 3**: Supports atomic update operators ($set, $inc, $dec, 
         $mul, $max, $min) for race-condition-free updates.
-        
+
         Args:
             plugin_name: Plugin identifier (e.g., "quote_db")
             table_name: Table name without plugin prefix (e.g., "quotes")
@@ -1818,19 +1817,19 @@ class BotDatabase:
                     'score': {'$inc': 10},
                     'high_score': {'$max': 95}
                 }
-        
+
         Returns:
             {"id": 42, "updated": True} if row existed and was updated
             {"exists": False} if row not found
-        
+
         Raises:
             ValueError: If table not registered, data invalid, or immutable field update attempted
             TypeError: If operation incompatible with field type
-        
+
         Examples:
             # Traditional update
             result = await db.row_update("quote_db", "quotes", 1, data={"author": "NewAuthor"})
-            
+
             # Atomic operations (Sprint 14)
             result = await db.row_update(
                 "trivia", "scores", 1,
@@ -1847,19 +1846,19 @@ class BotDatabase:
             raise ValueError(
                 f"Table '{table_name}' not registered for plugin '{plugin_name}'"
             )
-        
+
         # Must provide either data or operations
         if not data and not operations:
             raise ValueError("Must provide either 'data' or 'operations' for update")
-        
+
         # Cannot provide both
         if data and operations:
             raise ValueError("Cannot provide both 'data' and 'operations' - choose one mode")
-        
+
         # Get table
         full_table_name = f"{plugin_name}_{table_name}"
         table = await self.get_table(full_table_name)
-        
+
         # Handle atomic operations mode (Sprint 14 Sortie 3)
         if operations:
             # Check for immutable field updates
@@ -1868,24 +1867,24 @@ class BotDatabase:
                 raise ValueError(
                     f"Cannot update immutable fields: {', '.join(sorted(immutable_attempted))}"
                 )
-            
+
             # Parse atomic update operations
             parser = OperatorParser(schema)
             update_exprs = parser.parse_update_operations(operations, table)
-            
+
             # Add updated_at timestamp
             update_exprs['updated_at'] = datetime.now()
-            
+
             # Check if row exists and update
             async with self._get_session() as session:
                 # Check existence
                 check_stmt = select(table.c.id).where(table.c.id == row_id)
                 result = await session.execute(check_stmt)
                 exists = result.scalar() is not None
-                
+
                 if not exists:
                     return {"exists": False}
-                
+
                 # Perform atomic update
                 stmt = (
                     update(table)
@@ -1893,40 +1892,40 @@ class BotDatabase:
                     .values(**update_exprs)
                 )
                 await session.execute(stmt)
-                
+
                 return {
                     "id": row_id,
                     "updated": True
                 }
-        
+
         # Traditional data mode
         # Check for empty update
         if not data:
             raise ValueError("No data provided for update")
-        
+
         # Check for immutable field updates
         immutable_attempted = self.IMMUTABLE_FIELDS.intersection(data.keys())
         if immutable_attempted:
             raise ValueError(
                 f"Cannot update immutable fields: {', '.join(sorted(immutable_attempted))}"
             )
-        
+
         # Validate and coerce update data (partial update, no required field check)
         validated_data = self._validate_and_coerce_row(data, schema, is_update=True)
-        
+
         # Add updated_at timestamp
         validated_data['updated_at'] = datetime.now()
-        
+
         # Check if row exists and update
         async with self._get_session() as session:
             # Check existence
             check_stmt = select(table.c.id).where(table.c.id == row_id)
             result = await session.execute(check_stmt)
             exists = result.scalar() is not None
-            
+
             if not exists:
                 return {"exists": False}
-            
+
             # Perform traditional update
             stmt = (
                 update(table)
@@ -1934,7 +1933,7 @@ class BotDatabase:
                 .values(**validated_data)
             )
             await session.execute(stmt)
-            
+
             return {
                 "id": row_id,
                 "updated": True
@@ -1948,23 +1947,23 @@ class BotDatabase:
     ) -> dict:
         """
         Delete row by primary key ID (idempotent).
-        
+
         Args:
             plugin_name: Plugin identifier (e.g., "quote_db")
             table_name: Table name without plugin prefix (e.g., "quotes")
             row_id: Primary key ID
-        
+
         Returns:
             {"deleted": True} if row existed and was deleted
             {"deleted": False} if row did not exist
-        
+
         Raises:
             ValueError: If table not registered
-        
+
         Example:
             result = await db.row_delete("quote_db", "quotes", 1)
             # {"deleted": True}
-            
+
             # Calling again is safe (idempotent)
             result = await db.row_delete("quote_db", "quotes", 1)
             # {"deleted": False}
@@ -1975,19 +1974,19 @@ class BotDatabase:
             raise ValueError(
                 f"Table '{table_name}' not registered for plugin '{plugin_name}'"
             )
-        
+
         # Get table
         full_table_name = f"{plugin_name}_{table_name}"
         table = await self.get_table(full_table_name)
-        
+
         # Delete
         async with self._get_session() as session:
             stmt = delete(table).where(table.c.id == row_id)
             result = await session.execute(stmt)
-            
+
             # Check if any rows were deleted
             deleted = result.rowcount > 0
-            
+
             return {
                 "deleted": deleted
             }
@@ -2004,15 +2003,15 @@ class BotDatabase:
     ) -> Union[dict, Dict[str, Any]]:
         """
         Search rows with filters, sorting, pagination, and aggregations.
-        
+
         Searches a plugin's table using filters (with MongoDB-style operators),
         sorting, and pagination. Returns matching rows with metadata about truncation.
-        
+
         **Sprint 14 Complete**: Supports all advanced query operators including
         filters ($eq, $ne, $gt, $gte, $lt, $lte, $in, $nin, $like, $ilike, $exists, $null),
         compound logic ($and, $or, $not), multi-field sorting, and aggregations
         (COUNT, SUM, AVG, MIN, MAX).
-        
+
         Args:
             plugin_name: Plugin identifier (e.g., "quote_db")
             table_name: Table name without plugin prefix (e.g., "quotes")
@@ -2024,39 +2023,39 @@ class BotDatabase:
             sort: Optional sorting spec, e.g., {"field": "created_at", "order": "desc"}
             limit: Maximum rows to return (default 100, max 1000)
             offset: Pagination offset (default 0)
-        
+
         Returns:
             {
                 "rows": [...],          # Array of row dicts with serialized datetimes
                 "count": int,           # Number of rows in this page
                 "truncated": bool       # True if more rows available beyond this page
             }
-        
+
         Raises:
             ValueError: If table not registered, invalid filter field, invalid operator,
                        invalid sort field, or invalid limit (<1)
             TypeError: If operator incompatible with field type (e.g., $gt on string)
-        
+
         Examples:
             # Search all rows
             result = await db.row_search("quote_db", "quotes")
             # {"rows": [...], "count": 5, "truncated": False}
-            
+
             # Simple equality filters (backward compatible)
             result = await db.row_search("quote_db", "quotes", filters={"author": "Alice"})
-            
+
             # Range query with operators (NEW in Sprint 14)
             result = await db.row_search(
                 "trivia", "scores",
                 filters={"score": {"$gte": 100}}
             )
-            
+
             # Complex range query
             result = await db.row_search(
                 "trivia", "scores",
                 filters={"score": {"$gte": 100, "$lte": 200}}
             )
-            
+
             # Multiple fields with operators
             result = await db.row_search(
                 "trivia", "scores",
@@ -2066,14 +2065,14 @@ class BotDatabase:
                     "active": True
                 }
             )
-            
+
             # Search with sorting
             result = await db.row_search(
                 "quote_db", "quotes",
                 filters={"rating": {"$gte": 4}},
                 sort={"field": "rating", "order": "desc"}
             )
-            
+
             # Paginated search
             page1 = await db.row_search("quote_db", "quotes", limit=10, offset=0)
             page2 = await db.row_search("quote_db", "quotes", limit=10, offset=10)
@@ -2084,79 +2083,79 @@ class BotDatabase:
             raise ValueError(
                 f"Table '{table_name}' not registered for plugin '{plugin_name}'"
             )
-        
+
         # Enforce limit bounds
         if limit < 1:
             raise ValueError("Limit must be at least 1")
         if limit > self.MAX_SEARCH_LIMIT:
             limit = self.MAX_SEARCH_LIMIT
-        
+
         # Get table
         full_table_name = f"{plugin_name}_{table_name}"
         table = await self.get_table(full_table_name)
         parser = OperatorParser(schema)
-        
+
         # Handle aggregation queries (Sprint 14 Sortie 4)
         if aggregates:
             agg_exprs = parser.parse_aggregations(aggregates, table)
             stmt = select(*agg_exprs)
-            
+
             # Apply filters if provided
             if filters:
                 clauses = parser.parse_filters(filters, table)
                 if clauses:
                     stmt = stmt.where(and_(*clauses))
-            
+
             # Execute aggregation query
             async with self._get_session() as session:
                 result = await session.execute(stmt)
                 row = result.fetchone()
-                
+
                 # Return dict with custom result names
                 return dict(zip([agg.name for agg in agg_exprs], row))
-        
+
         # Regular query
         stmt = select(table)
-        
+
         # Apply filters using OperatorParser (Sprint 14)
         if filters:
             clauses = parser.parse_filters(filters, table)
-            
+
             # Combine all clauses with AND
             if clauses:
                 stmt = stmt.where(and_(*clauses))
-        
+
         # Apply sorting using parse_sort (Sprint 14 Sortie 4 - supports multi-field)
         if sort:
             order_clauses = parser.parse_sort(sort, table)
             stmt = stmt.order_by(*order_clauses)
-        
+
         # Apply pagination with truncation detection
         # Fetch limit+1 to detect if more rows exist
         stmt = stmt.limit(limit + 1).offset(offset)
-        
+
         # Execute query
         async with self._get_session() as session:
             result = await session.execute(stmt)
             rows = result.fetchall()
-            
+
             # Check truncation
             truncated = len(rows) > limit
             if truncated:
                 rows = rows[:limit]  # Trim to actual limit
-            
+
             # Convert to dicts and serialize datetimes
             serialized_rows = []
             for row in rows:
                 row_dict = dict(row._mapping)
-                
+
                 # Serialize datetime objects to ISO strings
                 for key, value in row_dict.items():
                     if isinstance(value, datetime):
                         row_dict[key] = value.isoformat()
-                
+
                 serialized_rows.append(row_dict)
-            
+
             return {
                 "rows": serialized_rows,
                 "count": len(serialized_rows),

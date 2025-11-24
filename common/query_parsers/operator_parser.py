@@ -55,14 +55,14 @@ Example:
     >>> expressions = parser.parse_update_operations(updates, table)
 """
 
-from typing import Any, Dict, List, Callable, Union
+from typing import Any, Dict, List, Union
 from sqlalchemy import Column, and_, or_, not_, func
 
 
 class OperatorParser:
     """
     Parse MongoDB-style query operators into SQLAlchemy clauses.
-    
+
     Supports:
     - Comparison operators: $eq, $ne, $gt, $gte, $lt, $lte (Sortie 1)
     - Set operators: $in, $nin (Sortie 2)
@@ -70,9 +70,9 @@ class OperatorParser:
     - Existence operators: $exists, $null (Sortie 2)
     - Update operators: $set, $inc, $dec, $mul, $max, $min (Sortie 3)
     - Compound logic: $and, $or, $not (Sortie 3)
-    
+
     All operators include type validation based on table schema.
-    
+
     Attributes:
         COMPARISON_OPS: Dict mapping comparison operators to SQLAlchemy methods
         SET_OPS: Dict mapping set operators to SQLAlchemy methods
@@ -86,7 +86,7 @@ class OperatorParser:
         NUMERIC_TYPES: Set of numeric field types (Sortie 3)
         COMPARABLE_TYPES: Set of types supporting max/min operations (Sortie 3)
     """
-    
+
     # Comparison operators (Sortie 1)
     # Operator name -> SQLAlchemy method (lambda takes column and value)
     COMPARISON_OPS = {
@@ -97,25 +97,25 @@ class OperatorParser:
         '$lt': lambda col, val: col < val,
         '$lte': lambda col, val: col <= val,
     }
-    
+
     # Set membership operators (Sortie 2)
     SET_OPS = {
         '$in': lambda col, vals: col.in_(vals),
         '$nin': lambda col, vals: ~col.in_(vals),  # NOT IN
     }
-    
+
     # Pattern matching operators (Sortie 2)
     PATTERN_OPS = {
         '$like': lambda col, pattern: col.like(pattern),
         '$ilike': lambda col, pattern: col.ilike(pattern),  # Case-insensitive
     }
-    
+
     # Existence/null checking operators (Sortie 2)
     EXISTENCE_OPS = {
         '$exists': lambda col, exists: col.isnot(None) if exists else col.is_(None),
         '$null': lambda col, is_null: col.is_(None) if is_null else col.isnot(None),
     }
-    
+
     # Atomic update operators (Sortie 3)
     # Execute at database level to prevent race conditions
     UPDATE_OPS = {
@@ -126,10 +126,10 @@ class OperatorParser:
         '$max': lambda col, val: func.greatest(col, val),  # Maximum
         '$min': lambda col, val: func.least(col, val),  # Minimum
     }
-    
+
     # Compound logical operators (Sortie 3)
     LOGICAL_OPS = {'$and', '$or', '$not'}
-    
+
     # Aggregation functions (Sortie 4)
     AGGREGATION_FUNCS = {
         '$count': func.count,
@@ -138,42 +138,42 @@ class OperatorParser:
         '$min': func.min,
         '$max': func.max,
     }
-    
+
     # Functions requiring numeric types
     NUMERIC_AGGREGATIONS = {'$sum', '$avg'}
-    
+
     # Functions supporting comparable types (numeric, datetime, text)
     COMPARABLE_AGGREGATIONS = {'$min', '$max'}
-    
+
     # Operators that require numeric or datetime types
     RANGE_OPS = {'$gt', '$gte', '$lt', '$lte'}
-    
+
     # Update operators requiring numeric types
     NUMERIC_UPDATE_OPS = {'$inc', '$dec', '$mul'}
-    
+
     # Update operators supporting conditional operations
     CONDITIONAL_UPDATE_OPS = {'$max', '$min'}
-    
+
     # Field types compatible with range operators
     RANGE_COMPATIBLE_TYPES = {'integer', 'float', 'datetime'}
-    
+
     # Field types compatible with pattern operators
     PATTERN_COMPATIBLE_TYPES = {'string', 'text'}
-    
+
     # Numeric types for update operators (Sortie 3)
     NUMERIC_TYPES = {'integer', 'bigint', 'float', 'real', 'numeric', 'decimal'}
-    
+
     # Types supporting max/min operations (Sortie 3)
     COMPARABLE_TYPES = {'integer', 'bigint', 'float', 'real', 'numeric', 'decimal', 'datetime', 'date', 'timestamp'}
-    
+
     def __init__(self, schema: Dict[str, Any]):
         """
         Initialize parser with table schema.
-        
+
         Args:
             schema: Table schema dict with 'fields' key containing field definitions.
                 Each field must have 'name' and 'type' keys.
-        
+
         Example:
             >>> schema = {
             ...     'fields': [
@@ -182,19 +182,19 @@ class OperatorParser:
             ...     ]
             ... }
             >>> parser = OperatorParser(schema)
-        
+
         Note:
             Auto-managed fields (id, created_at, updated_at) are automatically
             added to the field registry.
         """
         self.schema = schema
         self.fields = {f['name']: f for f in schema['fields']}
-        
+
         # Add auto-managed fields (from Sprint 13)
         self.fields['id'] = {'name': 'id', 'type': 'integer'}
         self.fields['created_at'] = {'name': 'created_at', 'type': 'datetime'}
         self.fields['updated_at'] = {'name': 'updated_at', 'type': 'datetime'}
-        
+
         # Combined operator registry for validation and error messages
         self.all_operators = {
             **self.COMPARISON_OPS,
@@ -202,14 +202,14 @@ class OperatorParser:
             **self.PATTERN_OPS,
             **self.EXISTENCE_OPS
         }
-    
+
     def parse_filters(self, filters: Dict[str, Any], table) -> List:
         """
         Parse filter dict into SQLAlchemy where clauses.
-        
+
         Supports both simple equality filters (backward compatible),
         operator-based filters, and compound logical operators (Sortie 3).
-        
+
         Args:
             filters: MongoDB-style filter dict. Can use:
                 - Simple equality: {'username': 'alice'}
@@ -217,30 +217,30 @@ class OperatorParser:
                 - Multiple operators: {'score': {'$gte': 100, '$lte': 200}}
                 - Compound logic: {'$and': [{...}, {...}]}
             table: SQLAlchemy table object with columns
-        
+
         Returns:
             List of SQLAlchemy where clauses that can be combined with and_()
-        
+
         Raises:
             ValueError: If field name invalid or operator unknown
             TypeError: If operator incompatible with field type or logical operator format invalid
-        
+
         Examples:
             >>> # Simple equality
             >>> filters = {'username': 'alice'}
             >>> clauses = parser.parse_filters(filters, table)
             >>> # Returns: [table.c.username == 'alice']
-            
+
             >>> # Operator-based
             >>> filters = {'score': {'$gte': 100}}
             >>> clauses = parser.parse_filters(filters, table)
             >>> # Returns: [table.c.score >= 100]
-            
+
             >>> # Range query (multiple operators on same field)
             >>> filters = {'score': {'$gte': 100, '$lte': 200}}
             >>> clauses = parser.parse_filters(filters, table)
             >>> # Returns: [table.c.score >= 100, table.c.score <= 200]
-            
+
             >>> # Multiple fields
             >>> filters = {
             ...     'score': {'$gte': 100},
@@ -249,7 +249,7 @@ class OperatorParser:
             ... }
             >>> clauses = parser.parse_filters(filters, table)
             >>> # Returns: [score >= 100, username == 'alice', active == True]
-            
+
             >>> # Compound logic (Sortie 3)
             >>> filters = {
             ...     '$and': [
@@ -267,35 +267,35 @@ class OperatorParser:
                 raise TypeError("$and operator requires a list of conditions")
             if not conditions:
                 raise ValueError("$and operator requires at least one condition")
-            
+
             # Recursively parse each condition
             all_clauses = []
             for cond in conditions:
                 cond_clauses = self.parse_filters(cond, table)
                 all_clauses.extend(cond_clauses)
-            
+
             return [and_(*all_clauses)]
-        
+
         if '$or' in filters:
             conditions = filters['$or']
             if not isinstance(conditions, list):
                 raise TypeError("$or operator requires a list of conditions")
             if not conditions:
                 raise ValueError("$or operator requires at least one condition")
-            
+
             # Recursively parse each condition
             all_clauses = []
             for cond in conditions:
                 cond_clauses = self.parse_filters(cond, table)
                 all_clauses.extend(cond_clauses)
-            
+
             return [or_(*all_clauses)]
-        
+
         if '$not' in filters:
             condition = filters['$not']
             if not isinstance(condition, dict):
                 raise TypeError("$not operator requires a dict condition")
-            
+
             # Recursively parse the negated condition
             neg_clauses = self.parse_filters(condition, table)
             if len(neg_clauses) == 1:
@@ -303,10 +303,10 @@ class OperatorParser:
             else:
                 # Multiple clauses - combine with AND before negating
                 return [not_(and_(*neg_clauses))]
-        
+
         # Regular field filters
         clauses = []
-        
+
         for field_name, filter_value in filters.items():
             # Check for unknown logical operators
             if field_name.startswith('$'):
@@ -314,23 +314,23 @@ class OperatorParser:
                     f"Unknown logical operator: {field_name}. "
                     f"Supported: $and, $or, $not"
                 )
-            
+
             # Validate field exists
             if field_name not in self.fields:
                 raise ValueError(
                     f"Field '{field_name}' not found in schema. "
                     f"Available fields: {', '.join(sorted(self.fields.keys()))}"
                 )
-            
+
             field_def = self.fields[field_name]
             field_type = field_def['type']
             column = table.c[field_name]
-            
+
             # Simple equality (backward compatible with Sprint 13)
             if not isinstance(filter_value, dict):
                 clauses.append(column == filter_value)
                 continue
-            
+
             # Operator-based filters
             for operator, value in filter_value.items():
                 clause = self._parse_operator(
@@ -341,9 +341,9 @@ class OperatorParser:
                     column
                 )
                 clauses.append(clause)
-        
+
         return clauses
-    
+
     def _parse_operator(
         self,
         field_name: str,
@@ -354,23 +354,23 @@ class OperatorParser:
     ):
         """
         Parse single operator into SQLAlchemy clause.
-        
+
         Extended in Sortie 2 with set, pattern, and existence operators.
-        
+
         Args:
             field_name: Field name (for error messages)
             operator: Operator string (e.g., '$gte', '$eq', '$in', '$like')
             value: Operator value (type depends on operator)
             field_type: Field type from schema (e.g., 'integer', 'string')
             column: SQLAlchemy column object
-        
+
         Returns:
             SQLAlchemy where clause (BinaryExpression)
-        
+
         Raises:
             ValueError: If operator unknown or value invalid
             TypeError: If operator incompatible with field type
-        
+
         Examples:
             >>> # Comparison: range operator on integer
             >>> clause = parser._parse_operator('score', '$gte', 100, 'integer', col)
@@ -395,10 +395,10 @@ class OperatorParser:
                         f"Range operators can only be used with: "
                         f"{', '.join(sorted(self.RANGE_COMPATIBLE_TYPES))}"
                     )
-            
+
             op_func = self.COMPARISON_OPS[operator]
             return op_func(column, value)
-        
+
         # Set operators (Sortie 2)
         if operator in self.SET_OPS:
             # Validate value is a list
@@ -407,17 +407,17 @@ class OperatorParser:
                     f"Set operator '{operator}' on field '{field_name}' requires "
                     f"list value, got {type(value).__name__}"
                 )
-            
+
             # Validate non-empty list
             if len(value) == 0:
                 raise ValueError(
                     f"Set operator '{operator}' on field '{field_name}' requires "
                     f"non-empty list"
                 )
-            
+
             op_func = self.SET_OPS[operator]
             return op_func(column, value)
-        
+
         # Pattern operators (Sortie 2)
         if operator in self.PATTERN_OPS:
             # Validate field type
@@ -428,17 +428,17 @@ class OperatorParser:
                     f"Pattern operators can only be used with: "
                     f"{', '.join(sorted(self.PATTERN_COMPATIBLE_TYPES))}"
                 )
-            
+
             # Validate value is a string
             if not isinstance(value, str):
                 raise TypeError(
                     f"Pattern operator '{operator}' on field '{field_name}' requires "
                     f"string value, got {type(value).__name__}"
                 )
-            
+
             op_func = self.PATTERN_OPS[operator]
             return op_func(column, value)
-        
+
         # Existence operators (Sortie 2)
         if operator in self.EXISTENCE_OPS:
             # Validate value is boolean
@@ -447,33 +447,33 @@ class OperatorParser:
                     f"Existence operator '{operator}' on field '{field_name}' requires "
                     f"boolean value, got {type(value).__name__}"
                 )
-            
+
             op_func = self.EXISTENCE_OPS[operator]
             return op_func(column, value)
-        
+
         # Unknown operator
         raise ValueError(
             f"Unknown operator '{operator}' on field '{field_name}'. "
             f"Supported operators: {', '.join(sorted(self.all_operators.keys()))}"
         )
-    
+
     def validate_filter_dict(self, filters: Dict[str, Any]) -> None:
         """
         Validate filter dict without generating clauses.
-        
+
         Useful for pre-validation before executing query. Checks:
         - All field names exist in schema
         - All operators are valid
         - All operators are compatible with field types
         - All operator values have correct types
-        
+
         Args:
             filters: Filter dict to validate
-        
+
         Raises:
             ValueError: If field name, operator, or value invalid
             TypeError: If operator incompatible with field type or value type wrong
-        
+
         Example:
             >>> # Validate before using
             >>> try:
@@ -489,9 +489,9 @@ class OperatorParser:
                 raise ValueError(
                     f"Field '{field_name}' not found in schema"
                 )
-            
+
             field_type = self.fields[field_name]['type']
-            
+
             # Check operators
             if isinstance(filter_value, dict):
                 for operator, value in filter_value.items():
@@ -500,14 +500,14 @@ class OperatorParser:
                         raise ValueError(
                             f"Unknown operator: {operator}"
                         )
-                    
+
                     # Validate comparison operators
                     if operator in self.RANGE_OPS:
                         if field_type not in self.RANGE_COMPATIBLE_TYPES:
                             raise TypeError(
                                 f"Cannot use {operator} on {field_type} field"
                             )
-                    
+
                     # Validate set operators
                     if operator in self.SET_OPS:
                         if not isinstance(value, list):
@@ -518,7 +518,7 @@ class OperatorParser:
                             raise ValueError(
                                 f"Set operator {operator} requires non-empty list"
                             )
-                    
+
                     # Validate pattern operators
                     if operator in self.PATTERN_OPS:
                         if field_type not in self.PATTERN_COMPATIBLE_TYPES:
@@ -529,14 +529,14 @@ class OperatorParser:
                             raise TypeError(
                                 f"Pattern operator {operator} requires string value"
                             )
-                    
+
                     # Validate existence operators
                     if operator in self.EXISTENCE_OPS:
                         if not isinstance(value, bool):
                             raise TypeError(
                                 f"Existence operator {operator} requires boolean value"
                             )
-    
+
     def parse_update_operations(
         self, 
         operations: Dict[str, Any], 
@@ -544,10 +544,10 @@ class OperatorParser:
     ) -> Dict[str, Any]:
         """
         Parse update operations dict into SQLAlchemy column expressions.
-        
+
         Generates atomic update expressions that execute at database level,
         preventing race conditions in concurrent scenarios (Sortie 3).
-        
+
         Args:
             operations: Dict of {field: {operator: value}}
                 Example: {
@@ -556,7 +556,7 @@ class OperatorParser:
                     'status': {'$set': 'active'}
                 }
             table: SQLAlchemy Table object with schema
-        
+
         Returns:
             Dict of {field: SQLAlchemy_expression} for use in update() statement
             Example: {
@@ -564,11 +564,11 @@ class OperatorParser:
                 'high_score': func.greatest(Column('high_score'), 95),
                 'status': 'active'
             }
-        
+
         Raises:
             ValueError: If field not in schema, operator unknown, or value invalid
             TypeError: If operator type incompatible with field type or invalid operation format
-        
+
         Example:
             >>> parser = OperatorParser(schema)
             >>> ops = {'score': {'$inc': 5}, 'status': {'$set': 'active'}}
@@ -576,7 +576,7 @@ class OperatorParser:
             >>> stmt = update(users_table).values(**updates).where(...)
         """
         updates = {}
-        
+
         for field_name, op_spec in operations.items():
             # Validate field exists
             if field_name not in self.fields:
@@ -584,34 +584,34 @@ class OperatorParser:
                     f"Field '{field_name}' not in schema. "
                     f"Available fields: {', '.join(sorted(self.fields.keys()))}"
                 )
-            
+
             field_def = self.fields[field_name]
             field_type = field_def['type']
             column = table.c[field_name]
-            
+
             # Validate operation format (must be dict)
             if not isinstance(op_spec, dict):
                 raise TypeError(
                     f"Update operations must be dict {{operator: value}}, "
                     f"got {type(op_spec).__name__} for field '{field_name}'"
                 )
-            
+
             # Validate exactly one operator per field
             if len(op_spec) != 1:
                 raise ValueError(
                     f"Each field must have exactly one update operator, "
                     f"got {len(op_spec)} for field '{field_name}'"
                 )
-            
+
             operator, value = next(iter(op_spec.items()))
-            
+
             # Validate operator exists
             if operator not in self.UPDATE_OPS:
                 raise ValueError(
                     f"Unknown update operator: {operator}. "
                     f"Supported: {', '.join(sorted(self.UPDATE_OPS.keys()))}"
                 )
-            
+
             # Type validation for numeric operators ($inc, $dec, $mul)
             if operator in self.NUMERIC_UPDATE_OPS:
                 if field_type not in self.NUMERIC_TYPES:
@@ -621,14 +621,14 @@ class OperatorParser:
                         f"Numeric operators can only be used with: "
                         f"{', '.join(sorted(self.NUMERIC_TYPES))}"
                     )
-                
+
                 # Validate value is numeric
                 if not isinstance(value, (int, float)):
                     raise TypeError(
                         f"Operator {operator} requires numeric value, "
                         f"got {type(value).__name__}"
                     )
-            
+
             # Type validation for conditional operators ($max, $min)
             if operator in self.CONDITIONAL_UPDATE_OPS:
                 if field_type not in self.COMPARABLE_TYPES:
@@ -638,12 +638,12 @@ class OperatorParser:
                         f"Conditional operators can only be used with: "
                         f"{', '.join(sorted(self.COMPARABLE_TYPES))}"
                     )
-            
+
             # Generate SQLAlchemy expression (atomic at database level)
             updates[field_name] = self.UPDATE_OPS[operator](column, value)
-        
+
         return updates
-    
+
     def parse_aggregations(
         self, 
         aggregates: Dict[str, Dict[str, str]], 
@@ -651,10 +651,10 @@ class OperatorParser:
     ) -> List:
         """
         Parse aggregation specifications into SQLAlchemy aggregate expressions.
-        
+
         Supports COUNT, SUM, AVG, MIN, MAX with custom result names.
         All aggregations include type validation (Sortie 4).
-        
+
         Args:
             aggregates: Dict of {result_name: {function: field}}
                 Example: {
@@ -664,7 +664,7 @@ class OperatorParser:
                     'max_score': {'$max': 'score'}
                 }
             table: SQLAlchemy Table object
-        
+
         Returns:
             List of SQLAlchemy aggregate expressions with labels
             Example: [
@@ -673,11 +673,11 @@ class OperatorParser:
                 func.avg(Column('score')).label('avg_score'),
                 func.max(Column('score')).label('max_score')
             ]
-        
+
         Raises:
             ValueError: If function unknown, field invalid, or spec malformed
             TypeError: If function incompatible with field type
-        
+
         Example:
             >>> parser = OperatorParser(schema)
             >>> aggs = {
@@ -688,34 +688,34 @@ class OperatorParser:
             >>> stmt = select(*agg_exprs).where(...)
         """
         agg_exprs = []
-        
+
         for result_name, agg_spec in aggregates.items():
             # Validate result name
             if not result_name or not isinstance(result_name, str):
                 raise ValueError("Aggregation result name must be a non-empty string")
-            
+
             # Validate spec format
             if not isinstance(agg_spec, dict):
                 raise TypeError(
                     f"Aggregation spec must be dict {{function: field}}, "
                     f"got {type(agg_spec).__name__} for '{result_name}'"
                 )
-            
+
             if len(agg_spec) != 1:
                 raise ValueError(
                     f"Aggregation spec must have exactly one function, "
                     f"got {len(agg_spec)} for '{result_name}'"
                 )
-            
+
             func_name, field = next(iter(agg_spec.items()))
-            
+
             # Validate function exists
             if func_name not in self.AGGREGATION_FUNCS:
                 raise ValueError(
                     f"Unknown aggregation function: {func_name}. "
                     f"Supported: {', '.join(sorted(self.AGGREGATION_FUNCS.keys()))}"
                 )
-            
+
             # Handle COUNT special case (can be COUNT(*) or COUNT(field))
             if func_name == '$count':
                 if field == '*':
@@ -728,17 +728,17 @@ class OperatorParser:
                         )
                     agg_exprs.append(func.count(table.c[field]).label(result_name))
                 continue
-            
+
             # Other aggregations require valid field
             if field not in self.fields:
                 raise ValueError(
                     f"Field '{field}' not in schema. "
                     f"Available fields: {', '.join(sorted(self.fields.keys()))}"
                 )
-            
+
             field_type = self.fields[field]['type']
             column = table.c[field]
-            
+
             # Type validation for numeric aggregations
             if func_name in self.NUMERIC_AGGREGATIONS:
                 if field_type not in self.NUMERIC_TYPES:
@@ -746,7 +746,7 @@ class OperatorParser:
                         f"Aggregation {func_name} requires numeric field, "
                         f"but field '{field}' has type {field_type}"
                     )
-            
+
             # MIN/MAX support numeric, datetime, text
             if func_name in self.COMPARABLE_AGGREGATIONS:
                 comparable_types = self.NUMERIC_TYPES | {'timestamp', 'date', 'datetime', 'string', 'text'}
@@ -755,13 +755,13 @@ class OperatorParser:
                         f"Aggregation {func_name} requires numeric, datetime, or text field, "
                         f"but field '{field}' has type {field_type}"
                     )
-            
+
             # Generate aggregate expression
             agg_func = self.AGGREGATION_FUNCS[func_name]
             agg_exprs.append(agg_func(column).label(result_name))
-        
+
         return agg_exprs
-    
+
     def parse_sort(
         self, 
         sort_spec: Union[Dict[str, str], List[Dict[str, str]]], 
@@ -769,34 +769,34 @@ class OperatorParser:
     ) -> List:
         """
         Parse sort specification into SQLAlchemy order_by clauses.
-        
+
         Supports both single-field (dict) and multi-field (list) sorting.
         Multi-field sorts are applied in priority order (first = primary sort).
         Sortie 4 feature.
-        
+
         Args:
             sort_spec: Single dict or list of dicts with format:
                 {'field': 'field_name', 'order': 'asc'|'desc'}
-                
+
                 Single-field example:
                 {'field': 'score', 'order': 'desc'}
-                
+
                 Multi-field example:
                 [
                     {'field': 'status', 'order': 'asc'},
                     {'field': 'score', 'order': 'desc'},
                     {'field': 'username', 'order': 'asc'}
                 ]
-            
+
             table: SQLAlchemy Table object
-        
+
         Returns:
             List of SQLAlchemy order_by clauses in priority order
-        
+
         Raises:
             ValueError: If field not in schema or order invalid
             TypeError: If sort_spec format invalid
-        
+
         Example:
             >>> parser = OperatorParser(schema)
             >>> # Multi-field sort: status ASC, then score DESC
@@ -810,50 +810,50 @@ class OperatorParser:
         # Backward compatibility: convert single dict to list
         if isinstance(sort_spec, dict):
             sort_spec = [sort_spec]
-        
+
         if not isinstance(sort_spec, list):
             raise TypeError(
                 f"Sort spec must be dict or list of dicts, "
                 f"got {type(sort_spec).__name__}"
             )
-        
+
         if not sort_spec:
             raise ValueError("Sort spec list cannot be empty")
-        
+
         order_clauses = []
-        
+
         for i, sort_item in enumerate(sort_spec):
             if not isinstance(sort_item, dict):
                 raise TypeError(
                     f"Sort item {i} must be dict, got {type(sort_item).__name__}"
                 )
-            
+
             # Validate required 'field' key
             if 'field' not in sort_item:
                 raise ValueError(f"Sort item {i} missing required 'field' key")
-            
+
             field = sort_item['field']
             order = sort_item.get('order', 'asc').lower()
-            
+
             # Validate field exists
             if field not in self.fields:
                 raise ValueError(
                     f"Sort field '{field}' not in schema. "
                     f"Available fields: {', '.join(sorted(self.fields.keys()))}"
                 )
-            
+
             # Validate order
             if order not in ('asc', 'desc'):
                 raise ValueError(
                     f"Sort order must be 'asc' or 'desc', got '{order}' "
                     f"for field '{field}'"
                 )
-            
+
             # Generate order clause
             column = table.c[field]
             if order == 'desc':
                 order_clauses.append(column.desc())
             else:
                 order_clauses.append(column.asc())
-        
+
         return order_clauses

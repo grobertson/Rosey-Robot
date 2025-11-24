@@ -8,39 +8,37 @@ Usage:
     # First run the profilers:
     python tests/performance/profile_nats.py
     python tests/performance/profile_direct.py
-    
+
     # Then compare:
     python tests/performance/compare_profiles.py
 """
-import pstats
 from pathlib import Path
-from pstats import SortKey
 
 
 def compare_profiles():
     """Compare and report differences between NATS and direct profiles."""
     nats_path = Path('tests/performance/nats_profile.txt')
     direct_path = Path('tests/performance/direct_profile.txt')
-    
+
     # Check files exist
     if not nats_path.exists():
         print(f"❌ Error: {nats_path} not found")
         print("Run: python tests/performance/profile_nats.py")
         return
-    
+
     if not direct_path.exists():
         print(f"❌ Error: {direct_path} not found")
         print("Run: python tests/performance/profile_direct.py")
         return
-    
+
     print("\n" + "="*80)
     print("CPU Profile Comparison: NATS Architecture vs Direct Database")
     print("="*80)
-    
+
     # Load profiles (use pstats.Stats on the profile data, not text files)
     # Note: Since we saved text files, we'll just display them
     # For real comparison, we'd need to save the profile objects
-    
+
     print("\n" + "="*80)
     print("NATS Architecture Profile (Top 20 Functions)")
     print("="*80)
@@ -56,7 +54,7 @@ def compare_profiles():
                 print_count += 1
             if print_count > 0:
                 print_count += 1
-    
+
     print("\n" + "="*80)
     print("Direct Database Profile (Top 20 Functions)")
     print("="*80)
@@ -71,7 +69,7 @@ def compare_profiles():
                 print_count += 1
             if print_count > 0:
                 print_count += 1
-    
+
     print("\n" + "="*80)
     print("Analysis Summary")
     print("="*80)

@@ -19,39 +19,39 @@ from lib.bot import Bot
 @pytest.fixture
 async def temp_database():
     """Create temporary database for testing.
-    
+
     Provides a fully-initialized async BotDatabase instance with:
     - Temporary file path (auto-cleaned up)
     - All tables created via migrations
     - Clean state for each test
     - Automatic connection lifecycle management
-    
+
     Example:
         async def test_database_operations(temp_database):
             await temp_database.user_joined('Alice')
             stats = await temp_database.get_user_stats('Alice')
             assert stats is not None
-    
+
     Yields:
         BotDatabase: Connected async database instance
     """
     # Create temporary file
     with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
         db_path = f.name
-    
+
     # Initialize and connect database
     db = BotDatabase(db_path)
     await db.connect()
-    
+
     # Provide to test
     yield db
-    
+
     # Cleanup
     try:
         await db.close()
     except Exception as e:
         logging.warning('Error closing test database: %s', e)
-    
+
     finally:
         # Remove temp file
         try:
@@ -79,7 +79,7 @@ async def integration_db(tmp_path):
 def integration_bot(integration_db):
     """Bot instance with real database but mocked connection."""
     from lib.connection import ConnectionAdapter
-    
+
     # Create mock connection adapter
     mock_conn = AsyncMock(spec=ConnectionAdapter)
     mock_conn.is_connected = True
@@ -88,40 +88,40 @@ def integration_bot(integration_db):
     mock_conn.send_message = AsyncMock()
     mock_conn.send_pm = AsyncMock()
     mock_conn.on_event = MagicMock()
-    
+
     # Mock event iterator
     async def mock_recv_events():
         if False:
             yield
     mock_conn.recv_events = mock_recv_events
-    
+
     # Create mock NATS client (required in Sprint 9+)
     mock_nats = AsyncMock()
     mock_nats.publish = AsyncMock()
     mock_nats.request = AsyncMock()
     mock_nats.subscribe = AsyncMock()
     mock_nats.is_connected = True
-    
+
     bot = Bot(
         connection=mock_conn,
         nats_client=mock_nats,
         restart_delay=5
     )
-    
+
     # Connect bot to integration database for backward compatibility
     # (Bot will use NATS for new operations, but old tests may check db)
     bot.db = integration_db
-    
+
     # Set up channel and user info for backward compatibility
     bot.channel.name = "test_integration"
     bot.user.name = "IntegrationTestBot"
     bot.user.rank = 3.0
     bot.user.afk = False
-    
+
     # Set up start time for uptime calculations
     bot.start_time = time.time()
     bot.connect_time = time.time()
-    
+
     # Create userlist mock with proper attributes
     bot.channel.userlist = MagicMock()
     bot.channel.userlist._users = {}
@@ -131,19 +131,19 @@ def integration_bot(integration_db):
     bot.channel.userlist.__getitem__ = lambda self, name: self._users[name]
     bot.channel.userlist.__setitem__ = lambda self, name, user: self._users.__setitem__(name, user)
     bot.channel.userlist.__len__ = lambda self: len(self._users)
-    
+
     bot.channel.playlist = MagicMock()
     bot.channel.playlist.queue = []
     bot.channel.playlist.current = None
     bot.channel.playlist.__len__ = lambda self: len(self.queue)
-    
+
     # Mock usercount tracking
     bot.channel.usercount = MagicMock()
     bot.channel.usercount.chatcount = 0
     bot.channel.usercount.usercount = 0
-    
+
     yield bot
-    
+
     # Cleanup
     if bot.db:
         bot.db = None

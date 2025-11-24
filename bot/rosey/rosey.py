@@ -88,11 +88,11 @@ def log_media(bot, logger, *_):
 
 class LLMHandlers:
     """Event handlers for LLM integration."""
-    
+
     def __init__(self, bot, llm_client, trigger_manager, logger, config):
         """
         Initialize LLM handlers.
-        
+
         Args:
             bot: Bot instance
             llm_client: LLMClient instance
@@ -105,58 +105,58 @@ class LLMHandlers:
         self.triggers = trigger_manager
         self.logger = logger
         self.log_only = config.get('log_only', False)
-    
+
     async def handle_chat_message(self, event, data):
         """
         Handle chat messages for LLM responses.
-        
+
         Args:
             event: Event name ('chatMsg')
             data: Event data with username, msg, etc.
         """
         username = data.get('username', '')
         message = data.get('msg', '')
-        
+
         # Skip our own messages
         if username.lower() == self.bot.user.name.lower():
             return
-        
+
         # Get user rank for moderation checks
         user = self.bot.channel.get_user(username)
         user_rank = user.rank if user else 0.0
-        
+
         # Check if we should respond
         should_respond, reason = self.triggers.should_respond_to_chat(
             username, message, user_rank
         )
-        
+
         if not should_respond:
             return
-        
+
         self.logger.info("Trigger: %s | User: %s | Message: %s", reason, username, message[:50])
-        
+
         try:
             # Extract prompt (remove commands/mentions)
             prompt = self.triggers.extract_prompt(message)
             if not prompt:
                 prompt = "Hello!"
-            
+
             # Generate response
             response = await self.llm.chat(username, prompt)
-            
+
             if self.log_only:
                 self.logger.info("[LOG ONLY] Would respond: %s", response)
             else:
                 await self.bot.chat(response)
                 self.logger.info("Response sent: %s", response[:100])
-        
+
         except Exception as e:
             self.logger.error("LLM error: %s", e, exc_info=True)
-    
+
     async def handle_pm(self, event, data):
         """
         Handle private messages - stub for future implementation.
-        
+
         Could be used for:
         - Private AI conversations
         - Admin commands to control LLM
@@ -164,46 +164,46 @@ class LLMHandlers:
         """
         # NoOp for now
         pass
-    
+
     async def handle_user_join(self, event, data):
         """
         Handle user join events for greetings.
-        
+
         Args:
             event: Event name ('addUser')
             data: Event data with username, rank, etc.
         """
         username = data.get('name', '')
         rank = data.get('rank', 0.0)
-        
+
         # Check if we should greet
         should_greet, reason = self.triggers.should_greet_user(
             username, rank, is_join=True
         )
-        
+
         if not should_greet:
             return
-        
+
         self.logger.info("Greeting: %s | User: %s (rank: %.1f)", reason, username, rank)
-        
+
         try:
             # Generate personalized greeting
             prompt = f"Greet {username} who just joined the channel. Be brief and friendly."
             response = await self.llm.generate(prompt)
-            
+
             if self.log_only:
                 self.logger.info("[LOG ONLY] Would greet: %s", response)
             else:
                 await self.bot.chat(response)
                 self.logger.info("Greeting sent: %s", response[:100])
-        
+
         except Exception as e:
             self.logger.error("LLM greeting error: %s", e, exc_info=True)
 
 
 async def run_bot():
     """Run Rosey with proper async handling and NATS event bus.
-    
+
     ⚠️ BREAKING CHANGE (Sprint 9 Sortie 5):
     - Now requires NATS server running
     - Connects to NATS event bus
@@ -221,7 +221,7 @@ async def run_bot():
     """
     # Load configuration from command line argument
     conf, kwargs = get_config()
-    
+
     # Validate config version (BREAKING CHANGE: v2 required)
     config_version = conf.get('version')
     if config_version != '2.0':
@@ -231,7 +231,7 @@ async def run_bot():
         print("   python scripts/migrate_config.py config.json --backup")
         print("\n[*] See: docs/sprints/active/9-The-Accountant/MIGRATION.md")
         sys.exit(1)
-    
+
     # Connect to NATS (REQUIRED)
     nats_config = conf.get('nats', {})
     if not nats_config:
@@ -240,10 +240,10 @@ async def run_bot():
         print("\n[*] Run migration script to add NATS configuration:")
         print("   python scripts/migrate_config.py config.json --backup")
         sys.exit(1)
-    
+
     nats_url = nats_config.get('url', 'nats://localhost:4222')
     print(f"[*] Connecting to NATS: {nats_url}")
-    
+
     nats = NATS()
     try:
         await nats.connect(
@@ -261,11 +261,11 @@ async def run_bot():
         print("   macOS: brew install nats-server")
         print("   Linux/Windows: https://github.com/nats-io/nats-server/releases")
         sys.exit(1)
-    
+
     # Start DatabaseService (BREAKING CHANGE: separate from bot)
     db_config = conf.get('database', {})
     db_path = db_config.get('path', 'bot_data.db')
-    
+
     if db_config.get('run_as_service', True):
         print(f"[*] Starting DatabaseService: {db_path}")
         db_service = DatabaseService(nats, db_path)
@@ -278,7 +278,7 @@ async def run_bot():
     chat_logger = logging.getLogger("chat")
     media_logger = logging.getLogger("media")
     llm_logger = logging.getLogger("llm")
-    
+
     # Get logging config
     logging_config = conf.get('logging', {})
 
@@ -295,20 +295,20 @@ async def run_bot():
         log_file=logging_config.get("media_log_file", None),
         log_format="[%(asctime).19s] %(message)s",  # Include timestamp
     )
-    
+
     # Configure LLM logger
     configure_logger(
         llm_logger,
         log_file=logging_config.get("llm_log_file", None),
         log_format="[%(asctime).19s] [%(levelname)s] %(message)s",
     )
-    
+
     # Get platform config (currently only one CyTube platform supported)
     platforms = conf.get('platforms', [])
     if not platforms:
         print("[!] ERROR: No platforms configured")
         sys.exit(1)
-    
+
     platform_config = platforms[0]  # Primary platform
     if not platform_config.get('enabled', True):
         print("[!] ERROR: Primary platform is disabled")
@@ -319,15 +319,15 @@ async def run_bot():
     channel = platform_config.get('channel')
     user = platform_config.get('user', [])
     restart_delay = platform_config.get('restart_delay', 5)
-    
+
     # Handle channel password if provided
     channel_name = channel[0] if isinstance(channel, (list, tuple)) else channel
     channel_password = channel[1] if isinstance(channel, (list, tuple)) and len(channel) > 1 else None
-    
+
     # Handle user credentials
     username = user[0] if isinstance(user, (list, tuple)) and user else None
     password = user[1] if isinstance(user, (list, tuple)) and len(user) > 1 else None
-    
+
     # Create Rosey bot instance (BREAKING CHANGE: requires nats_client)
     print(f"[*] Creating bot for {domain}/{channel_name}")
     bot = Bot.from_cytube(
@@ -351,7 +351,7 @@ async def run_bot():
         shell = Shell(shell_config, bot)
     else:
         shell = Shell(None, bot)  # Disabled
-    
+
     # Initialize LLM if configured
     llm_client = None
     trigger_manager = None
@@ -361,11 +361,11 @@ async def run_bot():
             try:
                 llm_client = LLMClient(llm_config)
                 await llm_client.__aenter__()
-                
+
                 trigger_config = TriggerConfig(llm_config.get('triggers', {}))
                 bot_username = user[0] if user else 'bot'
                 trigger_manager = TriggerManager(trigger_config, bot_username)
-                
+
                 llm_logger.info("LLM integration enabled with %s provider", llm_config.get('provider'))
                 print(f"[+] LLM integration enabled: {llm_config.get('provider')}")
             except Exception as e:
@@ -387,7 +387,7 @@ async def run_bot():
     if shell.bot is not None:
         bot.on("pm", shell.handle_pm_command)  # Handle mod commands via PM
         print("[+] PM command shell enabled")
-    
+
     # Register LLM handlers if enabled
     if llm_client and trigger_manager:
         llm_handlers = LLMHandlers(bot, llm_client, trigger_manager, llm_logger, conf.get('llm', {}))
@@ -402,11 +402,11 @@ async def run_bot():
     finally:
         # Cleanup
         print("\n[*] Shutting down...")
-        
+
         # Close LLM client if active
         if llm_client:
             await llm_client.__aexit__(None, None, None)
-        
+
         # Close NATS connection
         if nats and not nats.is_closed:
             await nats.close()

@@ -47,32 +47,32 @@ target_metadata = Base.metadata
 def load_database_url_from_config() -> str:
     """
     Load database URL from config.json.
-    
+
     Tries (in order):
     1. ROSEY_DATABASE_URL environment variable
     2. config.json (database_url field)
     3. config-test.json (fallback for tests)
     4. Default SQLite (bot_data.db)
-    
+
     Returns:
         Database URL (e.g., 'sqlite+aiosqlite:///bot_data.db')
     """
     # 1. Check environment variable (highest priority)
     if 'ROSEY_DATABASE_URL' in os.environ:
         return os.environ['ROSEY_DATABASE_URL']
-    
+
     # 2. Check config.json
     config_paths = [
         Path('config.json'),
         Path('config-test.json'),
         Path('../config.json'),  # For when running from alembic/
     ]
-    
+
     for config_path in config_paths:
         if config_path.exists():
             with open(config_path, 'r') as f:
                 config_data = json.load(f)
-            
+
             # Check for database_url (v0.6.0+)
             if 'database_url' in config_data:
                 url = config_data['database_url']
@@ -82,12 +82,12 @@ def load_database_url_from_config() -> str:
                 elif url.startswith('postgresql://'):
                     url = url.replace('postgresql://', 'postgresql+asyncpg://')
                 return url
-            
+
             # Fallback: check for database path (v0.5.0)
             if 'database' in config_data:
                 db_path = config_data['database']
                 return f'sqlite+aiosqlite:///{db_path}'
-    
+
     # 3. Default fallback
     return 'sqlite+aiosqlite:///bot_data.db'
 
@@ -104,11 +104,11 @@ config.set_main_option('sqlalchemy.url', database_url)
 def run_migrations_offline() -> None:
     """
     Run migrations in 'offline' mode.
-    
+
     This configures the context with just a URL and not an Engine,
     though an Engine is acceptable here as well. By skipping the Engine
     creation we don't even need a DBAPI to be available.
-    
+
     Calls to context.execute() here emit the given string to the
     script output.
     """
@@ -129,7 +129,7 @@ def run_migrations_offline() -> None:
 def do_run_migrations(connection: Connection) -> None:
     """
     Run migrations with an active connection.
-    
+
     Args:
         connection: Active database connection
     """
@@ -148,13 +148,13 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_async_migrations() -> None:
     """
     Run migrations in 'online' mode with async engine.
-    
+
     In this scenario we need to create an Engine and associate a
     connection with the context.
     """
     configuration = config.get_section(config.config_ini_section, {})
     configuration["sqlalchemy.url"] = database_url
-    
+
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",
@@ -170,7 +170,7 @@ async def run_async_migrations() -> None:
 def run_migrations_online() -> None:
     """
     Run migrations in 'online' mode (async).
-    
+
     Wrapper to run async migrations from sync context.
     """
     asyncio.run(run_async_migrations())

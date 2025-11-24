@@ -18,30 +18,30 @@ from lib.llm import OpenAIProvider, LLMClient
 def test_openai_provider_init():
     """Test OpenAI provider initialization."""
     print("Testing OpenAI provider initialization...")
-    
+
     # Test with minimal config
     config = {
         'api_key': 'sk-test-key',
         'model': 'gpt-4o-mini'
     }
-    
+
     provider = OpenAIProvider(config)
     assert provider.api_key == 'sk-test-key'
     assert provider.model == 'gpt-4o-mini'
     assert provider.base_url == 'https://api.openai.com/v1'
     print("✓ Basic initialization works")
-    
+
     # Test with custom base_url (e.g., LocalAI)
     config_localai = {
         'api_key': 'not-needed',
         'model': 'llama-3',
         'base_url': 'http://localhost:8080/v1'
     }
-    
+
     provider_localai = OpenAIProvider(config_localai)
     assert provider_localai.base_url == 'http://localhost:8080/v1'
     print("✓ Custom base_url (LocalAI/LM Studio) works")
-    
+
     # Test missing api_key raises error
     try:
         OpenAIProvider({})
@@ -54,7 +54,7 @@ def test_openai_provider_init():
 def test_llm_client_openai():
     """Test LLMClient with OpenAI provider."""
     print("\nTesting LLMClient with OpenAI provider...")
-    
+
     config = {
         'provider': 'openai',
         'openai': {
@@ -64,7 +64,7 @@ def test_llm_client_openai():
         'max_context_messages': 10,
         'temperature': 0.7
     }
-    
+
     client = LLMClient(config)
     assert client.provider_name == 'openai'
     assert isinstance(client.provider, OpenAIProvider)
@@ -74,27 +74,27 @@ def test_llm_client_openai():
 def test_all_providers():
     """Test that all three providers can coexist."""
     print("\nTesting all three providers...")
-    
+
     from lib.llm import OllamaProvider, OpenRouterProvider
-    
+
     # OpenAI
     openai_config = {'api_key': 'sk-test', 'model': 'gpt-4'}
-    openai_provider = OpenAIProvider(openai_config)
+    OpenAIProvider(openai_config)
     print("✓ OpenAI provider created")
-    
+
     # Ollama
     ollama_config = {'base_url': 'http://localhost:11434', 'model': 'llama3'}
-    ollama_provider = OllamaProvider(ollama_config)
+    OllamaProvider(ollama_config)
     print("✓ Ollama provider created")
-    
+
     # OpenRouter
     openrouter_config = {
         'api_key': 'sk-test',
         'model': 'anthropic/claude-3-haiku'
     }
-    openrouter_provider = OpenRouterProvider(openrouter_config)
+    OpenRouterProvider(openrouter_config)
     print("✓ OpenRouter provider created")
-    
+
     print("✓ All three providers can coexist")
 
 
@@ -102,12 +102,12 @@ if __name__ == '__main__':
     print("=" * 60)
     print("OpenAI Provider Test Suite")
     print("=" * 60)
-    
+
     try:
         test_openai_provider_init()
         test_llm_client_openai()
         test_all_providers()
-        
+
         print("\n" + "=" * 60)
         print("✅ All tests passed!")
         print("=" * 60)
@@ -120,7 +120,7 @@ if __name__ == '__main__':
         print("\n# LocalAI/LM Studio:")
         print('{"provider": "openai", "openai": {"api_key": "not-needed", "model": "local-model",')
         print(' "base_url": "http://localhost:1234/v1"}}')
-        
+
     except Exception as e:
         print(f"\n❌ Test failed: {e}")
         import traceback

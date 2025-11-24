@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('plugin_name', 'key', name='pk_plugin_kv_storage'),
         comment='Plugin key-value storage with TTL support'
     )
-    
+
     # Create index for TTL cleanup queries
     op.create_index(
         'idx_plugin_kv_expires',
@@ -42,7 +42,7 @@ def upgrade() -> None:
         ['expires_at'],
         unique=False
     )
-    
+
     # Create index for prefix queries
     op.create_index(
         'idx_plugin_kv_prefix',

@@ -103,10 +103,10 @@ class TUIBot(Bot):
         self.show_join_quit = self.tui_config.get('show_join_quit', True)
         self.clock_format = self.tui_config.get('clock_format', '12h')  # '12h' or '24h'
         self.hide_afk_users = self.tui_config.get('hide_afk_users', False)  # Hide AFK users from list
-        
+
         # Store config file path for persistence
         self.config_file = args[0] if args else 'config.json'
-        
+
         # Load theme
         theme_name = self.tui_config.get('theme', 'default')
         self.current_theme_name = theme_name
@@ -142,7 +142,7 @@ class TUIBot(Bot):
         self.current_media_start_time = None  # When the media started playing
         self.current_media_paused = False  # Whether media is paused
         self.pending_media_uid = None  # Store UID if setCurrent happens before queue
-        
+
         # Terminal size tracking (for Windows resize detection)
         self.last_terminal_size = (self.term.width, self.term.height)
         self.is_windows = platform.system() == 'Windows'
@@ -153,7 +153,7 @@ class TUIBot(Bot):
 
         # Setup logging to file
         self._setup_logging()
-        
+
         # Setup resize handler (Unix only - Windows doesn't support SIGWINCH)
         if not self.is_windows and hasattr(signal, 'SIGWINCH'):
             signal.signal(signal.SIGWINCH, self._handle_resize)
@@ -171,13 +171,13 @@ class TUIBot(Bot):
 
     def _on_queue(self, _, data):
         """Override base Bot's queue handler to add retry logic.
-        
+
         Called when the server adds a single item to the playlist.
         After the base class adds it, check if it matches our pending media UID.
         """
         # Call parent to add the item
         super()._on_queue(_, data)
-        
+
         # If we have a pending media UID, check if this is the item we're waiting for
         if self.pending_media_uid:
             item_uid = data.get('item', {}).get('uid')
@@ -197,20 +197,20 @@ class TUIBot(Bot):
 
     def _on_playlist(self, _, data):
         """Override base Bot's playlist handler to add debugging and retry logic.
-        
+
         Called when the server sends the full playlist. After the base class
         populates the queue, we check if there's a pending media UID to retry.
         """
         # Log what we're receiving
         self.logger.info('_on_playlist: received %d items', len(data) if data else 0)
-        
+
         # Call parent to populate the queue
         super()._on_playlist(_, data)
-        
+
         # Log the queue state after population
         queue_len = len(self.channel.playlist.queue) if self.channel.playlist.queue else 0
         self.logger.info('_on_playlist: queue now has %d items', queue_len)
-        
+
         # If we have a pending media UID, try to set it now
         if self.pending_media_uid and queue_len > 0:
             self.logger.info('_on_playlist: retrying pending UID %s', self.pending_media_uid)
@@ -228,7 +228,7 @@ class TUIBot(Bot):
 
     def _on_changeMedia(self, _, data):
         """Handle changeMedia event which contains current media info.
-        
+
         This event arrives after setCurrent and contains the full media details
         including title, duration, and playback state. Use this as the primary
         source for current media info since it doesn't depend on the playlist queue.
@@ -238,16 +238,16 @@ class TUIBot(Bot):
             seconds = data.get('seconds', 0)  # Total duration
             current_time = data.get('currentTime', 0)  # Current position
             paused = data.get('paused', False)
-            
+
             # Store media info
             self.current_media_title = title
             self.current_media_duration = seconds
             self.current_media_paused = paused
-            
+
             # Calculate when media started (current time in video - elapsed real time = start time)
             import time as time_module
             self.current_media_start_time = time_module.time() - current_time
-            
+
             self.logger.info('changeMedia: %s (duration: %ds, at: %ds, paused: %s)', 
                            title, seconds, int(current_time), paused)
             self.add_system_message(f'Now playing: {title}', color='bright_blue')
@@ -259,7 +259,7 @@ class TUIBot(Bot):
 
     def _on_setCurrent(self, _, data):
         """Override base Bot's setCurrent handler to handle missing UIDs gracefully.
-        
+
         The base handler tries to look up UIDs in the playlist queue, but sometimes
         setCurrent is called before the item is in the queue, causing a ValueError.
         This override catches that error and logs it without crashing.
@@ -278,24 +278,24 @@ class TUIBot(Bot):
 
     def _load_theme(self, theme_name):
         """Load theme configuration from themes directory.
-        
+
         Args:
             theme_name (str): Theme name (without .json extension) or full path
-            
+
         Returns:
             dict: Theme configuration
         """
         # If it's a relative path to old theme.json, convert to default
         if theme_name == 'theme.json':
             theme_name = 'default'
-        
+
         # Check if it's a full path or just a name
         if '/' in theme_name or '\\' in theme_name:
             theme_path = Path(theme_name)
         else:
             # Look in themes directory
             theme_path = Path(__file__).parent / 'themes' / f'{theme_name}.json'
-        
+
         try:
             with open(theme_path, 'r') as f:
                 theme = json.load(f)
@@ -340,19 +340,19 @@ class TUIBot(Bot):
                     'shadow_muted_marker': '[s]'
                 }
             }
-    
+
     def list_themes(self):
         """List all available themes from the themes directory.
-        
+
         Returns:
             list: List of tuples (theme_name, theme_info_dict)
         """
         themes_dir = Path(__file__).parent / 'themes'
         themes = []
-        
+
         if not themes_dir.exists():
             return themes
-        
+
         for theme_file in sorted(themes_dir.glob('*.json')):
             try:
                 with open(theme_file, 'r') as f:
@@ -361,49 +361,49 @@ class TUIBot(Bot):
                     themes.append((theme_name, theme_data))
             except Exception as e:
                 self.logger.warning(f'Failed to read theme {theme_file}: {e}')
-        
+
         return themes
-    
+
     def change_theme(self, theme_name):
         """Change to a different theme and persist the choice.
-        
+
         Args:
             theme_name (str): Name of theme to switch to
-            
+
         Returns:
             bool: True if successful, False otherwise
         """
         # Try to load the theme
         new_theme = self._load_theme(theme_name)
-        
+
         # Check if it loaded successfully (has required keys)
         if 'colors' not in new_theme:
             return False
-        
+
         # Apply the theme
         self.theme = new_theme
         self.current_theme_name = theme_name
-        
+
         # Trigger full screen redraw to update all themed elements
         self.render_screen()
-        
+
         # Save to config file
         try:
             # Use absolute path if relative path was provided
             config_path = Path(self.config_file)
             if not config_path.is_absolute():
                 config_path = config_path.resolve()
-            
+
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-            
+
             if 'tui' not in config:
                 config['tui'] = {}
             config['tui']['theme'] = theme_name
-            
+
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=2)
-            
+
             return True
         except Exception as e:
             self.logger.warning(f'Failed to save theme preference: {e}')
@@ -413,7 +413,7 @@ class TUIBot(Bot):
 
     def _handle_resize(self, signum=None, frame=None):
         """Handle terminal resize events.
-        
+
         Args:
             signum: Signal number (optional, for signal handler)
             frame: Current stack frame (optional, for signal handler)
@@ -421,10 +421,10 @@ class TUIBot(Bot):
         # Redraw the entire screen
         if self.running:
             self.render_screen()
-    
+
     def _check_terminal_size(self):
         """Check if terminal size has changed (for Windows polling).
-        
+
         Returns:
             bool: True if size changed, False otherwise
         """
@@ -459,10 +459,10 @@ class TUIBot(Bot):
     @staticmethod
     def format_duration(seconds):
         """Format seconds into human-readable duration.
-        
+
         Args:
             seconds: Duration in seconds
-            
+
         Returns:
             str: Formatted duration like "1h 23m 45s" or "Unknown"
         """
@@ -650,7 +650,7 @@ class TUIBot(Bot):
             self.add_system_message(f'Now playing: {title}', color='bright_blue')
             self.render_top_status()
             return
-        
+
         # If data is a UID, try to look it up in the playlist
         if isinstance(data, int):
             try:
@@ -665,7 +665,7 @@ class TUIBot(Bot):
             except (ValueError, AttributeError):
                 # Item not in queue yet, will be updated when playlist populates
                 pass
-        
+
         # Fallback: check if playlist.current was set successfully
         if self.channel and self.channel.playlist and self.channel.playlist.current:
             title = self.channel.playlist.current.title
@@ -675,7 +675,7 @@ class TUIBot(Bot):
 
     async def handle_queue(self, _, data):
         """Handle queue event when an item is added to the playlist.
-        
+
         If we have a pending media UID that failed to set because it wasn't
         in the queue yet, retry setting it now.
         """
@@ -693,7 +693,7 @@ class TUIBot(Bot):
 
     async def handle_playlist(self, _, data):
         """Handle playlist event when the full playlist is sent.
-        
+
         If we have a pending media UID that failed to set because it wasn't
         in the queue yet, retry setting it now that we have the full playlist.
         """
@@ -758,26 +758,26 @@ class TUIBot(Bot):
             # Get theme colors
             bg_color = self.theme['colors']['status_bar']['background']
             text_color = self.theme['colors']['status_bar']['text']
-            
+
             # Left side: Channel name and connection status
             if self.channel:
                 left_text = f"📺 {self.channel.name}"
             else:
                 left_text = "📺 Connecting..."
-            
+
             # Right side: Clock with configurable format (show seconds)
             if self.clock_format == '12h':
                 current_time = datetime.now().strftime('%I:%M:%S %p')
             else:
                 current_time = datetime.now().strftime('%H:%M:%S')
             right_text = f"🕐 {current_time}"
-            
+
             # Calculate spacing to right-justify clock (5 columns from edge)
             left_len = len(left_text)
             right_len = len(right_text)
             # Reserve total space: left + right + 5 spaces on right
             total_needed = left_len + right_len + 5
-            
+
             if total_needed <= self.term.width:
                 # Enough space - calculate padding between left and right
                 padding = self.term.width - total_needed
@@ -789,10 +789,10 @@ class TUIBot(Bot):
                 if padding < 1:
                     padding = 1
                 status_line = truncated_left + ' ' * padding + right_text + ' ' * 5
-            
+
             # Should be exact width now, but ensure it
             status_line = status_line[:self.term.width]
-            
+
             # Apply theme colors
             color_func = getattr(self.term, f'{text_color}_on_{bg_color}', self.term.black_on_cyan)
             print(color_func(status_line), end='', flush=True)
@@ -800,15 +800,15 @@ class TUIBot(Bot):
     def render_bottom_status(self):
         """Render the bottom status bar with user info and stats."""
         status_y = self.term.height - 2
-        
+
         with self.term.location(0, status_y):
             # Get theme colors
             bg_color = self.theme['colors']['status_bar']['background']
             text_color = self.theme['colors']['status_bar']['text']
-            
+
             # Left side parts
             left_parts = []
-            
+
             # Current media title - "Now Playing: <title>"
             # Try to get from current playlist, otherwise use cached title
             title = None
@@ -820,17 +820,17 @@ class TUIBot(Bot):
             elif self.current_media_title:
                 # Use cached title if current isn't available
                 title = self.current_media_title
-            
+
             if title:
                 title = title[:40] + '...' if len(title) > 40 else title
                 left_parts.append(f"▶ {title}")
-            
+
             # Viewer count vs chat users
             if self.channel and hasattr(self.channel, 'userlist') and self.channel.userlist:
                 chat_users = len(self.channel.userlist)
                 total_viewers = self.channel.userlist.count if hasattr(self.channel.userlist, 'count') else chat_users
                 left_parts.append(f"👥 {chat_users}/{total_viewers}")
-            
+
             # 24h high water mark (if available from database)
             if hasattr(self, 'db') and self.db:
                 try:
@@ -839,7 +839,7 @@ class TUIBot(Bot):
                         left_parts.append(f"📊 Peak: {high_water}")
                 except Exception:
                     pass
-            
+
             # Media runtime and remaining - use cached values from changeMedia
             if self.current_media_duration:
                 # Total runtime - show seconds now
@@ -850,7 +850,7 @@ class TUIBot(Bot):
                     left_parts.append(f"⏱  Runtime: {total_hours}h {total_mins}m {total_secs}s")
                 else:
                     left_parts.append(f"⏱  Runtime: {total_mins}m {total_secs}s")
-                
+
                 # Calculate current position and time remaining - show seconds
                 if self.current_media_start_time and not self.current_media_paused:
                     import time as time_module
@@ -864,10 +864,10 @@ class TUIBot(Bot):
                             left_parts.append(f"⏳ Remaining: {rem_hours}h {rem_mins}m {rem_secs}s")
                         else:
                             left_parts.append(f"⏳ Remaining: {rem_mins}m {rem_secs}s")
-            
+
             # Right side parts (will be right-justified)
             right_parts = []
-            
+
             # Session duration - show seconds
             session_duration = datetime.now() - self.session_start
             hours, remainder = divmod(int(session_duration.total_seconds()), 3600)
@@ -876,23 +876,23 @@ class TUIBot(Bot):
                 right_parts.append(f"⏱  Session: {hours}h {minutes}m {seconds}s")
             else:
                 right_parts.append(f"⏱  Session: {minutes}m {seconds}s")
-            
+
             # My username
             if self.user and hasattr(self.user, 'name') and self.user.name:
                 right_parts.append(f"👤 {self.user.name}")
-            
+
             # Build the status line
             left_text = "  │  ".join(left_parts) if left_parts else ""
             right_text = "  │  ".join(right_parts) if right_parts else ""
-            
+
             # Calculate the actual display widths (accounting for emojis being wider)
             # Emojis can take 2 display columns, so we need to be careful
             left_display_len = len(left_text)
             right_display_len = len(right_text)
-            
+
             # Calculate spacing - ensure 1-2 spaces after username (on right side)
             available_width = self.term.width - left_display_len - right_display_len - 2
-            
+
             if available_width < 1:
                 # Not enough space, just show left side
                 status_line = left_text
@@ -908,7 +908,7 @@ class TUIBot(Bot):
                     status_line = status_line + ' ' * (self.term.width - len(status_line))
                 elif len(status_line) > self.term.width:
                     status_line = status_line[:self.term.width]
-            
+
             # Apply theme colors
             color_func = getattr(self.term, f'{text_color}_on_{bg_color}', self.term.black_on_cyan)
             print(color_func(status_line), end='', flush=True)
@@ -970,21 +970,21 @@ class TUIBot(Bot):
                 prefix_len += len(f'<{username}> ')
 
                 max_msg_width = chat_width - prefix_len
-                
+
                 # Wrap message if needed (with 2 column padding after wrap)
                 wrapped_lines = textwrap.wrap(message, width=max_msg_width, 
                                              break_long_words=True, 
                                              break_on_hyphens=True)
-                
+
                 # Check if my username is mentioned in the message
                 if self.user and self.user.name and self.user.name in message:
                     # Highlight the entire message with reverse video
                     wrapped_lines = [self.term.reverse(line) for line in wrapped_lines]
-                
+
                 # Print first line with full prefix
                 if wrapped_lines:
                     print(f'{time_str} {username_str}{wrapped_lines[0]}', end='', flush=True)
-                    
+
                     # Print continuation lines with padding (2 spaces after wrap point)
                     for wrap_line_idx, continuation in enumerate(wrapped_lines[1:], 1):
                         continuation_line_num = line_num + wrap_line_idx
@@ -1008,7 +1008,7 @@ class TUIBot(Bot):
 
     def render_users(self):
         """Render the user list on the right side of the screen.
-        
+
         Features:
         - Color coding by rank (brighter for mods+)
         - AFK users in italics, pushed to bottom, alphabetical
@@ -1028,7 +1028,7 @@ class TUIBot(Bot):
         header_bg = self.theme['colors']['user_list_header']['background']
         header_text = self.theme['colors']['user_list_header']['text']
         border_color = self.theme['colors']['borders']
-        
+
         # Header
         with self.term.location(user_list_x, 1):
             user_count = len(self.channel.userlist)
@@ -1047,7 +1047,7 @@ class TUIBot(Bot):
         mods = []
         regular_users = []
         afk_users = []
-        
+
         for user in self.channel.userlist.values():
             if user.afk:
                 afk_users.append(user)
@@ -1055,12 +1055,12 @@ class TUIBot(Bot):
                 mods.append(user)
             else:
                 regular_users.append(user)
-        
+
         # Sort each group alphabetically by name (case-insensitive)
         mods.sort(key=lambda u: u.name.lower())
         regular_users.sort(key=lambda u: u.name.lower())
         afk_users.sort(key=lambda u: u.name.lower())
-        
+
         # Combine lists: mods first, then regular users, then AFK (if not hidden)
         sorted_users = mods + regular_users
         if not self.hide_afk_users:
@@ -1073,11 +1073,11 @@ class TUIBot(Bot):
         # Render users
         for i, user in enumerate(sorted_users[:chat_height]):
             line_num = 2 + i
-            
+
             # IMPORTANT: Clear the entire line first to prevent artifacts
             with self.term.location(user_list_x, line_num):
                 print(' ' * (user_list_width - 1), end='', flush=True)
-            
+
             with self.term.location(user_list_x, line_num):
                 # Get rank symbol from theme
                 if user.rank >= 4:
@@ -1095,18 +1095,18 @@ class TUIBot(Bot):
                 else:
                     rank_symbol = symbols.get('rank_guest', ' ')
                     color_name = rank_colors.get('guest', 'white')
-                
+
                 color_func = getattr(self.term, color_name, self.term.white)
 
                 # Build username string
                 user_str = f'{rank_symbol}{user.name}'
-                
+
                 # Add status indicators from theme
                 if user.smuted:
                     user_str += symbols.get('shadow_muted_marker', '[s]')
                 elif user.muted:
                     user_str += symbols.get('muted_marker', '[m]')
-                
+
                 # Add leader indicator
                 if self.channel.userlist.leader == user:
                     user_str += symbols.get('leader_marker', '[*]')
@@ -1126,7 +1126,7 @@ class TUIBot(Bot):
 
                 # Apply color
                 colored_str = color_func(user_str)
-                
+
                 print(f' {colored_str}', end='', flush=True)
 
         # Clear remaining lines to prevent artifacts
@@ -1171,12 +1171,12 @@ class TUIBot(Bot):
         with self.term.cbreak(), self.term.hidden_cursor():
             while self.running:
                 current_time = time.time()
-                
+
                 # Periodic terminal size check on Windows (every 10 seconds)
                 if self.is_windows and current_time - self.last_size_check >= self.size_check_interval:
                     self._check_terminal_size()
                     self.last_size_check = current_time
-                
+
                 # Periodic status bar update (every second)
                 if current_time - self.last_status_update >= self.status_update_interval:
                     self.render_top_status()
@@ -1184,7 +1184,7 @@ class TUIBot(Bot):
                     # Restore cursor to input position
                     self.render_input()
                     self.last_status_update = current_time
-                
+
                 key = self.term.inkey(timeout=0.1)
 
                 if not key:
@@ -1234,7 +1234,7 @@ class TUIBot(Bot):
         CyTube-specific tab completion:
         - Emotes: Start with '#' (e.g., #smi<TAB> -> #smile)
         - Usernames: After 2+ alphanumeric characters anywhere in text (e.g., ali<TAB> -> alice)
-        
+
         Pressing Tab multiple times cycles through matches alphabetically.
         No matches = tab is ignored.
         """
@@ -1245,14 +1245,14 @@ class TUIBot(Bot):
         if self.tab_completion_matches:
             self.tab_completion_index = (self.tab_completion_index + 1) % len(self.tab_completion_matches)
             match = self.tab_completion_matches[self.tab_completion_index]
-            
+
             # Replace from the start position to the end
             self.input_buffer = self.input_buffer[:self.tab_completion_start] + match
             self.render_input()
             return
 
         cursor_pos = len(self.input_buffer)
-        
+
         # Check for emote completion (starts with #)
         # Find the last # in the buffer
         last_hash = self.input_buffer.rfind('#')
@@ -1263,38 +1263,38 @@ class TUIBot(Bot):
                 # Extract partial emote name after #
                 partial = text_after_hash
                 matches = self._get_emote_matches(partial)
-                
+
                 if matches:
                     # Store state for cycling
                     self.tab_completion_matches = matches
                     self.tab_completion_index = 0
                     self.tab_completion_start = last_hash
-                    
+
                     # Apply first match (includes the # prefix)
                     self.input_buffer = self.input_buffer[:last_hash] + matches[0]
                     self.render_input()
                 return
-        
+
         # Check for username completion (2+ alphanumeric chars)
         # Find the start of the current word (working backwards from cursor)
         start_pos = cursor_pos - 1
         while start_pos >= 0 and self.input_buffer[start_pos].isalnum():
             start_pos -= 1
         start_pos += 1  # Move to first char of the word
-        
+
         # Extract the partial username
         partial = self.input_buffer[start_pos:cursor_pos]
-        
+
         # Only attempt username completion if we have 2+ characters
         if len(partial) >= 2:
             matches = self._get_username_matches(partial)
-            
+
             if matches:
                 # Store state for cycling
                 self.tab_completion_matches = matches
                 self.tab_completion_index = 0
                 self.tab_completion_start = start_pos
-                
+
                 # Apply first match (no prefix or suffix)
                 self.input_buffer = self.input_buffer[:start_pos] + matches[0]
                 self.render_input()
@@ -1310,18 +1310,18 @@ class TUIBot(Bot):
         """
         if not self.channel or not self.channel.userlist:
             return []
-        
+
         partial_lower = partial.lower()
         matches = []
-        
+
         for username in self.channel.userlist.keys():
             # Skip usernames with underscores (CyTube bug workaround)
             if '_' in username:
                 continue
-                
+
             if username.lower().startswith(partial_lower):
                 matches.append(username)
-        
+
         # Sort matches alphabetically (case-insensitive)
         matches.sort(key=str.lower)
         return matches
@@ -1345,15 +1345,15 @@ class TUIBot(Bot):
             'exclamation', 'star', 'sparkles', 'kappa', 'pogchamp', 'lul',
             'monkas', 'omegalul', 'pepega', 'pepe', 'sadge', 'pog', 'copium'
         ]
-        
+
         partial_lower = partial.lower()
         matches = []
-        
+
         for emote in common_emotes:
             if emote.startswith(partial_lower):
                 # Return with # prefix, no suffix
                 matches.append('#' + emote)
-        
+
         # Sort matches alphabetically
         matches.sort(key=str.lower)
         return matches
@@ -1517,7 +1517,7 @@ class TUIBot(Bot):
                 self.add_system_message(f'Current: {self.current_theme_name} - {self.theme.get("name", "Unknown")}', color='bright_green')
                 self.add_system_message('', color='white')
                 for theme_name, theme_data in themes:
-                    name = theme_data.get('name', theme_name)
+                    theme_data.get('name', theme_name)
                     desc = theme_data.get('description', 'No description')
                     marker = ' ⭐' if theme_name == self.current_theme_name else ''
                     self.add_system_message(f'  {theme_name}{marker}', color='bright_white')
@@ -1533,13 +1533,13 @@ class TUIBot(Bot):
                 else:
                     self.add_system_message(f'Failed to load theme: {theme_name}', color='bright_red')
                     self.add_system_message('Use /theme to list available themes', color='bright_black')
-        
+
         # === Info & Status Commands ===
         elif command == 'info':
             await self.cmd_info()
         elif command == 'status':
             await self.cmd_status()
-        
+
         # === User Management ===
         elif command == 'users':
             await self.cmd_users()
@@ -1547,11 +1547,11 @@ class TUIBot(Bot):
             await self.cmd_user(args)
         elif command == 'afk':
             await self.cmd_afk(args)
-        
+
         # === Chat Commands ===
         elif command == 'say':
             await self.cmd_say(args)
-        
+
         # === Playlist Commands ===
         elif command == 'playlist':
             await self.cmd_playlist(args)
@@ -1565,7 +1565,7 @@ class TUIBot(Bot):
             await self.cmd_jump(args)
         elif command == 'next' or command == 'skip':
             await self.cmd_next()
-        
+
         # === Channel Control ===
         elif command == 'pause':
             await self.cmd_pause()
@@ -1573,7 +1573,7 @@ class TUIBot(Bot):
             await self.cmd_kick(args)
         elif command == 'voteskip':
             await self.cmd_voteskip()
-        
+
         else:
             self.add_system_message(f'Unknown command: /{command}', color='bright_red')
 
@@ -1605,10 +1605,10 @@ class TUIBot(Bot):
         self.add_system_message(f'Bot: {self.user.name}', color='bright_white')
         self.add_system_message(f'Rank: {self.user.rank}', color='bright_white')
         self.add_system_message(f'AFK: {"Yes" if self.user.afk else "No"}', color='bright_white')
-        
+
         if self.channel:
             self.add_system_message(f'Channel: {self.channel.name}', color='bright_white')
-            
+
             # Show both chat users and total connected viewers
             chat_users = len(self.channel.userlist)
             total_viewers = self.channel.userlist.count
@@ -1616,7 +1616,7 @@ class TUIBot(Bot):
                 self.add_system_message(f'Users: {chat_users} in chat, {total_viewers} connected', color='bright_white')
             else:
                 self.add_system_message(f'Users: {chat_users}', color='bright_white')
-            
+
             if self.channel.playlist:
                 total = len(self.channel.playlist.queue)
                 self.add_system_message(f'Playlist: {total} items', color='bright_white')
@@ -1632,16 +1632,16 @@ class TUIBot(Bot):
     async def cmd_status(self):
         """Show connection status."""
         self.add_system_message('━━━ Connection Status ━━━', color='bright_cyan')
-        
+
         # Bot uptime (session start)
         uptime = (datetime.now() - self.session_start).total_seconds()
         self.add_system_message(f'Uptime: {self.format_duration(uptime)}', color='bright_white')
-        
+
         # Connection status
         self.add_system_message(f'Connected: {"Yes" if self.socket else "No"}', color='bright_white')
         if self.socket:
             self.add_system_message(f'Server: {self.server}', color='bright_white')
-        
+
         if self.channel:
             self.add_system_message(f'Channel: {self.channel.name}', color='bright_white')
             if self.channel.userlist.leader:
@@ -1655,9 +1655,9 @@ class TUIBot(Bot):
         if not self.channel or not self.channel.userlist:
             self.add_system_message('No users information available', color='bright_red')
             return
-        
+
         self.add_system_message(f'━━━ Users in Channel ({len(self.channel.userlist)}) ━━━', color='bright_cyan')
-        
+
         users = sorted(self.channel.userlist.values(), key=lambda u: u.rank, reverse=True)
         for user in users:
             flags = []
@@ -1667,7 +1667,7 @@ class TUIBot(Bot):
                 flags.append("MUTED")
             if self.channel.userlist.leader == user:
                 flags.append("LEADER")
-            
+
             flag_str = f" [{', '.join(flags)}]" if flags else ""
             self.add_system_message(f'  [{user.rank}] {user.name}{flag_str}', color='bright_white')
 
@@ -1676,11 +1676,11 @@ class TUIBot(Bot):
         if not username:
             self.add_system_message('Usage: /user <username>', color='bright_red')
             return
-        
+
         if not self.channel or username not in self.channel.userlist:
             self.add_system_message(f'User "{username}" not found', color='bright_red')
             return
-        
+
         user = self.channel.userlist[username]
         self.add_system_message(f'━━━ User Info: {user.name} ━━━', color='bright_cyan')
         self.add_system_message(f'Rank: {user.rank}', color='bright_white')
@@ -1695,7 +1695,7 @@ class TUIBot(Bot):
             status = "On" if self.user.afk else "Off"
             self.add_system_message(f'Current AFK status: {status}', color='bright_cyan')
             return
-        
+
         args_lower = args.lower()
         if args_lower in ('on', 'yes', 'true', '1'):
             await self.set_afk(True)
@@ -1711,7 +1711,7 @@ class TUIBot(Bot):
         if not message:
             self.add_system_message('Usage: /say <message>', color='bright_red')
             return
-        
+
         await self.chat(message)
 
     async def cmd_playlist(self, args):
@@ -1719,7 +1719,7 @@ class TUIBot(Bot):
         if not self.channel or not self.channel.playlist:
             self.add_system_message('No playlist information available', color='bright_red')
             return
-        
+
         # Parse optional limit argument
         limit = 10
         if args:
@@ -1728,16 +1728,16 @@ class TUIBot(Bot):
             except ValueError:
                 self.add_system_message('Usage: /playlist [number]', color='bright_red')
                 return
-        
+
         queue = self.channel.playlist.queue
         self.add_system_message(f'━━━ Playlist ({len(queue)} items) ━━━', color='bright_cyan')
-        
+
         for i, item in enumerate(queue[:limit], 1):
             marker = "► " if item == self.channel.playlist.current else "  "
             duration = self.format_duration(item.duration)
             title = item.title[:50] + '...' if len(item.title) > 50 else item.title
             self.add_system_message(f'{marker}{i}. {title} ({duration})', color='bright_white')
-        
+
         if len(queue) > limit:
             self.add_system_message(f'  ... and {len(queue) - limit} more', color='bright_black')
 
@@ -1747,15 +1747,15 @@ class TUIBot(Bot):
         if not parts:
             self.add_system_message('Usage: /add <url> [temp]  (temp: yes/no, default=yes)', color='bright_red')
             return
-        
+
         url = parts[0]
         temp = True
-        
+
         if len(parts) > 1:
             temp_arg = parts[1].lower()
             if temp_arg in ('no', 'false', '0', 'perm'):
                 temp = False
-        
+
         try:
             from lib.media_link import MediaLink
             link = MediaLink.from_url(url)
@@ -1770,22 +1770,22 @@ class TUIBot(Bot):
         if not args:
             self.add_system_message('Usage: /remove <position>', color='bright_red')
             return
-        
+
         try:
             pos = int(args)
         except ValueError:
             self.add_system_message('Invalid position number', color='bright_red')
             return
-        
+
         if not self.channel or not self.channel.playlist:
             self.add_system_message('No playlist available', color='bright_red')
             return
-        
+
         queue = self.channel.playlist.queue
         if pos < 1 or pos > len(queue):
             self.add_system_message(f'Position must be between 1 and {len(queue)}', color='bright_red')
             return
-        
+
         item = queue[pos - 1]
         await self.remove_media(item)
         self.add_system_message(f'Removed: {item.title}', color='bright_green')
@@ -1796,18 +1796,18 @@ class TUIBot(Bot):
         if len(parts) < 2:
             self.add_system_message('Usage: /move <from_pos> <to_pos>', color='bright_red')
             return
-        
+
         try:
             from_pos = int(parts[0])
             to_pos = int(parts[1])
         except ValueError:
             self.add_system_message('Invalid position numbers', color='bright_red')
             return
-        
+
         if not self.channel or not self.channel.playlist:
             self.add_system_message('No playlist available', color='bright_red')
             return
-        
+
         queue = self.channel.playlist.queue
         if from_pos < 1 or from_pos > len(queue):
             self.add_system_message(f'From position must be between 1 and {len(queue)}', color='bright_red')
@@ -1815,11 +1815,11 @@ class TUIBot(Bot):
         if to_pos < 1 or to_pos > len(queue):
             self.add_system_message(f'To position must be between 1 and {len(queue)}', color='bright_red')
             return
-        
+
         from_item = queue[from_pos - 1]
         # After position in CyTube is the item before the target position
         after_item = queue[to_pos - 2] if to_pos > 1 else None
-        
+
         if after_item:
             await self.move_media(from_item, after_item)
             self.add_system_message(f'Moved "{from_item.title}" from position {from_pos} to {to_pos}', color='bright_green')
@@ -1831,22 +1831,22 @@ class TUIBot(Bot):
         if not args:
             self.add_system_message('Usage: /jump <position>', color='bright_red')
             return
-        
+
         try:
             pos = int(args)
         except ValueError:
             self.add_system_message('Invalid position number', color='bright_red')
             return
-        
+
         if not self.channel or not self.channel.playlist:
             self.add_system_message('No playlist available', color='bright_red')
             return
-        
+
         queue = self.channel.playlist.queue
         if pos < 1 or pos > len(queue):
             self.add_system_message(f'Position must be between 1 and {len(queue)}', color='bright_red')
             return
-        
+
         item = queue[pos - 1]
         await self.set_current_media(item)
         self.add_system_message(f'Jumped to: {item.title}', color='bright_green')
@@ -1856,12 +1856,12 @@ class TUIBot(Bot):
         if not self.channel or not self.channel.playlist:
             self.add_system_message('No playlist available', color='bright_red')
             return
-        
+
         current = self.channel.playlist.current
         if not current:
             self.add_system_message('Nothing is currently playing', color='bright_red')
             return
-        
+
         queue = self.channel.playlist.queue
         try:
             current_idx = queue.index(current)
@@ -1885,10 +1885,10 @@ class TUIBot(Bot):
         if not parts:
             self.add_system_message('Usage: /kick <user> [reason]', color='bright_red')
             return
-        
+
         username = parts[0]
         reason = parts[1] if len(parts) > 1 else ""
-        
+
         await self.kick(username, reason)
         reason_str = f': {reason}' if reason else ''
         self.add_system_message(f'Kicked {username}{reason_str}', color='bright_green')
@@ -1898,7 +1898,7 @@ class TUIBot(Bot):
         if not self.channel:
             self.add_system_message('No channel information available', color='bright_red')
             return
-        
+
         count = self.channel.voteskip_count
         need = self.channel.voteskip_need
         self.add_system_message(f'Voteskip: {count}/{need}', color='bright_cyan')

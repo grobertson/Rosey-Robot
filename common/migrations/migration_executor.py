@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import text, select
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from common.migrations.migration import Migration, AppliedMigration
+from common.migrations.migration import Migration
 
 
 class DryRunRollback(Exception):
@@ -31,7 +31,7 @@ class DryRunRollback(Exception):
 class MigrationResult:
     """
     Result of migration execution.
-    
+
     Attributes:
         success: Whether migration completed successfully
         version: Migration version that was executed
@@ -47,19 +47,19 @@ class MigrationResult:
 class MigrationExecutor:
     """
     Executes plugin schema migrations with transaction safety.
-    
+
     Wraps SQL execution in transactions, tracks results in
     plugin_schema_migrations table, supports dry-run previews.
-    
+
     All operations are atomic: either fully applied or fully rolled back.
-    
+
     Attributes:
         database: BotDatabase instance for connection management
         logger: Logger for execution tracking
-    
+
     Example:
         executor = MigrationExecutor(database)
-        
+
         # Apply migration
         result = await executor.apply_migration(
             session=session,
@@ -68,7 +68,7 @@ class MigrationExecutor:
             applied_by='admin',
             dry_run=False
         )
-        
+
         # Rollback migration
         result = await executor.rollback_migration(
             session=session,
@@ -77,17 +77,17 @@ class MigrationExecutor:
             applied_by='admin'
         )
     """
-    
+
     def __init__(self, database):
         """
         Initialize migration executor.
-        
+
         Args:
             database: BotDatabase instance
         """
         self.database = database
         self.logger = logging.getLogger(__name__)
-    
+
     async def apply_migration(
         self,
         session: AsyncSession,
@@ -98,26 +98,26 @@ class MigrationExecutor:
     ) -> MigrationResult:
         """
         Apply migration UP section to database.
-        
+
         Executes migration SQL within session transaction. If dry_run=True,
         raises DryRunRollback after execution to trigger automatic rollback.
-        
+
         Records result in plugin_schema_migrations table (except for dry-run).
-        
+
         Args:
             session: Active database session (managed by caller)
             plugin_name: Plugin identifier
             migration: Migration to apply
             applied_by: User/system applying migration
             dry_run: If True, execute but don't commit (preview mode)
-        
+
         Returns:
             MigrationResult with success status and execution time
-        
+
         Raises:
             DryRunRollback: If dry_run=True (triggers transaction rollback)
             Exception: On SQL execution failure
-        
+
         Example:
             async with database._get_session() as session:
                 result = await executor.apply_migration(
@@ -130,7 +130,7 @@ class MigrationExecutor:
         """
         start_time = time.time()
         error_message = None
-        
+
         try:
             self.logger.info(
                 'Applying migration %s v%03d for plugin %s%s',
@@ -139,12 +139,12 @@ class MigrationExecutor:
                 plugin_name,
                 ' (DRY RUN)' if dry_run else ''
             )
-            
+
             # Execute UP section
             await session.execute(text(migration.up_sql))
-            
+
             execution_time_ms = int((time.time() - start_time) * 1000)
-            
+
             if dry_run:
                 self.logger.info(
                     'Dry-run complete for %s v%03d (%dms) - rolling back',
@@ -154,7 +154,7 @@ class MigrationExecutor:
                 )
                 # Raise exception to trigger rollback
                 raise DryRunRollback('Dry-run mode: rolling back transaction')
-            
+
             # Record successful migration
             await self._record_migration(
                 session=session,
@@ -165,7 +165,7 @@ class MigrationExecutor:
                 error_message=None,
                 execution_time_ms=execution_time_ms
             )
-            
+
             self.logger.info(
                 'Applied migration %s v%03d for plugin %s (%dms)',
                 migration.name,
@@ -173,14 +173,14 @@ class MigrationExecutor:
                 plugin_name,
                 execution_time_ms
             )
-            
+
             return MigrationResult(
                 success=True,
                 version=migration.version,
                 execution_time_ms=execution_time_ms,
                 error_message=None
             )
-            
+
         except DryRunRollback:
             # Expected in dry-run mode
             execution_time_ms = int((time.time() - start_time) * 1000)
@@ -190,11 +190,11 @@ class MigrationExecutor:
                 execution_time_ms=execution_time_ms,
                 error_message='Dry-run: transaction rolled back'
             )
-            
+
         except Exception as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
             error_message = str(e)
-            
+
             self.logger.error(
                 'Failed to apply migration %s v%03d for plugin %s: %s',
                 migration.name,
@@ -202,7 +202,7 @@ class MigrationExecutor:
                 plugin_name,
                 error_message
             )
-            
+
             # Record failed migration (if not dry-run)
             if not dry_run:
                 try:
@@ -220,14 +220,14 @@ class MigrationExecutor:
                         'Failed to record migration failure: %s',
                         record_error
                     )
-            
+
             return MigrationResult(
                 success=False,
                 version=migration.version,
                 execution_time_ms=execution_time_ms,
                 error_message=error_message
             )
-    
+
     async def rollback_migration(
         self,
         session: AsyncSession,
@@ -238,26 +238,26 @@ class MigrationExecutor:
     ) -> MigrationResult:
         """
         Rollback migration DOWN section from database.
-        
+
         Executes migration DOWN SQL within session transaction. If dry_run=True,
         raises DryRunRollback after execution to trigger automatic rollback.
-        
+
         Records result in plugin_schema_migrations table (except for dry-run).
-        
+
         Args:
             session: Active database session (managed by caller)
             plugin_name: Plugin identifier
             migration: Migration to rollback
             applied_by: User/system rolling back migration
             dry_run: If True, execute but don't commit (preview mode)
-        
+
         Returns:
             MigrationResult with success status and execution time
-        
+
         Raises:
             DryRunRollback: If dry_run=True (triggers transaction rollback)
             Exception: On SQL execution failure
-        
+
         Example:
             async with database._get_session() as session:
                 result = await executor.rollback_migration(
@@ -270,7 +270,7 @@ class MigrationExecutor:
         """
         start_time = time.time()
         error_message = None
-        
+
         try:
             self.logger.info(
                 'Rolling back migration %s v%03d for plugin %s%s',
@@ -279,12 +279,12 @@ class MigrationExecutor:
                 plugin_name,
                 ' (DRY RUN)' if dry_run else ''
             )
-            
+
             # Execute DOWN section
             await session.execute(text(migration.down_sql))
-            
+
             execution_time_ms = int((time.time() - start_time) * 1000)
-            
+
             if dry_run:
                 self.logger.info(
                     'Dry-run rollback complete for %s v%03d (%dms) - rolling back',
@@ -294,7 +294,7 @@ class MigrationExecutor:
                 )
                 # Raise exception to trigger rollback
                 raise DryRunRollback('Dry-run mode: rolling back transaction')
-            
+
             # Record rollback
             await self._record_migration(
                 session=session,
@@ -305,7 +305,7 @@ class MigrationExecutor:
                 error_message=None,
                 execution_time_ms=execution_time_ms
             )
-            
+
             self.logger.info(
                 'Rolled back migration %s v%03d for plugin %s (%dms)',
                 migration.name,
@@ -313,14 +313,14 @@ class MigrationExecutor:
                 plugin_name,
                 execution_time_ms
             )
-            
+
             return MigrationResult(
                 success=True,
                 version=migration.version,
                 execution_time_ms=execution_time_ms,
                 error_message=None
             )
-            
+
         except DryRunRollback:
             # Expected in dry-run mode
             execution_time_ms = int((time.time() - start_time) * 1000)
@@ -330,11 +330,11 @@ class MigrationExecutor:
                 execution_time_ms=execution_time_ms,
                 error_message='Dry-run: transaction rolled back'
             )
-            
+
         except Exception as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
             error_message = str(e)
-            
+
             self.logger.error(
                 'Failed to rollback migration %s v%03d for plugin %s: %s',
                 migration.name,
@@ -342,7 +342,7 @@ class MigrationExecutor:
                 plugin_name,
                 error_message
             )
-            
+
             # Record failed rollback (if not dry-run)
             if not dry_run:
                 try:
@@ -360,14 +360,14 @@ class MigrationExecutor:
                         'Failed to record rollback failure: %s',
                         record_error
                     )
-            
+
             return MigrationResult(
                 success=False,
                 version=migration.version,
                 execution_time_ms=execution_time_ms,
                 error_message=error_message
             )
-    
+
     async def _record_migration(
         self,
         session: AsyncSession,
@@ -380,10 +380,10 @@ class MigrationExecutor:
     ) -> None:
         """
         Record migration execution in plugin_schema_migrations table.
-        
+
         Creates new row with execution details. Does not commit session
         (caller manages transaction).
-        
+
         Args:
             session: Active database session
             plugin_name: Plugin identifier
@@ -392,7 +392,7 @@ class MigrationExecutor:
             status: Execution status (applied, rolled_back, failed, rollback_failed)
             error_message: Error message if failed (None if success)
             execution_time_ms: Execution time in milliseconds
-        
+
         Raises:
             Exception: On database insert failure
         """
@@ -407,7 +407,7 @@ class MigrationExecutor:
                 :error_message, :execution_time_ms
             )
         """)
-        
+
         await session.execute(
             query,
             {

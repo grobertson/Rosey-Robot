@@ -17,11 +17,11 @@ from typing import Optional
 class Migration:
     """
     Represents a single migration file with metadata.
-    
+
     A migration file contains UP and DOWN SQL sections:
     - UP: SQL statements to apply the migration (forward)
     - DOWN: SQL statements to rollback the migration (backward)
-    
+
     Attributes:
         version: Migration version number (e.g., 1, 2, 3)
         name: Descriptive name from filename (e.g., 'create_quotes')
@@ -30,7 +30,7 @@ class Migration:
         up_sql: SQL statements for applying migration
         down_sql: SQL statements for rolling back migration
         checksum: SHA-256 hash of file content
-    
+
     Example:
         >>> migration = Migration(
         ...     version=1,
@@ -44,7 +44,7 @@ class Migration:
         >>> print(migration)
         <Migration(v1, create_quotes)>
     """
-    
+
     version: int
     name: str
     filename: str
@@ -52,28 +52,28 @@ class Migration:
     up_sql: str
     down_sql: str
     checksum: str
-    
+
     def __post_init__(self):
         """Validate migration after initialization."""
         if self.version < 1:
             raise ValueError(
                 f"Migration version must be >= 1, got {self.version}"
             )
-        
+
         if not self.up_sql.strip():
             raise ValueError(
                 f"Migration {self.filename} has empty UP section"
             )
-        
+
         if not self.down_sql.strip():
             raise ValueError(
                 f"Migration {self.filename} has empty DOWN section"
             )
-    
+
     def __lt__(self, other: 'Migration') -> bool:
         """
         Allow sorting migrations by version number.
-        
+
         Example:
             >>> migrations = [Migration(version=3, ...), Migration(version=1, ...)]
             >>> sorted(migrations)
@@ -82,7 +82,7 @@ class Migration:
         if not isinstance(other, Migration):
             return NotImplemented
         return self.version < other.version
-    
+
     def __repr__(self) -> str:
         """String representation for debugging."""
         return f"<Migration(v{self.version}, {self.name})>"
@@ -92,10 +92,10 @@ class Migration:
 class AppliedMigration:
     """
     Represents a migration that has been applied to the database.
-    
+
     This corresponds to a row in the plugin_schema_migrations table.
     Used to track which migrations have been executed and when.
-    
+
     Attributes:
         plugin_name: Name of plugin this migration belongs to
         version: Migration version number
@@ -106,7 +106,7 @@ class AppliedMigration:
         status: 'success' or 'failed'
         error_message: Error if migration failed (optional)
         execution_time_ms: Time taken to execute migration (optional)
-    
+
     Example:
         >>> applied = AppliedMigration(
         ...     plugin_name='quote-db',
@@ -120,7 +120,7 @@ class AppliedMigration:
         >>> print(applied)
         <AppliedMigration(quote-db v1, success)>
     """
-    
+
     plugin_name: str
     version: int
     name: str
@@ -130,7 +130,7 @@ class AppliedMigration:
     status: str = 'success'
     error_message: Optional[str] = None
     execution_time_ms: Optional[int] = None
-    
+
     def __post_init__(self):
         """Validate applied migration after initialization."""
         if self.status not in ('success', 'failed'):
@@ -138,12 +138,12 @@ class AppliedMigration:
                 f"AppliedMigration status must be 'success' or 'failed', "
                 f"got '{self.status}'"
             )
-        
+
         if self.version < 1:
             raise ValueError(
                 f"Migration version must be >= 1, got {self.version}"
             )
-    
+
     def __repr__(self) -> str:
         """String representation for debugging."""
         return (

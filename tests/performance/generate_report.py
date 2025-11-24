@@ -31,7 +31,7 @@ def load_benchmark_results(json_file: str) -> Dict[str, Any]:
 
 def parse_benchmark_output(stdout: str) -> Dict[str, float]:
     """Parse benchmark metrics from stdout.
-    
+
     Looks for patterns like:
     - Mean: 2.5ms
     - P95: 4.2ms
@@ -39,7 +39,7 @@ def parse_benchmark_output(stdout: str) -> Dict[str, float]:
     - CPU Overhead: 3.5%
     """
     metrics = {}
-    
+
     patterns = {
         'mean': r'Mean:\s+([\d.]+)ms',
         'median': r'Median:\s+([\d.]+)ms',
@@ -52,29 +52,29 @@ def parse_benchmark_output(stdout: str) -> Dict[str, float]:
         'memory_baseline': r'Baseline:\s+([\d.]+)\s*MB',
         'memory_final': r'Final:\s+([\d.]+)\s*MB'
     }
-    
+
     for key, pattern in patterns.items():
         match = re.search(pattern, stdout)
         if match:
             metrics[key] = float(match.group(1))
-    
+
     return metrics
 
 
 def parse_test_results(report: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Extract benchmark data from pytest report."""
     results = []
-    
+
     for test in report.get('tests', []):
         # Parse test name and outcome
         test_name = test['nodeid']
         outcome = test['outcome']
         duration = test.get('call', {}).get('duration', 0)
         stdout = test.get('call', {}).get('stdout', '')
-        
+
         # Parse metrics from stdout
         metrics = parse_benchmark_output(stdout)
-        
+
         results.append({
             'name': test_name,
             'short_name': test_name.split('::')[-1],
@@ -83,7 +83,7 @@ def parse_test_results(report: Dict[str, Any]) -> List[Dict[str, Any]]:
             'stdout': stdout,
             'metrics': metrics
         })
-    
+
     return results
 
 
@@ -97,7 +97,7 @@ def categorize_tests(results: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, 
         'Concurrent': [],
         'Failure Recovery': []
     }
-    
+
     for result in results:
         name = result['name'].lower()
         if 'latency' in name:
@@ -112,13 +112,13 @@ def categorize_tests(results: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, 
             categories['Concurrent'].append(result)
         elif 'failure' in name or 'recovery' in name:
             categories['Failure Recovery'].append(result)
-    
+
     return categories
 
 
 def evaluate_metric(metric_name: str, value: float) -> str:
     """Evaluate if metric meets requirements.
-    
+
     Returns:
         str: '✅ PASS', '⚠️ WARN', or '❌ FAIL'
     """
@@ -132,15 +132,15 @@ def evaluate_metric(metric_name: str, value: float) -> str:
         'cpu_overhead': (5.0, '%'),
         'memory_increase': (10.0, '%')
     }
-    
+
     if metric_name not in requirements:
         return ''
-    
+
     req = requirements[metric_name]
     threshold = req[0]
     unit = req[1] if len(req) > 1 else ''
     comparison = req[2] if len(req) > 2 else 'lte'  # Less than or equal (default)
-    
+
     if comparison == 'gte':
         # Higher is better (throughput)
         if value >= threshold:
@@ -161,47 +161,47 @@ def evaluate_metric(metric_name: str, value: float) -> str:
 
 def generate_markdown_report(results: List[Dict[str, Any]], output_file: str):
     """Generate markdown report from benchmark results."""
-    
+
     categories = categorize_tests(results)
-    
+
     with open(output_file, 'w', encoding='utf-8') as f:
         # Header
         f.write('# Performance Benchmark Results - Sprint 10\n\n')
         f.write(f'**Generated**: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n\n')
         f.write('**Rosey Version**: v0.5.0 (Sprint 10 Sortie 4)\n\n')
         f.write(f'**Total Tests**: {len(results)}\n\n')
-        
+
         passed = sum(1 for r in results if r['outcome'] == 'passed')
         failed = sum(1 for r in results if r['outcome'] == 'failed')
         f.write(f'**Status**: {passed} passed, {failed} failed\n\n')
-        
+
         f.write('---\n\n')
-        
+
         # Executive Summary
         f.write('## Executive Summary\n\n')
         f.write('Sprint 10 completes the NATS event-driven architecture validation. ')
         f.write('These benchmarks measure performance characteristics against Sprint 9 requirements.\n\n')
-        
+
         # Write results by category
         for category, tests in categories.items():
             if not tests:
                 continue
-            
+
             f.write(f'## {category} Benchmarks\n\n')
-            
+
             for test in tests:
                 f.write(f'### {test["short_name"]}\n\n')
                 f.write(f'**Status**: {test["outcome"].upper()}\n\n')
                 f.write(f'**Duration**: {test["duration"]:.2f}s\n\n')
-                
+
                 if test['metrics']:
                     f.write('**Metrics**:\n\n')
                     f.write('| Metric | Value |\n')
                     f.write('|--------|-------|\n')
-                    
+
                     for key, value in test['metrics'].items():
                         formatted_key = key.replace('_', ' ').title()
-                        
+
                         # Determine unit
                         if 'ms' in formatted_key or key in ['mean', 'median', 'p95', 'p99', 'max']:
                             unit = 'ms'
@@ -213,11 +213,11 @@ def generate_markdown_report(results: List[Dict[str, Any]], output_file: str):
                             unit = ' MB'
                         else:
                             unit = ''
-                        
+
                         f.write(f'| {formatted_key} | {value}{unit} |\n')
-                    
+
                     f.write('\n')
-                    
+
                     # Evaluate against requirements
                     for metric_name in ['mean', 'median', 'p95', 'throughput', 'cpu_overhead', 'memory_increase']:
                         if metric_name in test['metrics']:
@@ -225,31 +225,31 @@ def generate_markdown_report(results: List[Dict[str, Any]], output_file: str):
                             if evaluation:
                                 f.write(f'{evaluation}\n\n')
                                 break  # Only show primary metric evaluation
-                
+
                 f.write('---\n\n')
-        
+
         # Analysis
         f.write('## Analysis & Recommendations\n\n')
-        
+
         f.write('### Performance Summary\n\n')
-        
+
         all_passed = all(r['outcome'] == 'passed' for r in results)
         if all_passed:
             f.write('✅ All benchmarks passed. NATS architecture meets Sprint 9 requirements.\n\n')
         else:
             f.write('⚠️ Some benchmarks failed or warned. Review results above for details.\n\n')
-        
+
         f.write('### Optimization Opportunities (Sprint 11+)\n\n')
         f.write('- [ ] Consider connection pooling for DatabaseService\n')
         f.write('- [ ] Evaluate batch processing for high-volume events\n')
         f.write('- [ ] Profile slow database queries\n')
         f.write('- [ ] Add caching for frequently accessed stats\n')
         f.write('- [ ] Monitor production performance with APM tools\n\n')
-        
+
         f.write('### Baseline Metrics Established\n\n')
         f.write('These results provide baseline metrics for Sprint 11+ performance tracking. ')
         f.write('Future changes should be compared against these values to detect regressions.\n\n')
-        
+
         # Test Environment
         f.write('---\n\n')
         f.write('## Appendix: Test Environment\n\n')
@@ -259,7 +259,7 @@ def generate_markdown_report(results: List[Dict[str, Any]], output_file: str):
         f.write(f'Architecture: {platform.machine()}\n')
         f.write(f'Processor: {platform.processor()}\n')
         f.write('```\n\n')
-        
+
         # Sprint 9 Requirements Reference
         f.write('## Appendix: Sprint 9 Requirements\n\n')
         f.write('| Metric | Target | Priority |\n')
@@ -272,7 +272,7 @@ def generate_markdown_report(results: List[Dict[str, Any]], output_file: str):
         f.write('| Concurrent Events | 50+ simultaneous | P1 |\n')
         f.write('| Failure Recovery | <100ms service restart | P1 |\n')
         f.write('\n')
-        
+
         # Add CI information if running in GitHub Actions
         if os.getenv('GITHUB_ACTIONS') == 'true':
             f.write('---\n\n')
@@ -291,28 +291,28 @@ def main():
         print('First run benchmarks with JSON output:')
         print('  pytest tests/performance/test_nats_overhead.py -v -s --json-report --json-report-file=benchmark_results.json')
         sys.exit(1)
-    
+
     json_file = sys.argv[1]
     output_file = 'tests/performance/BENCHMARK_RESULTS.md'
-    
+
     if not Path(json_file).exists():
         print(f'❌ Error: File not found: {json_file}')
         sys.exit(1)
-    
+
     print(f'📊 Loading results from {json_file}...')
     report = load_benchmark_results(json_file)
-    
+
     print('🔍 Parsing test results...')
     results = parse_test_results(report)
-    
+
     if not results:
         print('⚠️  Warning: No test results found in JSON report')
         print('Make sure to run performance tests with --json-report flag')
         sys.exit(1)
-    
+
     print(f'📝 Generating report: {output_file}...')
     generate_markdown_report(results, output_file)
-    
+
     print('✅ Report generated successfully!')
     print(f'📄 View results: {output_file}')
 

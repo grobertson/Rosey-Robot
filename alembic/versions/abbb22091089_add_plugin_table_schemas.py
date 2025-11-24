@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id'),
         comment='Plugin table schemas for row-based storage'
     )
-    
+
     # Create indexes
     op.create_index('idx_plugin_name', 'plugin_table_schemas', ['plugin_name'], unique=False)
     op.create_index('idx_plugin_table_unique', 'plugin_table_schemas', ['plugin_name', 'table_name'], unique=True)
@@ -42,6 +42,6 @@ def downgrade() -> None:
     # Drop indexes
     op.drop_index('idx_plugin_table_unique', table_name='plugin_table_schemas')
     op.drop_index('idx_plugin_name', table_name='plugin_table_schemas')
-    
+
     # Drop table
     op.drop_table('plugin_table_schemas')

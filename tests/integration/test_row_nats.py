@@ -28,16 +28,16 @@ except ImportError:
 async def db():
     """Create in-memory database."""
     database = BotDatabase(':memory:')
-    
+
     # Create all tables
     async with database.engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     database._is_connected = True
     await database.schema_registry.load_cache()
-    
+
     yield database
-    
+
     await database.close()
 
 
@@ -46,16 +46,16 @@ async def nats_client():
     """Create NATS client connected to test server."""
     if NATS is None:
         pytest.skip("NATS not installed")
-    
+
     nats = NATS()
-    
+
     try:
         await nats.connect("nats://localhost:4222")
     except Exception:
         pytest.skip("NATS server not running")
-    
+
     yield nats
-    
+
     await nats.close()
 
 
@@ -63,16 +63,16 @@ async def nats_client():
 async def db_service(nats_client):
     """Create DatabaseService with NATS and in-memory database."""
     service = DatabaseService(nats_client, ':memory:')
-    
+
     # Initialize database tables BEFORE calling start()
     # start() will call connect() which needs tables to exist
     async with service.db.engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    
+
     await service.start()
-    
+
     yield service
-    
+
     await service.stop()
     await service.db.close()
 
@@ -81,7 +81,7 @@ async def db_service(nats_client):
 
 class TestSchemaRegisterNATS:
     """Test schema registration via NATS."""
-    
+
     async def test_register_schema_via_nats(self, nats_client, db_service):
         """Test schema registration through NATS."""
         response = await nats_client.request(
@@ -96,15 +96,15 @@ class TestSchemaRegisterNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is True
-        
+
         # Verify schema registered
         schema = db_service.db.schema_registry.get_schema("test-plugin", "quotes")
         assert schema is not None
         assert len(schema['fields']) == 1
-    
+
     async def test_register_schema_validates_fields(self, nats_client, db_service):
         """Test that schema validation works through NATS."""
         # Invalid field type
@@ -120,11 +120,11 @@ class TestSchemaRegisterNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "VALIDATION_ERROR"
-    
+
     async def test_register_schema_missing_table(self, nats_client, db_service):
         """Test error when table name missing."""
         response = await nats_client.request(
@@ -136,12 +136,12 @@ class TestSchemaRegisterNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "MISSING_FIELD"
         assert "table" in result['error']['message']
-    
+
     async def test_register_schema_invalid_json(self, nats_client, db_service):
         """Test error on invalid JSON."""
         response = await nats_client.request(
@@ -149,7 +149,7 @@ class TestSchemaRegisterNATS:
             b"not valid json",
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "INVALID_JSON"
@@ -159,7 +159,7 @@ class TestSchemaRegisterNATS:
 
 class TestRowInsertNATS:
     """Test row insert via NATS."""
-    
+
     async def test_insert_single_row_via_nats(self, nats_client, db_service):
         """Test single row insert through NATS."""
         # Register schema first
@@ -175,7 +175,7 @@ class TestRowInsertNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert row
         response = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -185,12 +185,12 @@ class TestRowInsertNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is True
         assert result['created'] is True
         assert isinstance(result['id'], int)
-    
+
     async def test_insert_bulk_rows_via_nats(self, nats_client, db_service):
         """Test bulk insert through NATS."""
         # Register schema
@@ -204,7 +204,7 @@ class TestRowInsertNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Bulk insert
         response = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -218,12 +218,12 @@ class TestRowInsertNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is True
         assert result['created'] == 3
         assert len(result['ids']) == 3
-    
+
     async def test_insert_validates_data(self, nats_client, db_service):
         """Test that insert validates data through NATS."""
         # Register schema
@@ -239,7 +239,7 @@ class TestRowInsertNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert missing required field
         response = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -249,11 +249,11 @@ class TestRowInsertNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "VALIDATION_ERROR"
-    
+
     async def test_insert_unregistered_table(self, nats_client, db_service):
         """Test error when inserting to unregistered table."""
         response = await nats_client.request(
@@ -264,7 +264,7 @@ class TestRowInsertNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "VALIDATION_ERROR"
@@ -275,7 +275,7 @@ class TestRowInsertNATS:
 
 class TestRowSelectNATS:
     """Test row select via NATS."""
-    
+
     async def test_select_existing_row_via_nats(self, nats_client, db_service):
         """Test selecting an existing row through NATS."""
         # Register schema
@@ -291,7 +291,7 @@ class TestRowSelectNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert
         insert_resp = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -303,7 +303,7 @@ class TestRowSelectNATS:
         )
         insert_result = json.loads(insert_resp.data.decode())
         row_id = insert_result['id']
-        
+
         # Select
         select_resp = await nats_client.request(
             "rosey.db.row.test.select",
@@ -313,13 +313,13 @@ class TestRowSelectNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(select_resp.data.decode())
         assert result['success'] is True
         assert result['exists'] is True
         assert result['data']['id'] == row_id
         assert result['data']['title'] == "My Post"
-    
+
     async def test_select_nonexistent_row_via_nats(self, nats_client, db_service):
         """Test selecting a nonexistent row through NATS."""
         # Register schema
@@ -333,7 +333,7 @@ class TestRowSelectNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Select nonexistent row
         response = await nats_client.request(
             "rosey.db.row.test.select",
@@ -343,12 +343,12 @@ class TestRowSelectNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is True
         assert result['exists'] is False
         assert 'data' not in result
-    
+
     async def test_select_missing_id(self, nats_client, db_service):
         """Test error when ID missing."""
         await nats_client.request(
@@ -361,7 +361,7 @@ class TestRowSelectNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         response = await nats_client.request(
             "rosey.db.row.test.select",
             json.dumps({
@@ -370,7 +370,7 @@ class TestRowSelectNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "MISSING_FIELD"
@@ -380,7 +380,7 @@ class TestRowSelectNATS:
 
 class TestCompleteWorkflow:
     """Test complete end-to-end workflow via NATS."""
-    
+
     async def test_complete_workflow(self, nats_client, db_service):
         """Test register -> insert -> select workflow."""
         # 1. Register schema
@@ -400,7 +400,7 @@ class TestCompleteWorkflow:
         )
         schema_result = json.loads(schema_resp.data.decode())
         assert schema_result['success'] is True
-        
+
         # 2. Insert article
         insert_resp = await nats_client.request(
             "rosey.db.row.blog.insert",
@@ -417,7 +417,7 @@ class TestCompleteWorkflow:
         insert_result = json.loads(insert_resp.data.decode())
         assert insert_result['success'] is True
         article_id = insert_result['id']
-        
+
         # 3. Select article
         select_resp = await nats_client.request(
             "rosey.db.row.blog.select",
@@ -433,7 +433,7 @@ class TestCompleteWorkflow:
         assert select_result['data']['title'] == "Getting Started"
         assert select_result['data']['content'] == "This is the content..."
         assert select_result['data']['views'] == 0
-    
+
     async def test_plugin_isolation_via_nats(self, nats_client, db_service):
         """Test that different plugins have isolated data through NATS."""
         schema = {
@@ -442,7 +442,7 @@ class TestCompleteWorkflow:
                 "fields": [{"name": "data", "type": "string", "required": True}]
             }
         }
-        
+
         # Register same table for two plugins
         await nats_client.request(
             "rosey.db.row.plugin-a.schema.register",
@@ -454,7 +454,7 @@ class TestCompleteWorkflow:
             json.dumps(schema).encode(),
             timeout=1.0
         )
-        
+
         # Insert into plugin-a
         insert_a = await nats_client.request(
             "rosey.db.row.plugin-a.insert",
@@ -462,7 +462,7 @@ class TestCompleteWorkflow:
             timeout=1.0
         )
         id_a = json.loads(insert_a.data.decode())['id']
-        
+
         # Insert into plugin-b
         insert_b = await nats_client.request(
             "rosey.db.row.plugin-b.insert",
@@ -470,7 +470,7 @@ class TestCompleteWorkflow:
             timeout=1.0
         )
         id_b = json.loads(insert_b.data.decode())['id']
-        
+
         # Select from each plugin
         select_a = await nats_client.request(
             "rosey.db.row.plugin-a.select",
@@ -482,10 +482,10 @@ class TestCompleteWorkflow:
             json.dumps({"table": "items", "id": id_b}).encode(),
             timeout=1.0
         )
-        
+
         result_a = json.loads(select_a.data.decode())
         result_b = json.loads(select_b.data.decode())
-        
+
         # Data should be isolated
         assert result_a['data']['data'] == "A data"
         assert result_b['data']['data'] == "B data"
@@ -495,7 +495,7 @@ class TestCompleteWorkflow:
 
 class TestRowUpdateNATS:
     """Test row update operations via NATS."""
-    
+
     async def test_update_via_nats(self, nats_client, db_service):
         """Test updating a row via NATS."""
         # Register schema
@@ -512,7 +512,7 @@ class TestRowUpdateNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert
         insert_resp = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -524,7 +524,7 @@ class TestRowUpdateNATS:
         )
         insert_result = json.loads(insert_resp.data.decode())
         row_id = insert_result['id']
-        
+
         # Update
         update_resp = await nats_client.request(
             "rosey.db.row.test.update",
@@ -535,12 +535,12 @@ class TestRowUpdateNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         update_result = json.loads(update_resp.data.decode())
         assert update_result['success'] is True
         assert update_result['updated'] is True
         assert update_result['id'] == row_id
-        
+
         # Verify update
         select_resp = await nats_client.request(
             "rosey.db.row.test.select",
@@ -550,7 +550,7 @@ class TestRowUpdateNATS:
         select_result = json.loads(select_resp.data.decode())
         assert select_result['data']['name'] == "original"  # Unchanged
         assert select_result['data']['value'] == 20  # Updated
-    
+
     async def test_update_nonexistent_row(self, nats_client, db_service):
         """Test updating non-existent row returns exists=false."""
         await nats_client.request(
@@ -561,7 +561,7 @@ class TestRowUpdateNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         response = await nats_client.request(
             "rosey.db.row.test.update",
             json.dumps({
@@ -571,11 +571,11 @@ class TestRowUpdateNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is True
         assert result['exists'] is False
-    
+
     async def test_update_immutable_field_rejected(self, nats_client, db_service):
         """Test that updating immutable fields is rejected."""
         await nats_client.request(
@@ -586,7 +586,7 @@ class TestRowUpdateNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert
         insert_resp = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -594,7 +594,7 @@ class TestRowUpdateNATS:
             timeout=1.0
         )
         row_id = json.loads(insert_resp.data.decode())['id']
-        
+
         # Try to update id
         response = await nats_client.request(
             "rosey.db.row.test.update",
@@ -605,12 +605,12 @@ class TestRowUpdateNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "VALIDATION_ERROR"
         assert "immutable" in result['error']['message'].lower()
-    
+
     async def test_update_missing_fields_rejected(self, nats_client, db_service):
         """Test that update with missing fields is rejected."""
         await nats_client.request(
@@ -621,14 +621,14 @@ class TestRowUpdateNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Missing 'data' field
         response = await nats_client.request(
             "rosey.db.row.test.update",
             json.dumps({"table": "items", "id": 1}).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "MISSING_FIELD"
@@ -636,7 +636,7 @@ class TestRowUpdateNATS:
 
 class TestRowDeleteNATS:
     """Test row delete operations via NATS."""
-    
+
     async def test_delete_via_nats(self, nats_client, db_service):
         """Test deleting a row via NATS."""
         # Register schema
@@ -648,7 +648,7 @@ class TestRowDeleteNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert
         insert_resp = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -656,18 +656,18 @@ class TestRowDeleteNATS:
             timeout=1.0
         )
         row_id = json.loads(insert_resp.data.decode())['id']
-        
+
         # Delete
         delete_resp = await nats_client.request(
             "rosey.db.row.test.delete",
             json.dumps({"table": "items", "id": row_id}).encode(),
             timeout=1.0
         )
-        
+
         delete_result = json.loads(delete_resp.data.decode())
         assert delete_result['success'] is True
         assert delete_result['deleted'] is True
-        
+
         # Verify deleted
         select_resp = await nats_client.request(
             "rosey.db.row.test.select",
@@ -676,7 +676,7 @@ class TestRowDeleteNATS:
         )
         select_result = json.loads(select_resp.data.decode())
         assert select_result['exists'] is False
-    
+
     async def test_delete_nonexistent_row_idempotent(self, nats_client, db_service):
         """Test that deleting non-existent row is idempotent."""
         await nats_client.request(
@@ -687,18 +687,18 @@ class TestRowDeleteNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Delete non-existent row
         response = await nats_client.request(
             "rosey.db.row.test.delete",
             json.dumps({"table": "items", "id": 99999}).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is True
         assert result['deleted'] is False  # No error, just returns False
-    
+
     async def test_delete_twice_idempotent(self, nats_client, db_service):
         """Test that deleting same row twice is idempotent."""
         await nats_client.request(
@@ -709,7 +709,7 @@ class TestRowDeleteNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert
         insert_resp = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -717,7 +717,7 @@ class TestRowDeleteNATS:
             timeout=1.0
         )
         row_id = json.loads(insert_resp.data.decode())['id']
-        
+
         # First delete
         delete1 = await nats_client.request(
             "rosey.db.row.test.delete",
@@ -726,7 +726,7 @@ class TestRowDeleteNATS:
         )
         result1 = json.loads(delete1.data.decode())
         assert result1['deleted'] is True
-        
+
         # Second delete (idempotent)
         delete2 = await nats_client.request(
             "rosey.db.row.test.delete",
@@ -735,7 +735,7 @@ class TestRowDeleteNATS:
         )
         result2 = json.loads(delete2.data.decode())
         assert result2['deleted'] is False  # No error
-    
+
     async def test_delete_missing_fields_rejected(self, nats_client, db_service):
         """Test that delete with missing fields is rejected."""
         await nats_client.request(
@@ -746,14 +746,14 @@ class TestRowDeleteNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Missing 'id' field
         response = await nats_client.request(
             "rosey.db.row.test.delete",
             json.dumps({"table": "items"}).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(response.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "MISSING_FIELD"
@@ -763,7 +763,7 @@ class TestRowDeleteNATS:
 
 class TestRowSearchNATS:
     """Integration tests for row search via NATS."""
-    
+
     async def test_search_all_rows_via_nats(self, nats_client, db_service):
         """Test basic search returning all rows via NATS."""
         # Register schema
@@ -777,7 +777,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert data
         await nats_client.request(
             "rosey.db.row.test.insert",
@@ -791,20 +791,20 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Search all
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
             json.dumps({"table": "items"}).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is True
         assert result['count'] == 3
         assert result['truncated'] is False
         assert len(result['rows']) == 3
-    
+
     async def test_search_with_filters_via_nats(self, nats_client, db_service):
         """Test search with filters via NATS."""
         # Register schema
@@ -821,7 +821,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert data
         await nats_client.request(
             "rosey.db.row.test.insert",
@@ -835,7 +835,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Search for active A items
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -845,13 +845,13 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is True
         assert result['count'] == 1
         assert result['rows'][0]['category'] == "A"
         assert result['rows'][0]['active'] is True
-    
+
     async def test_search_with_sorting_via_nats(self, nats_client, db_service):
         """Test search with sorting via NATS."""
         # Register and insert
@@ -865,7 +865,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -878,7 +878,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Search sorted descending
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -888,12 +888,12 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is True
         values = [row['value'] for row in result['rows']]
         assert values == [30, 20, 10]
-    
+
     async def test_search_with_pagination_via_nats(self, nats_client, db_service):
         """Test paginated search via NATS."""
         # Register and insert
@@ -907,7 +907,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -916,7 +916,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Page 1
         page1_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -928,13 +928,13 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         page1 = json.loads(page1_resp.data.decode())
         assert page1['success'] is True
         assert page1['count'] == 3
         assert page1['truncated'] is True
         assert [r['val'] for r in page1['rows']] == [0, 1, 2]
-        
+
         # Page 2
         page2_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -946,13 +946,13 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         page2 = json.loads(page2_resp.data.decode())
         assert page2['success'] is True
         assert page2['count'] == 3
         assert page2['truncated'] is True
         assert [r['val'] for r in page2['rows']] == [3, 4, 5]
-    
+
     async def test_search_empty_results_via_nats(self, nats_client, db_service):
         """Test search with no matches via NATS."""
         # Register and insert
@@ -966,7 +966,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -975,7 +975,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Search for non-existent
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -985,13 +985,13 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is True
         assert result['count'] == 0
         assert result['rows'] == []
         assert result['truncated'] is False
-    
+
     async def test_search_invalid_filter_field_via_nats(self, nats_client, db_service):
         """Test that invalid filter field returns error via NATS."""
         # Register
@@ -1005,7 +1005,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Search with invalid filter
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1015,12 +1015,12 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "VALIDATION_ERROR"
         assert "non-existent field" in result['error']['message']
-    
+
     async def test_search_invalid_sort_field_via_nats(self, nats_client, db_service):
         """Test that invalid sort field returns error via NATS."""
         # Register
@@ -1034,7 +1034,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Search with invalid sort
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1044,12 +1044,12 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "VALIDATION_ERROR"
         assert "non-existent field" in result['error']['message']
-    
+
     async def test_search_missing_table_via_nats(self, nats_client, db_service):
         """Test that missing table returns error via NATS."""
         search_resp = await nats_client.request(
@@ -1057,11 +1057,11 @@ class TestRowSearchNATS:
             json.dumps({}).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "MISSING_FIELD"
-    
+
     async def test_search_unregistered_table_via_nats(self, nats_client, db_service):
         """Test that searching unregistered table returns error via NATS."""
         search_resp = await nats_client.request(
@@ -1069,12 +1069,12 @@ class TestRowSearchNATS:
             json.dumps({"table": "nonexistent"}).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "VALIDATION_ERROR"
         assert "not registered" in result['error']['message']
-    
+
     async def test_search_invalid_json_via_nats(self, nats_client, db_service):
         """Test that invalid JSON returns error via NATS."""
         search_resp = await nats_client.request(
@@ -1082,11 +1082,11 @@ class TestRowSearchNATS:
             b"not json",
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "INVALID_JSON"
-    
+
     async def test_search_combined_filters_sort_pagination_via_nats(self, nats_client, db_service):
         """Test search with filters, sorting, and pagination combined via NATS."""
         # Register
@@ -1103,7 +1103,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Insert mixed data
         await nats_client.request(
             "rosey.db.row.test.insert",
@@ -1119,7 +1119,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Search active tasks, sorted by priority desc, first page
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1132,7 +1132,7 @@ class TestRowSearchNATS:
             }).encode(),
             timeout=1.0
         )
-        
+
         result = json.loads(search_resp.data.decode())
         assert result['success'] is True
         assert result['count'] == 2
@@ -1143,7 +1143,7 @@ class TestRowSearchNATS:
 
 class TestRowSearchWithOperators:
     """Test row search with MongoDB-style operators via NATS (Sprint 14 Sortie 1)."""
-    
+
     async def test_search_with_gte_operator(self, nats_client, db_service):
         """Test search with $gte operator."""
         # Register schema
@@ -1161,7 +1161,7 @@ class TestRowSearchWithOperators:
             timeout=1.0
         )
         assert json.loads(register_resp.data.decode())['success'] is True
-        
+
         # Insert test data
         insert_resp = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -1177,7 +1177,7 @@ class TestRowSearchWithOperators:
             timeout=1.0
         )
         assert json.loads(insert_resp.data.decode())['success'] is True
-        
+
         # Search with $gte operator
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1188,13 +1188,13 @@ class TestRowSearchWithOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 3
         assert all(row['score'] >= 100 for row in result['rows'])
         usernames = sorted([row['username'] for row in result['rows']])
         assert usernames == ['bob', 'charlie', 'diana']
-    
+
     async def test_search_with_range_query(self, nats_client, db_service):
         """Test range query (score >= 100 AND score <= 150)."""
         # Register and insert
@@ -1210,7 +1210,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1224,7 +1224,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Range query: 100 <= score <= 150
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1235,12 +1235,12 @@ class TestRowSearchWithOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         scores = sorted([row['score'] for row in result['rows']])
         assert scores == [100, 150]
-    
+
     async def test_search_with_lt_operator(self, nats_client, db_service):
         """Test search with $lt operator."""
         # Register and insert
@@ -1256,7 +1256,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1270,7 +1270,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Search rating < 4.0
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1281,11 +1281,11 @@ class TestRowSearchWithOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         assert all(row['rating'] < 4.0 for row in result['rows'])
-    
+
     async def test_search_with_ne_operator(self, nats_client, db_service):
         """Test search with $ne (not equal) operator."""
         # Register and insert
@@ -1302,7 +1302,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1316,7 +1316,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Search status != 'banned'
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1327,11 +1327,11 @@ class TestRowSearchWithOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 3
         assert all(row['status'] != 'banned' for row in result['rows'])
-    
+
     async def test_search_mixed_simple_and_operator(self, nats_client, db_service):
         """Test search with mix of simple equality and operators."""
         # Register and insert
@@ -1349,7 +1349,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1363,7 +1363,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Mixed: category='electronics' (simple) AND price >= 100 (operator) AND available=True (simple)
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1378,11 +1378,11 @@ class TestRowSearchWithOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 1
         assert result['rows'][0]['price'] == 150
-    
+
     async def test_search_range_operator_on_string_fails(self, nats_client, db_service):
         """Test that range operator on string field fails with clear error."""
         # Register schema
@@ -1398,7 +1398,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Try to use $gt on string field (should fail)
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1409,11 +1409,11 @@ class TestRowSearchWithOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is False
         assert result['error']['code'] == 'VALIDATION_ERROR'
         assert 'numeric or datetime type' in result['error']['message']
-    
+
     async def test_backward_compatibility_simple_filters(self, nats_client, db_service):
         """Test backward compatibility with Sprint 13 simple equality filters."""
         # Register and insert
@@ -1430,7 +1430,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1443,7 +1443,7 @@ class TestRowSearchWithOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Use old-style simple equality filter (no operators)
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1454,7 +1454,7 @@ class TestRowSearchWithOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         assert all(row['name'] == 'alpha' for row in result['rows'])
@@ -1462,7 +1462,7 @@ class TestRowSearchWithOperators:
 
 class TestRowSearchExtendedOperators:
     """Test row search with extended operators via NATS (Sprint 14 Sortie 2)."""
-    
+
     async def test_search_with_in_operator(self, nats_client, db_service):
         """Test search with $in operator."""
         # Register schema
@@ -1480,7 +1480,7 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         assert json.loads(register_resp.data.decode())['success'] is True
-        
+
         # Insert test data
         insert_resp = await nats_client.request(
             "rosey.db.row.test.insert",
@@ -1496,7 +1496,7 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         assert json.loads(insert_resp.data.decode())['success'] is True
-        
+
         # Search with $in operator
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1507,12 +1507,12 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 3
         statuses = sorted([row['status'] for row in result['rows']])
         assert statuses == ['active', 'active', 'inactive']
-    
+
     async def test_search_with_nin_operator(self, nats_client, db_service):
         """Test search with $nin operator (not in)."""
         # Reuse schema from previous test
@@ -1529,7 +1529,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1543,7 +1543,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Exclude banned and admin users
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1554,12 +1554,12 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         usernames = sorted([row['username'] for row in result['rows']])
         assert usernames == ['charlie', 'diana']
-    
+
     async def test_search_with_like_operator(self, nats_client, db_service):
         """Test search with $like pattern operator."""
         await nats_client.request(
@@ -1575,7 +1575,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1589,7 +1589,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Find all items starting with 'laptop_'
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1600,12 +1600,12 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         names = sorted([row['name'] for row in result['rows']])
         assert names == ['laptop_dell', 'laptop_hp']
-    
+
     async def test_search_with_ilike_operator(self, nats_client, db_service):
         """Test search with $ilike case-insensitive pattern operator."""
         await nats_client.request(
@@ -1620,7 +1620,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1634,7 +1634,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Case-insensitive search for 'python'
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1645,11 +1645,11 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 3
         # Should match all variants of 'python' regardless of case
-    
+
     async def test_search_with_exists_operator(self, nats_client, db_service):
         """Test search with $exists operator."""
         await nats_client.request(
@@ -1665,7 +1665,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1678,7 +1678,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Find posts with description (not null)
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1689,11 +1689,11 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         assert all(row['description'] is not None for row in result['rows'])
-    
+
     async def test_search_with_null_operator(self, nats_client, db_service):
         """Test search with $null operator."""
         await nats_client.request(
@@ -1709,7 +1709,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1722,7 +1722,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Find incomplete tasks (completed_at is null)
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1733,11 +1733,11 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         assert all(row['completed_at'] is None for row in result['rows'])
-    
+
     async def test_combined_set_and_comparison(self, nats_client, db_service):
         """Test combining $in with comparison operators."""
         await nats_client.request(
@@ -1753,7 +1753,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1767,7 +1767,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Find specific users with high scores
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1781,12 +1781,12 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 3
         usernames = sorted([row['username'] for row in result['rows']])
         assert usernames == ['bob', 'charlie', 'diana']
-    
+
     async def test_combined_pattern_and_existence(self, nats_client, db_service):
         """Test combining $like with $exists."""
         await nats_client.request(
@@ -1802,7 +1802,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1816,7 +1816,7 @@ class TestRowSearchExtendedOperators:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Find Python articles with known authors
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1830,7 +1830,7 @@ class TestRowSearchExtendedOperators:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         titles = sorted([row['title'] for row in result['rows']])
@@ -1839,7 +1839,7 @@ class TestRowSearchExtendedOperators:
 
 class TestRowSearchCompoundLogic:
     """Test row search with compound logical operators via NATS (Sprint 14 Sortie 3)."""
-    
+
     async def test_search_with_and_operator(self, nats_client, db_service):
         """Test search with $and operator."""
         await nats_client.request(
@@ -1856,7 +1856,7 @@ class TestRowSearchCompoundLogic:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1869,7 +1869,7 @@ class TestRowSearchCompoundLogic:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Find active players with score >= 100
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1885,11 +1885,11 @@ class TestRowSearchCompoundLogic:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 1
         assert result['rows'][0]['username'] == 'alice'
-    
+
     async def test_search_with_or_operator(self, nats_client, db_service):
         """Test search with $or operator."""
         await nats_client.request(
@@ -1905,7 +1905,7 @@ class TestRowSearchCompoundLogic:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1919,7 +1919,7 @@ class TestRowSearchCompoundLogic:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Find admins or moderators
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1935,12 +1935,12 @@ class TestRowSearchCompoundLogic:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         usernames = sorted([row['username'] for row in result['rows']])
         assert usernames == ['alice', 'charlie']
-    
+
     async def test_search_with_not_operator(self, nats_client, db_service):
         """Test search with $not operator."""
         await nats_client.request(
@@ -1956,7 +1956,7 @@ class TestRowSearchCompoundLogic:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -1969,7 +1969,7 @@ class TestRowSearchCompoundLogic:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Find accounts that are NOT suspended
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -1982,12 +1982,12 @@ class TestRowSearchCompoundLogic:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         usernames = sorted([row['username'] for row in result['rows']])
         assert usernames == ['alice', 'charlie']
-    
+
     async def test_nested_and_or(self, nats_client, db_service):
         """Test nested $and containing $or."""
         await nats_client.request(
@@ -2004,7 +2004,7 @@ class TestRowSearchCompoundLogic:
             }).encode(),
             timeout=1.0
         )
-        
+
         await nats_client.request(
             "rosey.db.row.test.insert",
             json.dumps({
@@ -2018,7 +2018,7 @@ class TestRowSearchCompoundLogic:
             }).encode(),
             timeout=1.0
         )
-        
+
         # Find high-salary employees in Engineering or Marketing
         search_resp = await nats_client.request(
             "rosey.db.row.test.search",
@@ -2039,7 +2039,7 @@ class TestRowSearchCompoundLogic:
             timeout=1.0
         )
         result = json.loads(search_resp.data.decode())
-        
+
         assert result['success'] is True
         assert result['count'] == 2
         names = sorted([row['name'] for row in result['rows']])

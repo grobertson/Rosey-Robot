@@ -699,15 +699,15 @@ class ApiToken(Base):
 class PluginKVStorage(Base):
     """
     Key-value storage for plugins with TTL support.
-    
+
     Each plugin gets an isolated namespace identified by plugin_name.
     Values are stored as JSON and can optionally expire after a TTL.
-    
+
     Sprint: 12 (KV Storage Foundation)
     Sortie: 1 (Schema & Model)
     """
     __tablename__ = 'plugin_kv_storage'
-    
+
     # Composite primary key
     plugin_name: Mapped[str] = mapped_column(
         String(100),
@@ -715,41 +715,41 @@ class PluginKVStorage(Base):
         nullable=False,
         comment="Plugin identifier (e.g., 'trivia', 'quote-db')"
     )
-    
+
     key: Mapped[str] = mapped_column(
         String(255),
         primary_key=True,
         nullable=False,
         comment="Key name within plugin namespace"
     )
-    
+
     # Value storage (JSON serialized)
     value_json: Mapped[str] = mapped_column(
         Text,
         nullable=False,
         comment="JSON-serialized value (string, number, object, array)"
     )
-    
+
     # TTL support
     expires_at: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="Expiration timestamp (Unix epoch, NULL = never expires)"
     )
-    
+
     # Timestamps
     created_at: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         comment="When key was first created (Unix epoch)"
     )
-    
+
     updated_at: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         comment="When key was last updated (Unix epoch)"
     )
-    
+
     # Table-level constraints and indexes
     __table_args__ = (
         # Index for TTL cleanup queries
@@ -758,11 +758,11 @@ class PluginKVStorage(Base):
         Index('idx_plugin_kv_prefix', 'plugin_name', 'key'),
         {'comment': 'Plugin key-value storage with TTL support'}
     )
-    
+
     def __repr__(self) -> str:
         expired = " [EXPIRED]" if self.is_expired else ""
         return f"<PluginKVStorage(plugin={self.plugin_name}, key={self.key}{expired})>"
-    
+
     @property
     def is_expired(self) -> bool:
         """Check if this entry has expired."""
@@ -770,41 +770,41 @@ class PluginKVStorage(Base):
             return False
         import time
         return time.time() >= self.expires_at
-    
+
     def get_value(self):
         """
         Deserialize and return the stored value.
-        
+
         Returns:
             Deserialized Python object (dict, list, str, int, etc.)
-            
+
         Raises:
             json.JSONDecodeError: If value_json is invalid JSON
         """
         import json
         return json.loads(self.value_json)
-    
+
     def set_value(self, value) -> None:
         """
         Serialize and store a Python value as JSON.
-        
+
         Args:
             value: Any JSON-serializable Python object
-            
+
         Raises:
             TypeError: If value is not JSON-serializable
             ValueError: If serialized value exceeds 64KB
         """
         import json
         serialized = json.dumps(value)
-        
+
         # Check size limit (64KB)
         size_bytes = len(serialized.encode('utf-8'))
         if size_bytes > 65536:
             raise ValueError(
                 f"Value size ({size_bytes} bytes) exceeds 64KB limit (65536 bytes)"
             )
-        
+
         self.value_json = serialized
 
 
@@ -815,15 +815,15 @@ class PluginKVStorage(Base):
 class PluginTableSchema(Base):
     """
     Stores table schemas for plugin row-based storage.
-    
+
     Each plugin can register multiple tables. The schema_json field
     defines the columns (name, type, required) for each table.
-    
+
     Sprint: 13 (Row Operations Foundation)
     Sortie: 1 (Schema Registry & Table Creation)
     """
     __tablename__ = 'plugin_table_schemas'
-    
+
     # Primary key
     id: Mapped[int] = mapped_column(
         Integer,
@@ -831,7 +831,7 @@ class PluginTableSchema(Base):
         autoincrement=True,
         comment="Unique schema ID"
     )
-    
+
     # Plugin and table identification
     plugin_name: Mapped[str] = mapped_column(
         String(100),
@@ -839,20 +839,20 @@ class PluginTableSchema(Base):
         index=True,
         comment="Plugin identifier (e.g., 'quote-db', 'trivia')"
     )
-    
+
     table_name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
         comment="Table name within plugin namespace"
     )
-    
+
     # Schema definition (JSON)
     schema_json: Mapped[str] = mapped_column(
         Text,
         nullable=False,
         comment="JSON schema: {'fields': [{'name': 'text', 'type': 'text', 'required': true}]}"
     )
-    
+
     # Version tracking
     version: Mapped[int] = mapped_column(
         Integer,
@@ -861,20 +861,20 @@ class PluginTableSchema(Base):
         server_default='1',
         comment="Schema version (for migrations)"
     )
-    
+
     # Timestamps
     created_at: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         comment="Schema creation timestamp (Unix epoch)"
     )
-    
+
     updated_at: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         comment="Schema last updated timestamp (Unix epoch)"
     )
-    
+
     # Table-level constraints and indexes
     __table_args__ = (
         # Unique constraint on (plugin_name, table_name)
@@ -883,30 +883,30 @@ class PluginTableSchema(Base):
         Index('idx_plugin_name', 'plugin_name'),
         {'comment': 'Plugin table schemas for row-based storage'}
     )
-    
+
     def __repr__(self) -> str:
         return f"<PluginTableSchema(plugin={self.plugin_name}, table={self.table_name}, v{self.version})>"
-    
+
     def get_schema(self) -> dict:
         """
         Deserialize schema_json to dict.
-        
+
         Returns:
             Schema dict with 'fields' key
-            
+
         Raises:
             json.JSONDecodeError: If schema_json is invalid JSON
         """
         import json
         return json.loads(self.schema_json)
-    
+
     def set_schema(self, schema: dict) -> None:
         """
         Serialize and store schema as JSON.
-        
+
         Args:
             schema: Schema dict with 'fields' key
-            
+
         Raises:
             TypeError: If schema is not JSON-serializable
         """

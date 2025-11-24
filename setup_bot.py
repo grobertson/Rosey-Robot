@@ -18,12 +18,12 @@ def get_input(prompt, default=None, password=False):
     if default:
         prompt = f"{prompt} [{default}]"
     prompt += ": "
-    
+
     if password:
         value = getpass(prompt)
     else:
         value = input(prompt).strip()
-    
+
     return value if value else default
 
 
@@ -46,9 +46,9 @@ def interactive_setup():
     print("Rosey Bot Interactive Setup")
     print("=" * 60)
     print()
-    
+
     config = {}
-    
+
     # Basic CyTube settings
     print("CyTube Connection Settings")
     print("-" * 40)
@@ -57,9 +57,9 @@ def interactive_setup():
     if not config['channel']:
         print("Error: Channel name is required")
         sys.exit(1)
-    
+
     print()
-    
+
     # Bot credentials
     print("Bot Account Credentials")
     print("-" * 40)
@@ -67,20 +67,20 @@ def interactive_setup():
     if not username:
         print("Error: Bot username is required")
         sys.exit(1)
-    
+
     password = get_input("Bot password (required)", password=True)
     if not password:
         print("Error: Bot password is required")
         sys.exit(1)
-    
+
     config['user'] = [username, password]
     print()
-    
+
     # LLM settings
     print("LLM Configuration (Optional)")
     print("-" * 40)
     enable_llm = get_input("Enable LLM integration? (y/n)", "n").lower()
-    
+
     if enable_llm in ['y', 'yes']:
         config['llm'] = {
             'enabled': True,
@@ -91,17 +91,17 @@ def interactive_setup():
             'max_tokens': 500,
             'log_only': False
         }
-        
+
         # Ollama settings
         print("\nOllama Settings:")
         ollama_url = get_input("Ollama base URL", "http://localhost:11434")
         ollama_model = get_input("Ollama model", "llama3")
-        
+
         config['llm']['ollama'] = {
             'base_url': ollama_url,
             'model': ollama_model
         }
-        
+
         # Trigger settings
         print("\nTrigger Settings:")
         config['llm']['triggers'] = {
@@ -129,7 +129,7 @@ def interactive_setup():
                 }
             }
         }
-        
+
         # OpenRouter (optional alternative)
         config['llm']['openrouter'] = {
             'api_key': 'YOUR_OPENROUTER_API_KEY',
@@ -139,9 +139,9 @@ def interactive_setup():
         }
     else:
         config['llm'] = {'enabled': False}
-    
+
     print()
-    
+
     # Other settings with defaults
     config['response_timeout'] = 1
     config['restart_delay'] = 5
@@ -150,7 +150,7 @@ def interactive_setup():
     config['media_log_file'] = 'media.log'
     config['shell'] = 'localhost:5555'
     config['db'] = 'bot_data.db'
-    
+
     return config
 
 
@@ -162,22 +162,22 @@ def main():
 Examples:
   # Interactive setup
   python setup_bot.py
-  
+
   # From config file
   python setup_bot.py --from-file my_config.json
-  
+
   # Command line arguments
   python setup_bot.py --username CynthiaRothbot --channel myroom \\
                       --ollama-url http://192.168.1.100:11434
         """
     )
-    
+
     parser.add_argument(
         '--from-file',
         metavar='FILE',
         help='Load configuration from JSON file'
     )
-    
+
     parser.add_argument('--username', help='Bot username')
     parser.add_argument('--password', help='Bot password')
     parser.add_argument('--channel', help='CyTube channel name')
@@ -185,9 +185,9 @@ Examples:
     parser.add_argument('--ollama-url', help='Ollama base URL (enables LLM)')
     parser.add_argument('--ollama-model', default='llama3', help='Ollama model name')
     parser.add_argument('--output', default='bot/rosey/config.json', help='Output config file path')
-    
+
     args = parser.parse_args()
-    
+
     # Determine configuration source
     if args.from_file:
         print(f"Loading configuration from: {args.from_file}")
@@ -196,7 +196,7 @@ Examples:
         # Command line mode
         if not args.password:
             args.password = getpass("Bot password: ")
-        
+
         config = {
             'domain': args.domain,
             'channel': args.channel,
@@ -209,7 +209,7 @@ Examples:
             'shell': 'localhost:5555',
             'db': 'bot_data.db'
         }
-        
+
         # LLM config if Ollama URL provided
         if args.ollama_url:
             config['llm'] = {
@@ -238,14 +238,14 @@ Examples:
     else:
         # Interactive mode
         config = interactive_setup()
-    
+
     # Write config file
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     with open(output_path, 'w') as f:
         json.dump(config, f, indent=2)
-    
+
     print()
     print("=" * 60)
     print("✅ Configuration Complete!")
@@ -267,7 +267,7 @@ Examples:
     print(f"   cd {output_path.parent}")
     print("   python rosey.py config.json")
     print()
-    
+
     if config.get('llm', {}).get('enabled'):
         print("LLM Features Enabled:")
         print(f"  • Provider: {config['llm']['provider']}")
@@ -280,7 +280,7 @@ Examples:
         print(f"   cd {output_path.parent}")
         print("   python test_llm.py")
         print()
-    
+
     print("Bot Details:")
     print(f"  • Username: {config['user'][0]}")
     print(f"  • Channel: {config['domain']}/r/{config['channel']}")

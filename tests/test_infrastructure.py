@@ -23,7 +23,7 @@ async def test_async_working():
     """Verify async tests work."""
     async def async_func():
         return 42
-    
+
     result = await async_func()
     assert result == 42
 

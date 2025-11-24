@@ -85,7 +85,7 @@ def upgrade() -> None:
             comment='Time taken to execute migration in milliseconds'
         ),
     )
-    
+
     # Unique constraint: one migration per plugin per version
     op.create_index(
         'idx_plugin_schema_migrations_unique',
@@ -93,7 +93,7 @@ def upgrade() -> None:
         ['plugin_name', 'version'],
         unique=True
     )
-    
+
     # Index for querying current version (most recent applied migration)
     op.create_index(
         'idx_plugin_schema_migrations_plugin',

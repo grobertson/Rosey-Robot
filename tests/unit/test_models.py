@@ -32,6 +32,8 @@ from common.models import (
     CurrentStatus,
     OutboundMessage,
     ApiToken,
+    PluginKVStorage,
+    PluginTableSchema,
     get_all_models,
     get_model_by_tablename,
 )
@@ -463,9 +465,9 @@ def test_api_token_indexes_exist(engine):
 # ============================================================================
 
 def test_get_all_models():
-    """Test get_all_models() returns all 8 models."""
+    """Test get_all_models() returns all 10 models."""
     models = get_all_models()
-    assert len(models) == 8
+    assert len(models) == 10
     assert UserStats in models
     assert UserAction in models
     assert ChannelStats in models
@@ -474,6 +476,8 @@ def test_get_all_models():
     assert CurrentStatus in models
     assert OutboundMessage in models
     assert ApiToken in models
+    assert PluginKVStorage in models
+    assert PluginTableSchema in models
 
 
 def test_get_model_by_tablename():
@@ -498,10 +502,10 @@ def test_get_model_by_tablename_invalid():
 # ============================================================================
 
 def test_all_tables_created(engine):
-    """Test that all 8 tables are created."""
+    """Test that all 10 tables are created."""
     inspector = inspect(engine)
     tables = inspector.get_table_names()
-    assert len(tables) == 8
+    assert len(tables) == 10
     assert "user_stats" in tables
     assert "user_actions" in tables
     assert "channel_stats" in tables
@@ -510,6 +514,8 @@ def test_all_tables_created(engine):
     assert "current_status" in tables
     assert "outbound_messages" in tables
     assert "api_tokens" in tables
+    assert "plugin_kv_storage" in tables
+    assert "plugin_table_schemas" in tables
 
 
 def test_table_comments_exist(engine):

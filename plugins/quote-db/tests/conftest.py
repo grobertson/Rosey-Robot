@@ -8,12 +8,12 @@ import json
 def mock_nats():
     """
     Create mock NATS client for testing.
-    
+
     The mock client returns successful responses by default.
     Individual tests can override response behavior.
     """
     nats = AsyncMock()
-    
+
     # Default response for migration status
     status_response = MagicMock()
     status_response.data = json.dumps({
@@ -26,9 +26,9 @@ def mock_nats():
             {"version": 3, "name": "add_tags_column"}
         ]
     }).encode()
-    
+
     nats.request = AsyncMock(return_value=status_response)
-    
+
     return nats
 
 
@@ -36,7 +36,7 @@ def mock_nats():
 def plugin(mock_nats):
     """
     Create QuoteDBPlugin instance with mock NATS client.
-    
+
     Plugin is not initialized by default - tests should call
     plugin.initialize() as needed.
     """
@@ -48,7 +48,7 @@ def plugin(mock_nats):
 async def initialized_plugin(plugin):
     """
     Create and initialize QuoteDBPlugin instance.
-    
+
     Use this fixture when tests need an initialized plugin.
     """
     await plugin.initialize()

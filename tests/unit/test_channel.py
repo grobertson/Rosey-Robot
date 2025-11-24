@@ -323,12 +323,12 @@ class TestChannelPermissionEdgeCases:
         """Verify rank comparison formula: user.rank + RANK_PRECISION < min_rank"""
         channel = Channel('test')
         channel.permissions = {'action': 1.0}
-        
+
         # user.rank = 0.9999, min_rank = 1.0
         # 0.9999 + 0.0001 = 1.0, NOT < 1.0, so PASSES
         user = User('user', rank=0.9999)
         assert channel.check_permission('action', user) is True
-        
+
         # user.rank = 0.9998, min_rank = 1.0
         # 0.9998 + 0.0001 = 0.9999, IS < 1.0, so FAILS
         user2 = User('user2', rank=0.9998)
@@ -345,7 +345,7 @@ class TestChannelPermissionEdgeCases:
             'level3': 3.0
         }
         user = User('mid', rank=2.0)
-        
+
         # Should pass level0, level1, level2
         assert channel.has_permission('level0', user) is True
         assert channel.has_permission('level1', user) is True
@@ -379,14 +379,14 @@ class TestChannelIntegration:
     def test_channel_with_users_and_playlist(self):
         """Channel can manage users and playlist simultaneously"""
         channel = Channel('testchannel')
-        
+
         # Add users
         user1 = User('user1', rank=1.0)
         user2 = User('user2', rank=2.0)
         channel.userlist.add(user1)
         channel.userlist.add(user2)
         assert len(channel.userlist) == 2
-        
+
         # Add playlist items
         for i in range(1, 3):
             data = {
@@ -397,10 +397,10 @@ class TestChannelIntegration:
             }
             channel.playlist.add(None, data)
         assert len(channel.playlist.queue) == 2
-        
+
         # Set permissions
         channel.permissions = {'queue': 1.0}
-        
+
         # Check permissions
         assert channel.has_permission('queue', user1) is True
         assert channel.has_permission('queue', user2) is True
@@ -409,13 +409,13 @@ class TestChannelIntegration:
         """Multiple channels maintain independent state"""
         channel1 = Channel('channel1')
         channel2 = Channel('channel2')
-        
+
         # Modify channel1
         channel1.drink_count = 10
         channel1.permissions = {'chat': 0.0}
         user1 = User('user1', rank=1.0)
         channel1.userlist.add(user1)
-        
+
         # channel2 should be unaffected
         assert channel2.drink_count == 0
         assert channel2.permissions == {}
@@ -424,7 +424,7 @@ class TestChannelIntegration:
     def test_channel_full_state_setup(self):
         """Setup complete channel state"""
         channel = Channel('fullchannel', 'password123')
-        
+
         # Set all attributes
         channel.drink_count = 5
         channel.voteskip_count = 3
@@ -435,10 +435,10 @@ class TestChannelIntegration:
         channel.emotes = [{'name': 'test', 'image': 'test.png'}]
         channel.permissions = {'chat': 0.0, 'queue': 1.0}
         channel.options = {'allow_voteskip': True}
-        
+
         # Add users
         channel.userlist.add(User('user1', rank=1.0))
-        
+
         # Add playlist
         data = {
             'uid': 1,
@@ -447,7 +447,7 @@ class TestChannelIntegration:
             'media': {'type': 'yt', 'id': 'test', 'title': 'Test', 'seconds': 100}
         }
         channel.playlist.add(None, data)
-        
+
         # Verify everything
         assert channel.name == 'fullchannel'
         assert channel.password == 'password123'

@@ -176,7 +176,7 @@ class TestPlaylistItemStringRepresentation:
     def test_eq_with_non_item_non_int(self, sample_item):
         """PlaylistItem comparison with non-item non-int types"""
         assert sample_item != "1"
-        assert sample_item != None
+        assert sample_item is not None
         assert sample_item != [1]
 
 
@@ -597,7 +597,7 @@ class TestPlaylistEdgeCases:
         """Queue is a mutable list"""
         playlist = playlist_with_items
         assert isinstance(playlist.queue, list)
-        original_len = len(playlist.queue)
+        len(playlist.queue)
         # Can manipulate directly (though not recommended)
         first = playlist.queue[0]
         assert first.uid == 1

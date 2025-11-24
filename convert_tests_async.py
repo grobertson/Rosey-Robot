@@ -25,25 +25,25 @@ from pathlib import Path
 def convert_test_file(filepath: Path) -> tuple[int, int]:
     """
     Convert a test file from sync to async.
-    
+
     Args:
         filepath: Path to test file
-    
+
     Returns:
         tuple: (num_methods_converted, num_awaits_added)
     """
     content = filepath.read_text()
     original_content = content
-    
+
     methods_converted = 0
     awaits_added = 0
-    
+
     # 1. Add @pytest.mark.asyncio decorator before test methods
     pattern = r'(\n    )(def test_)'
     replacement = r'\1@pytest.mark.asyncio\1async \2'
     content, count = re.subn(pattern, replacement, content)
     methods_converted += count
-    
+
     # 2. Add await to database method calls (common patterns)
     db_methods = [
         'user_joined', 'user_left', 'user_chat_message', 'get_recent_messages',
@@ -59,7 +59,7 @@ def convert_test_file(filepath: Path) -> tuple[int, int]:
         'list_api_tokens', 'perform_maintenance',
         'connect', 'close'
     ]
-    
+
     for method in db_methods:
         # Pattern: db.method( or db_var.method(
         pattern = rf'(\bdb\w*\.{method}\()'
@@ -70,11 +70,11 @@ def convert_test_file(filepath: Path) -> tuple[int, int]:
             replacement,
             content
         )
-        awaits_added += content.count(f'await db') - original_content.count(f'await db')
-    
+        awaits_added += content.count('await db') - original_content.count('await db')
+
     # 3. Remove old sync fixture usage patterns (if any)
     # Example: db.conn.execute() → will be handled manually as these need ORM equivalents
-    
+
     # Write back if changed
     if content != original_content:
         filepath.write_text(content)
@@ -92,20 +92,20 @@ def main():
         print("Usage: python convert_tests_async.py <test_file>")
         print("Example: python convert_tests_async.py tests/unit/test_database.py")
         sys.exit(1)
-    
+
     filepath = Path(sys.argv[1])
-    
+
     if not filepath.exists():
         print(f"❌ File not found: {filepath}")
         sys.exit(1)
-    
+
     print(f"Converting {filepath} to async...")
     print("=" * 60)
-    
+
     methods, awaits = convert_test_file(filepath)
-    
+
     print("=" * 60)
-    print(f"🎉 Conversion complete!")
+    print("🎉 Conversion complete!")
     print(f"   - {methods} test methods converted")
     print(f"   - {awaits} await statements added")
     print()

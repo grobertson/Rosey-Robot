@@ -222,7 +222,7 @@ class TestBotEventSystem:
 
 class TestBotConnection:
     """Test Bot connection methods - DEPRECATED
-    
+
     These tests are for methods that moved to ConnectionAdapter in Sortie 3.
     Tests now skip as they test deprecated functionality.
     """
@@ -255,7 +255,7 @@ class TestBotConnection:
 
 class TestBotLogin:
     """Test Bot login methods - DEPRECATED
-    
+
     These tests are for methods that moved to ConnectionAdapter in Sortie 3.
     Tests now skip as they test deprecated functionality.
     """
@@ -338,7 +338,7 @@ class TestBotUserEvents:
             'timestamp': 0
         })
         assert 'leavinguser' in bot_simple.channel.userlist
-        
+
         # Remove user - normalized event has 'user' field
         await bot_simple.trigger('user_leave', {'user': 'leavinguser', 'timestamp': 0})
         assert 'leavinguser' not in bot_simple.channel.userlist
@@ -444,7 +444,7 @@ class TestBotPlaylistEvents:
             'media': {'type': 'yt', 'id': 'test', 'title': 'Test', 'seconds': 100}
         }
         await bot_simple.trigger('queue', {'after': None, 'item': item})
-        
+
         # Delete item
         await bot_simple.trigger('delete', {'uid': 1})
         assert len(bot_simple.channel.playlist.queue) == 0
@@ -474,7 +474,7 @@ class TestBotPlaylistEvents:
                 'media': {'type': 'yt', 'id': f'v{i}', 'title': f'Video {i}', 'seconds': 100}
             }
             await bot_simple.trigger('queue', {'after': None, 'item': item})
-        
+
         # Move item 1 after item 2 (moves to end)
         await bot_simple.trigger('moveVideo', {'from': 1, 'after': 2})
         assert bot_simple.channel.playlist.queue[0].uid == 2
@@ -634,7 +634,7 @@ class TestBotEdgeCases:
             'timestamp': 0
         })
         assert len(bot_simple.channel.userlist) == 2
-        
+
         # New userlist should replace (Sortie 1: users array contains full objects)
         await bot_simple.trigger('user_list', {
             'users': [
@@ -667,7 +667,7 @@ class TestBotEdgeCases:
         """Multiple Bot instances are independent"""
         bot1 = Bot.from_cytube('http://test1.com', 'channel1', nats_client=mock_nats_client)
         bot2 = Bot.from_cytube('http://test2.com', 'channel2', nats_client=mock_nats_client)
-        
+
         assert bot1.channel.name != bot2.channel.name
         assert bot1.channel is not bot2.channel
         assert bot1.handlers is not bot2.handlers
@@ -679,7 +679,7 @@ class TestBotEdgeCases:
         await bot_simple.trigger('channelCSSJS', {'css': 'body {}'})
         assert bot_simple.channel.css == 'body {}'
         assert bot_simple.channel.js == ''
-        
+
         # Only JS provided
         await bot_simple.trigger('channelCSSJS', {'js': 'console.log(1);'})
         assert bot_simple.channel.js == 'console.log(1);'

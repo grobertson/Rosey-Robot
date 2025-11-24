@@ -34,7 +34,6 @@ from common.migrations import (
     MigrationExecutor,
     DryRunRollback,
     MigrationValidator,
-    ValidationWarning,
     WarningLevel,
 )
 
@@ -94,7 +93,7 @@ class DatabaseService:
         self._running = False
         self._cleanup_task = None
         self._shutdown = False
-        
+
         # Migration support (Sprint 15 Sorties 2-3)
         from pathlib import Path
         plugins_dir = Path(__file__).parent.parent / 'plugins'
@@ -178,7 +177,7 @@ class DatabaseService:
                 await self.nats.subscribe('rosey.db.row.*.search',
                                         cb=self._handle_row_search),
             ])
-            
+
             # Migration handlers (request/reply) - Sprint 15 Sortie 2
             # Wildcard subscriptions for plugin-specific migrations
             self._subscriptions.extend([
@@ -191,11 +190,11 @@ class DatabaseService:
             ])
 
             self._running = True
-            
+
             # Start background cleanup task
             self._shutdown = False
             self._cleanup_task = asyncio.create_task(self._kv_cleanup_loop())
-            
+
             self.logger.info(
                 f"DatabaseService started with {len(self._subscriptions)} subscriptions "
                 f"(KV cleanup interval: {self.cleanup_interval_seconds}s)"
@@ -220,7 +219,7 @@ class DatabaseService:
 
         # Signal shutdown
         self._shutdown = True
-        
+
         # Cancel cleanup task
         if self._cleanup_task:
             self._cleanup_task.cancel()
@@ -678,9 +677,9 @@ class DatabaseService:
 
     async def _handle_kv_set(self, msg):
         """Handle rosey.db.kv.set requests.
-        
+
         NATS Subject: rosey.db.kv.set (request/reply)
-        
+
         Request:
             {
                 "plugin_name": str,
@@ -688,12 +687,12 @@ class DatabaseService:
                 "value": Any,
                 "ttl_seconds": Optional[int]
             }
-        
+
         Response:
             {"success": true, "data": {}}
             or
             {"success": false, "error": {"code": str, "message": str}}
-        
+
         Error Codes:
             INVALID_JSON - Malformed JSON request
             MISSING_FIELD - Required field missing
@@ -713,12 +712,12 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Validate required fields
             plugin_name = request.get("plugin_name")
             key = request.get("key")
             value = request.get("value")
-            
+
             if not plugin_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -728,7 +727,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if not key:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -738,7 +737,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if "value" not in request:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -748,9 +747,9 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             ttl_seconds = request.get("ttl_seconds")
-            
+
             # Call database method
             try:
                 await self.db.kv_set(plugin_name, key, value, ttl_seconds)
@@ -774,13 +773,13 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success response
             await msg.respond(json.dumps({
                 "success": True,
                 "data": {}
             }).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in _handle_kv_set: {e}", exc_info=True)
             try:
@@ -796,12 +795,12 @@ class DatabaseService:
 
     async def _handle_kv_get(self, msg):
         """Handle rosey.db.kv.get requests.
-        
+
         NATS Subject: rosey.db.kv.get (request/reply)
-        
+
         Request:
             {"plugin_name": str, "key": str}
-        
+
         Response:
             {"success": true, "data": {"exists": bool, "value": Any}}
             or
@@ -820,11 +819,11 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Validate required fields
             plugin_name = request.get("plugin_name")
             key = request.get("key")
-            
+
             if not plugin_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -834,7 +833,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if not key:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -844,7 +843,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Call database method
             try:
                 result = await self.db.kv_get(plugin_name, key)
@@ -858,13 +857,13 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success response
             await msg.respond(json.dumps({
                 "success": True,
                 "data": result
             }).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in _handle_kv_get: {e}", exc_info=True)
             try:
@@ -880,12 +879,12 @@ class DatabaseService:
 
     async def _handle_kv_delete(self, msg):
         """Handle rosey.db.kv.delete requests.
-        
+
         NATS Subject: rosey.db.kv.delete (request/reply)
-        
+
         Request:
             {"plugin_name": str, "key": str}
-        
+
         Response:
             {"success": true, "data": {"deleted": bool}}
             or
@@ -904,11 +903,11 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Validate required fields
             plugin_name = request.get("plugin_name")
             key = request.get("key")
-            
+
             if not plugin_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -918,7 +917,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if not key:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -928,7 +927,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Call database method
             try:
                 deleted = await self.db.kv_delete(plugin_name, key)
@@ -942,13 +941,13 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success response
             await msg.respond(json.dumps({
                 "success": True,
                 "data": {"deleted": deleted}
             }).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in _handle_kv_delete: {e}", exc_info=True)
             try:
@@ -964,16 +963,16 @@ class DatabaseService:
 
     async def _handle_kv_list(self, msg):
         """Handle rosey.db.kv.list requests.
-        
+
         NATS Subject: rosey.db.kv.list (request/reply)
-        
+
         Request:
             {
                 "plugin_name": str,
                 "prefix": Optional[str],
                 "limit": Optional[int]
             }
-        
+
         Response:
             {"success": true, "data": {"keys": [str], "count": int, "truncated": bool}}
             or
@@ -992,10 +991,10 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Validate required fields
             plugin_name = request.get("plugin_name")
-            
+
             if not plugin_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1005,10 +1004,10 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             prefix = request.get("prefix", "")
             limit = request.get("limit", 1000)
-            
+
             # Call database method
             try:
                 result = await self.db.kv_list(plugin_name, prefix, limit)
@@ -1022,13 +1021,13 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success response
             await msg.respond(json.dumps({
                 "success": True,
                 "data": result
             }).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in _handle_kv_list: {e}", exc_info=True)
             try:
@@ -1047,9 +1046,9 @@ class DatabaseService:
     async def _handle_schema_register(self, msg):
         """
         Handle rosey.db.row.{plugin}.schema.register requests.
-        
+
         NATS Subject: rosey.db.row.{plugin}.schema.register (request/reply)
-        
+
         Request:
             {
                 "table": str,
@@ -1059,7 +1058,7 @@ class DatabaseService:
                     ]
                 }
             }
-        
+
         Response:
             {"success": true} or {"success": false, "error": {...}}
         """
@@ -1076,7 +1075,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Extract plugin from subject
             parts = msg.subject.split('.')
             if len(parts) < 5:
@@ -1088,13 +1087,13 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             plugin_name = parts[3]  # rosey.db.row.{plugin}.schema.register
-            
+
             # Validate required fields
             table_name = request.get('table')
             schema = request.get('schema')
-            
+
             if not table_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1104,7 +1103,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if not schema:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1114,7 +1113,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Register schema
             try:
                 await self.db.schema_registry.register_schema(
@@ -1141,12 +1140,12 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success
             await msg.respond(json.dumps({
                 "success": True
             }).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in schema_register: {e}", exc_info=True)
             try:
@@ -1163,15 +1162,15 @@ class DatabaseService:
     async def _handle_row_insert(self, msg):
         """
         Handle rosey.db.row.{plugin}.insert requests.
-        
+
         NATS Subject: rosey.db.row.{plugin}.insert (request/reply)
-        
+
         Request:
             {
                 "table": str,
                 "data": dict | list[dict]
             }
-        
+
         Response:
             Single: {"success": true, "id": 42, "created": true}
             Bulk: {"success": true, "ids": [42, 43], "created": 2}
@@ -1190,7 +1189,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Extract plugin from subject
             parts = msg.subject.split('.')
             if len(parts) < 4:
@@ -1202,13 +1201,13 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             plugin_name = parts[3]  # rosey.db.row.{plugin}.insert
-            
+
             # Validate required fields
             table_name = request.get('table')
             data = request.get('data')
-            
+
             if not table_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1218,7 +1217,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if data is None:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1228,7 +1227,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Insert
             try:
                 result = await self.db.row_insert(plugin_name, table_name, data)
@@ -1251,11 +1250,11 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success
             response = {"success": True, **result}
             await msg.respond(json.dumps(response).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in row_insert: {e}", exc_info=True)
             try:
@@ -1272,15 +1271,15 @@ class DatabaseService:
     async def _handle_row_select(self, msg):
         """
         Handle rosey.db.row.{plugin}.select requests.
-        
+
         NATS Subject: rosey.db.row.{plugin}.select (request/reply)
-        
+
         Request:
             {
                 "table": str,
                 "id": int
             }
-        
+
         Response:
             {"success": true, "exists": true, "data": {...}}
             or
@@ -1301,7 +1300,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Extract plugin from subject
             parts = msg.subject.split('.')
             if len(parts) < 4:
@@ -1313,13 +1312,13 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             plugin_name = parts[3]  # rosey.db.row.{plugin}.select
-            
+
             # Validate required fields
             table_name = request.get('table')
             row_id = request.get('id')
-            
+
             if not table_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1329,7 +1328,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if row_id is None:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1339,7 +1338,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Select
             try:
                 result = await self.db.row_select(plugin_name, table_name, row_id)
@@ -1362,11 +1361,11 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success
             response = {"success": True, **result}
             await msg.respond(json.dumps(response).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in row_select: {e}", exc_info=True)
             try:
@@ -1383,14 +1382,14 @@ class DatabaseService:
     async def _handle_row_update(self, msg):
         """
         Handle rosey.db.row.{plugin}.update requests.
-        
+
         Request:
             {
                 "table": str,
                 "id": int,
                 "data": dict
             }
-        
+
         Response:
             {"success": true, "id": 42, "updated": true}
             or
@@ -1411,16 +1410,16 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Extract plugin from subject
             parts = msg.subject.split('.')
             plugin_name = parts[3]  # rosey.db.row.{plugin}.update
-            
+
             # Validate required fields
             table_name = request.get('table')
             row_id = request.get('id')
             data = request.get('data')
-            
+
             if not table_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1430,7 +1429,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if row_id is None:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1440,7 +1439,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if data is None:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1450,7 +1449,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Update
             try:
                 result = await self.db.row_update(plugin_name, table_name, row_id, data)
@@ -1473,11 +1472,11 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success
             response = {"success": True, **result}
             await msg.respond(json.dumps(response).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in row_update: {e}", exc_info=True)
             try:
@@ -1494,13 +1493,13 @@ class DatabaseService:
     async def _handle_row_delete(self, msg):
         """
         Handle rosey.db.row.{plugin}.delete requests.
-        
+
         Request:
             {
                 "table": str,
                 "id": int
             }
-        
+
         Response:
             {"success": true, "deleted": true/false}
             or
@@ -1519,15 +1518,15 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Extract plugin from subject
             parts = msg.subject.split('.')
             plugin_name = parts[3]  # rosey.db.row.{plugin}.delete
-            
+
             # Validate required fields
             table_name = request.get('table')
             row_id = request.get('id')
-            
+
             if not table_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1537,7 +1536,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             if row_id is None:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1547,7 +1546,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Delete
             try:
                 result = await self.db.row_delete(plugin_name, table_name, row_id)
@@ -1570,11 +1569,11 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success
             response = {"success": True, **result}
             await msg.respond(json.dumps(response).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in row_delete: {e}", exc_info=True)
             try:
@@ -1591,9 +1590,9 @@ class DatabaseService:
     async def _handle_row_search(self, msg):
         """
         Handle rosey.db.row.{plugin}.search requests.
-        
+
         Searches rows with filters, sorting, and pagination.
-        
+
         Request:
             {
                 "table": str,                                       # Required
@@ -1602,7 +1601,7 @@ class DatabaseService:
                 "limit": int (optional, default 100, max 1000),
                 "offset": int (optional, default 0)
             }
-        
+
         Response (success):
             {
                 "success": true,
@@ -1610,20 +1609,20 @@ class DatabaseService:
                 "count": int,           # Number of rows in page
                 "truncated": bool       # True if more rows available
             }
-        
+
         Response (error):
             {"success": false, "error": {"code": str, "message": str}}
-        
+
         Example:
             # Search all
             rosey.db.row.quote_db.search -> {"table": "quotes"}
-            
+
             # Search with filters
             rosey.db.row.quote_db.search -> {
                 "table": "quotes",
                 "filters": {"author": "Alice", "active": true}
             }
-            
+
             # Sorted and paginated
             rosey.db.row.quote_db.search -> {
                 "table": "quotes",
@@ -1645,14 +1644,14 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Extract plugin from subject (rosey.db.row.{plugin}.search)
             parts = msg.subject.split('.')
             plugin_name = parts[3]
-            
+
             # Validate required fields
             table_name = request.get('table')
-            
+
             if not table_name:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1662,13 +1661,13 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Optional fields
             filters = request.get('filters')
             sort = request.get('sort')
             limit = request.get('limit', 100)
             offset = request.get('offset', 0)
-            
+
             # Search rows
             try:
                 result = await self.db.row_search(
@@ -1698,11 +1697,11 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Success response
             response = {"success": True, **result}
             await msg.respond(json.dumps(response).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in row_search: {e}", exc_info=True)
             try:
@@ -1717,33 +1716,33 @@ class DatabaseService:
                 pass
 
     # ==================== Migration Handlers (Sprint 15 Sortie 2) ====================
-    
+
     def _get_plugin_lock(self, plugin_name: str) -> asyncio.Lock:
         """
         Get or create migration lock for plugin.
-        
+
         Ensures only one migration operation per plugin at a time.
-        
+
         Args:
             plugin_name: Plugin identifier
-        
+
         Returns:
             asyncio.Lock for the plugin
         """
         if plugin_name not in self.migration_locks:
             self.migration_locks[plugin_name] = asyncio.Lock()
         return self.migration_locks[plugin_name]
-    
+
     async def _get_current_version(self, plugin_name: str) -> int:
         """
         Get current migration version for plugin.
-        
+
         Returns the highest successfully applied migration version,
         or 0 if no migrations have been applied.
-        
+
         Args:
             plugin_name: Plugin identifier
-        
+
         Returns:
             Current version (0 if no migrations applied)
         """
@@ -1762,21 +1761,21 @@ class DatabaseService:
         except Exception as e:
             self.logger.error(f"Failed to get current version for {plugin_name}: {e}")
             return 0
-    
+
     async def _handle_migrate_apply(self, msg):
         """
         Handle rosey.db.migrate.{plugin}.apply requests.
-        
+
         Applies pending migrations up to specified version (or all if not specified).
         Uses per-plugin locking to prevent concurrent migrations.
-        
+
         Request:
             {
                 "version": int (optional),      # Target version (omit for latest)
                 "applied_by": str (optional),   # User applying migration (default "system")
                 "dry_run": bool (optional)      # Preview mode without commit (default false)
             }
-        
+
         Response (success):
             {
                 "success": true,
@@ -1790,17 +1789,17 @@ class DatabaseService:
                 ],
                 "current_version": int
             }
-        
+
         Response (error):
             {"success": false, "error": {"code": str, "message": str}}
-        
+
         Example:
             # Apply all pending migrations
             rosey.db.migrate.quotes.apply -> {}
-            
+
             # Apply up to version 3
             rosey.db.migrate.quotes.apply -> {"version": 3, "applied_by": "admin"}
-            
+
             # Dry-run (preview)
             rosey.db.migrate.quotes.apply -> {"version": 3, "dry_run": true}
         """
@@ -1817,19 +1816,19 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Extract plugin from subject (rosey.db.migrate.{plugin}.apply)
             parts = msg.subject.split('.')
             plugin_name = parts[3]
-            
+
             # Extract request fields
             target_version = request.get('version')
             applied_by = request.get('applied_by', 'system')
             dry_run = request.get('dry_run', False)
-            
+
             # Acquire plugin lock
             lock = self._get_plugin_lock(plugin_name)
-            
+
             try:
                 # Use timeout to prevent deadlock
                 async with asyncio.timeout(30.0):
@@ -1843,7 +1842,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             try:
                 # Get pending migrations
                 current_version = await self._get_current_version(plugin_name)
@@ -1852,7 +1851,7 @@ class DatabaseService:
                     current_version=current_version,
                     target_version=target_version
                 )
-                
+
                 if not migrations:
                     await msg.respond(json.dumps({
                         "success": True,
@@ -1861,24 +1860,24 @@ class DatabaseService:
                         "message": "No pending migrations"
                     }).encode())
                     return
-                
+
                 # Validate migrations (Sprint 15 Sortie 3)
                 all_warnings = []
                 has_errors = False
-                
+
                 for migration in migrations:
                     warnings = self.migration_validator.validate_migration(migration)
-                    
+
                     for warning in warnings:
                         all_warnings.append(warning.to_dict())
                         if warning.level == WarningLevel.ERROR:
                             has_errors = True
-                
+
                 # Reject if validation errors found
                 if has_errors:
                     error_warnings = [w for w in all_warnings if w['level'] == 'ERROR']
                     warning_warnings = [w for w in all_warnings if w['level'] == 'WARNING']
-                    
+
                     await msg.respond(json.dumps({
                         "success": False,
                         "error": {
@@ -1890,7 +1889,7 @@ class DatabaseService:
                         "current_version": current_version
                     }).encode())
                     return
-                
+
                 # Apply migrations
                 applied = []
                 for migration in migrations:
@@ -1903,7 +1902,7 @@ class DatabaseService:
                                 applied_by=applied_by,
                                 dry_run=dry_run
                             )
-                            
+
                             if not result.success:
                                 # Migration failed
                                 await msg.respond(json.dumps({
@@ -1916,20 +1915,20 @@ class DatabaseService:
                                     "current_version": current_version
                                 }).encode())
                                 return
-                            
+
                             applied.append({
                                 "version": result.version,
                                 "name": migration.name,
                                 "execution_time_ms": result.execution_time_ms
                             })
-                            
+
                             if not dry_run:
                                 current_version = result.version
-                            
+
                         except DryRunRollback:
                             # Expected for dry-run mode
                             pass
-                
+
                 # Success
                 response = {
                     "success": True,
@@ -1938,17 +1937,17 @@ class DatabaseService:
                 }
                 if dry_run:
                     response["message"] = "Dry-run: migrations not committed"
-                
+
                 # Include warnings if any (but not errors - those were already rejected)
                 warning_warnings = [w for w in all_warnings if w['level'] == 'WARNING']
                 if warning_warnings:
                     response["warnings"] = warning_warnings
-                
+
                 await msg.respond(json.dumps(response).encode())
-                
+
             finally:
                 lock.release()
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in migrate_apply: {e}", exc_info=True)
             try:
@@ -1961,21 +1960,21 @@ class DatabaseService:
                 }).encode())
             except:
                 pass
-    
+
     async def _handle_migrate_rollback(self, msg):
         """
         Handle rosey.db.migrate.{plugin}.rollback requests.
-        
+
         Rolls back migrations down to specified version (or one version if not specified).
         Uses per-plugin locking to prevent concurrent migrations.
-        
+
         Request:
             {
                 "version": int (optional),      # Target version (omit for single rollback)
                 "applied_by": str (optional),   # User rolling back (default "system")
                 "dry_run": bool (optional)      # Preview mode without commit (default false)
             }
-        
+
         Response (success):
             {
                 "success": true,
@@ -1989,17 +1988,17 @@ class DatabaseService:
                 ],
                 "current_version": int
             }
-        
+
         Response (error):
             {"success": false, "error": {"code": str, "message": str}}
-        
+
         Example:
             # Rollback one version
             rosey.db.migrate.quotes.rollback -> {}
-            
+
             # Rollback to version 2
             rosey.db.migrate.quotes.rollback -> {"version": 2, "applied_by": "admin"}
-            
+
             # Dry-run rollback
             rosey.db.migrate.quotes.rollback -> {"version": 2, "dry_run": true}
         """
@@ -2016,19 +2015,19 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             # Extract plugin from subject (rosey.db.migrate.{plugin}.rollback)
             parts = msg.subject.split('.')
             plugin_name = parts[3]
-            
+
             # Extract request fields
             target_version = request.get('version')
             applied_by = request.get('applied_by', 'system')
             dry_run = request.get('dry_run', False)
-            
+
             # Acquire plugin lock
             lock = self._get_plugin_lock(plugin_name)
-            
+
             try:
                 async with asyncio.timeout(30.0):
                     await lock.acquire()
@@ -2041,7 +2040,7 @@ class DatabaseService:
                     }
                 }).encode())
                 return
-            
+
             try:
                 # Get migrations to rollback
                 current_version = await self._get_current_version(plugin_name)
@@ -2050,7 +2049,7 @@ class DatabaseService:
                     current_version=current_version,
                     target_version=target_version
                 )
-                
+
                 if not migrations:
                     await msg.respond(json.dumps({
                         "success": True,
@@ -2059,7 +2058,7 @@ class DatabaseService:
                         "message": "No migrations to rollback"
                     }).encode())
                     return
-                
+
                 # Rollback migrations
                 rolled_back = []
                 for migration in migrations:
@@ -2072,7 +2071,7 @@ class DatabaseService:
                                 applied_by=applied_by,
                                 dry_run=dry_run
                             )
-                            
+
                             if not result.success:
                                 # Rollback failed
                                 await msg.respond(json.dumps({
@@ -2085,20 +2084,20 @@ class DatabaseService:
                                     "current_version": current_version
                                 }).encode())
                                 return
-                            
+
                             rolled_back.append({
                                 "version": result.version,
                                 "name": migration.name,
                                 "execution_time_ms": result.execution_time_ms
                             })
-                            
+
                             if not dry_run:
                                 current_version = migration.version - 1
-                            
+
                         except DryRunRollback:
                             # Expected for dry-run mode
                             pass
-                
+
                 # Success
                 response = {
                     "success": True,
@@ -2107,12 +2106,12 @@ class DatabaseService:
                 }
                 if dry_run:
                     response["message"] = "Dry-run: rollbacks not committed"
-                
+
                 await msg.respond(json.dumps(response).encode())
-                
+
             finally:
                 lock.release()
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in migrate_rollback: {e}", exc_info=True)
             try:
@@ -2125,17 +2124,17 @@ class DatabaseService:
                 }).encode())
             except:
                 pass
-    
+
     async def _handle_migrate_status(self, msg):
         """
         Handle rosey.db.migrate.{plugin}.status requests.
-        
+
         Returns current migration status for plugin: current version,
         list of applied migrations, and list of pending migrations.
-        
+
         Request:
             {} (empty request)
-        
+
         Response (success):
             {
                 "success": true,
@@ -2161,10 +2160,10 @@ class DatabaseService:
                     ...
                 ]
             }
-        
+
         Response (error):
             {"success": false, "error": {"code": str, "message": str}}
-        
+
         Example:
             rosey.db.migrate.quotes.status -> {}
         """
@@ -2172,10 +2171,10 @@ class DatabaseService:
             # Extract plugin from subject (rosey.db.migrate.{plugin}.status)
             parts = msg.subject.split('.')
             plugin_name = parts[3]
-            
+
             # Get current version
             current_version = await self._get_current_version(plugin_name)
-            
+
             # Get applied migrations
             applied_migrations = []
             try:
@@ -2188,7 +2187,7 @@ class DatabaseService:
                         ORDER BY version ASC
                     """)
                     result = await session.execute(query, {'plugin_name': plugin_name})
-                    
+
                     for row in result:
                         applied_migrations.append({
                             "version": row[0],
@@ -2201,7 +2200,7 @@ class DatabaseService:
                         })
             except Exception as e:
                 self.logger.error(f"Failed to get applied migrations: {e}")
-            
+
             # Verify checksums for applied migrations (Sprint 15 Sortie 3)
             checksum_warnings = []
             for applied in applied_migrations:
@@ -2224,7 +2223,7 @@ class DatabaseService:
                     })
                 except Exception as e:
                     self.logger.error(f"Checksum verification error: {e}")
-            
+
             # Get pending migrations
             pending_migrations = []
             pending_warnings = []
@@ -2239,14 +2238,14 @@ class DatabaseService:
                         "name": migration.name,
                         "filename": migration.filename
                     })
-                    
+
                     # Validate pending migrations
                     warnings = self.migration_validator.validate_migration(migration)
                     pending_warnings.extend([w.to_dict() for w in warnings])
-                    
+
             except Exception as e:
                 self.logger.error(f"Failed to get pending migrations: {e}")
-            
+
             # Success response
             response = {
                 "success": True,
@@ -2254,15 +2253,15 @@ class DatabaseService:
                 "applied_migrations": applied_migrations,
                 "pending_migrations": pending_migrations
             }
-            
+
             # Include warnings if any
             if checksum_warnings:
                 response["checksum_warnings"] = checksum_warnings
             if pending_warnings:
                 response["pending_warnings"] = pending_warnings
-            
+
             await msg.respond(json.dumps(response).encode())
-            
+
         except Exception as e:
             self.logger.error(f"Unexpected error in migrate_status: {e}", exc_info=True)
             try:
@@ -2281,7 +2280,7 @@ class DatabaseService:
     async def _kv_cleanup_loop(self):
         """
         Background task to clean up expired KV entries.
-        
+
         Runs every cleanup_interval_seconds and deletes expired entries.
         Errors are logged but don't stop the loop.
         """
@@ -2289,21 +2288,21 @@ class DatabaseService:
             f"Starting KV cleanup background task "
             f"(interval: {self.cleanup_interval_seconds}s)"
         )
-        
+
         while not self._shutdown:
             try:
                 # Wait for next cleanup interval
                 await asyncio.sleep(self.cleanup_interval_seconds)
-                
+
                 if self._shutdown:
                     break
-                
+
                 # Run cleanup
                 import time
                 start_time = time.time()
                 deleted_count = await self.db.kv_cleanup_expired()
                 elapsed_ms = (time.time() - start_time) * 1000
-                
+
                 if deleted_count > 0:
                     self.logger.info(
                         f"KV cleanup: deleted {deleted_count} expired keys "
@@ -2313,7 +2312,7 @@ class DatabaseService:
                     self.logger.debug(
                         f"KV cleanup: no expired keys found ({elapsed_ms:.1f}ms)"
                     )
-                
+
             except asyncio.CancelledError:
                 # Task cancelled during shutdown
                 break
@@ -2326,7 +2325,7 @@ class DatabaseService:
                 # Brief backoff on error
                 if not self._shutdown:
                     await asyncio.sleep(60)
-        
+
         self.logger.info("KV cleanup background task stopped")
 
 
