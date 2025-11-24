@@ -19,7 +19,6 @@ from lib.storage import (
     SQLSyntaxError,
     StackedQueryError,
     StatementType,
-    ValidationResult,
 )
 
 
