@@ -790,7 +790,7 @@ class DatabaseService:
                         "message": "Unexpected error occurred"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass  # Can't respond, connection may be dead
 
     async def _handle_kv_get(self, msg):
@@ -874,7 +874,7 @@ class DatabaseService:
                         "message": "Unexpected error occurred"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     async def _handle_kv_delete(self, msg):
@@ -958,7 +958,7 @@ class DatabaseService:
                         "message": "Unexpected error occurred"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     async def _handle_kv_list(self, msg):
@@ -1038,7 +1038,7 @@ class DatabaseService:
                         "message": "Unexpected error occurred"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     # ==================== Row Storage Handlers (Sprint 13) ====================
@@ -1156,7 +1156,7 @@ class DatabaseService:
                         "message": "Unexpected error"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     async def _handle_row_insert(self, msg):
@@ -1265,7 +1265,7 @@ class DatabaseService:
                         "message": "Unexpected error"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     async def _handle_row_select(self, msg):
@@ -1376,7 +1376,7 @@ class DatabaseService:
                         "message": "Unexpected error"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     async def _handle_row_update(self, msg):
@@ -1487,7 +1487,7 @@ class DatabaseService:
                         "message": "Unexpected error"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     async def _handle_row_delete(self, msg):
@@ -1584,7 +1584,7 @@ class DatabaseService:
                         "message": "Unexpected error"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     async def _handle_row_search(self, msg):
@@ -1712,7 +1712,7 @@ class DatabaseService:
                         "message": "Unexpected error"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     # ==================== Migration Handlers (Sprint 15 Sortie 2) ====================
@@ -1958,7 +1958,7 @@ class DatabaseService:
                         "message": "Unexpected error"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     async def _handle_migrate_rollback(self, msg):
@@ -2122,7 +2122,7 @@ class DatabaseService:
                         "message": "Unexpected error"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     async def _handle_migrate_status(self, msg):
@@ -2272,7 +2272,7 @@ class DatabaseService:
                         "message": "Unexpected error"
                     }
                 }).encode())
-            except:
+            except Exception:
                 pass
 
     # ==================== Background Tasks ====================
