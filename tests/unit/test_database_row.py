@@ -454,4 +454,270 @@ class TestRowOperationsIntegration:
         assert select_b['data']['data'] == "B data"
         
         # Verify tables are different
-        assert db.get_table("plugin_a_items") is not db.get_table("plugin_b_items")
+        assert await db.get_table("plugin_a_items") is not await db.get_table("plugin_b_items")
+
+
+# ==================== Update & Delete Tests ====================
+
+class TestRowUpdate:
+    """Test row_update method for partial updates."""
+    
+    async def test_update_single_field(self, db):
+        """Test updating a single field (partial update)."""
+        # Register schema
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [
+                {"name": "name", "type": "string", "required": True},
+                {"name": "value", "type": "integer", "required": False}
+            ]
+        })
+        
+        # Insert
+        insert_result = await db.row_insert("test", "items", {
+            "name": "Item 1",
+            "value": 100
+        })
+        row_id = insert_result['id']
+        
+        # Update only value
+        update_result = await db.row_update("test", "items", row_id, {"value": 200})
+        
+        assert update_result['updated'] is True
+        assert update_result['id'] == row_id
+        
+        # Verify name unchanged, value updated
+        select_result = await db.row_select("test", "items", row_id)
+        assert select_result['data']['name'] == "Item 1"
+        assert select_result['data']['value'] == 200
+    
+    async def test_update_multiple_fields(self, db):
+        """Test updating multiple fields at once."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [
+                {"name": "name", "type": "string", "required": True},
+                {"name": "value", "type": "integer", "required": False},
+                {"name": "active", "type": "boolean", "required": False}
+            ]
+        })
+        
+        # Insert
+        insert_result = await db.row_insert("test", "items", {
+            "name": "Item",
+            "value": 10,
+            "active": False
+        })
+        row_id = insert_result['id']
+        
+        # Update multiple fields
+        update_result = await db.row_update("test", "items", row_id, {
+            "name": "Updated Item",
+            "value": 20
+        })
+        
+        assert update_result['updated'] is True
+        
+        # Verify updates
+        select_result = await db.row_select("test", "items", row_id)
+        assert select_result['data']['name'] == "Updated Item"
+        assert select_result['data']['value'] == 20
+        assert select_result['data']['active'] is False  # Unchanged
+    
+    async def test_update_nonexistent_row(self, db):
+        """Test updating a row that doesn't exist."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        result = await db.row_update("test", "items", 99999, {"name": "New Name"})
+        assert result['exists'] is False
+        assert 'updated' not in result
+    
+    async def test_update_rejects_id_change(self, db):
+        """Test that updating primary key is rejected."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        insert_result = await db.row_insert("test", "items", {"name": "Item"})
+        row_id = insert_result['id']
+        
+        # Try to update id
+        with pytest.raises(ValueError, match="immutable fields"):
+            await db.row_update("test", "items", row_id, {"id": 999})
+    
+    async def test_update_rejects_created_at_change(self, db):
+        """Test that updating created_at is rejected."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        insert_result = await db.row_insert("test", "items", {"name": "Item"})
+        row_id = insert_result['id']
+        
+        # Try to update created_at
+        with pytest.raises(ValueError, match="immutable fields"):
+            await db.row_update("test", "items", row_id, {
+                "created_at": "2025-01-01T00:00:00Z"
+            })
+    
+    async def test_update_sets_updated_at(self, db):
+        """Test that updated_at is automatically set on update."""
+        import asyncio
+        
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        # Insert
+        insert_result = await db.row_insert("test", "items", {"name": "Original"})
+        row_id = insert_result['id']
+        
+        # Get initial timestamps
+        select1 = await db.row_select("test", "items", row_id)
+        created_at = select1['data']['created_at']
+        updated_at1 = select1['data']['updated_at']
+        
+        # Wait a bit
+        await asyncio.sleep(0.1)
+        
+        # Update
+        await db.row_update("test", "items", row_id, {"name": "Updated"})
+        
+        # Verify updated_at changed
+        select2 = await db.row_select("test", "items", row_id)
+        assert select2['data']['created_at'] == created_at  # Unchanged
+        assert select2['data']['updated_at'] > updated_at1  # Changed
+    
+    async def test_update_coerces_types(self, db):
+        """Test type coercion in updates."""
+        await db.schema_registry.register_schema("test", "data", {
+            "fields": [
+                {"name": "count", "type": "integer", "required": True},
+                {"name": "timestamp", "type": "datetime", "required": False}
+            ]
+        })
+        
+        insert_result = await db.row_insert("test", "data", {"count": 10})
+        row_id = insert_result['id']
+        
+        # Update with string types
+        await db.row_update("test", "data", row_id, {
+            "count": "42",  # String -> integer
+            "timestamp": "2025-11-24T10:00:00Z"  # String -> datetime
+        })
+        
+        # Verify coercion worked
+        select_result = await db.row_select("test", "data", row_id)
+        assert select_result['data']['count'] == 42
+        assert 'timestamp' in select_result['data']
+    
+    async def test_update_empty_data_raises_error(self, db):
+        """Test that empty update data raises error."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        insert_result = await db.row_insert("test", "items", {"name": "Item"})
+        row_id = insert_result['id']
+        
+        # Try empty update
+        with pytest.raises(ValueError, match="No data provided"):
+            await db.row_update("test", "items", row_id, {})
+    
+    async def test_update_unregistered_table_raises_error(self, db):
+        """Test update fails for unregistered table."""
+        with pytest.raises(ValueError, match="not registered"):
+            await db.row_update("test", "nonexistent", 1, {"name": "Test"})
+    
+    async def test_update_validates_data(self, db):
+        """Test that update validates data like insert."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "count", "type": "integer", "required": True}]
+        })
+        
+        insert_result = await db.row_insert("test", "items", {"count": 10})
+        row_id = insert_result['id']
+        
+        # Try invalid type coercion
+        with pytest.raises(ValueError, match="Cannot convert"):
+            await db.row_update("test", "items", row_id, {"count": "not_a_number"})
+
+
+class TestRowDelete:
+    """Test row_delete method for idempotent deletion."""
+    
+    async def test_delete_existing_row(self, db):
+        """Test deleting an existing row."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        # Insert
+        insert_result = await db.row_insert("test", "items", {"name": "Item"})
+        row_id = insert_result['id']
+        
+        # Delete
+        delete_result = await db.row_delete("test", "items", row_id)
+        assert delete_result['deleted'] is True
+        
+        # Verify gone
+        select_result = await db.row_select("test", "items", row_id)
+        assert select_result['exists'] is False
+    
+    async def test_delete_nonexistent_row_idempotent(self, db):
+        """Test that deleting non-existent row is idempotent."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        # Delete non-existent row
+        result = await db.row_delete("test", "items", 99999)
+        assert result['deleted'] is False  # Returns False but doesn't error
+    
+    async def test_delete_twice_idempotent(self, db):
+        """Test that deleting same row twice is idempotent."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        # Insert
+        insert_result = await db.row_insert("test", "items", {"name": "Item"})
+        row_id = insert_result['id']
+        
+        # First delete
+        result1 = await db.row_delete("test", "items", row_id)
+        assert result1['deleted'] is True
+        
+        # Second delete (idempotent)
+        result2 = await db.row_delete("test", "items", row_id)
+        assert result2['deleted'] is False  # No error, just returns False
+    
+    async def test_delete_unregistered_table_raises_error(self, db):
+        """Test delete fails for unregistered table."""
+        with pytest.raises(ValueError, match="not registered"):
+            await db.row_delete("test", "nonexistent", 1)
+    
+    async def test_delete_multiple_rows(self, db):
+        """Test deleting multiple rows one by one."""
+        await db.schema_registry.register_schema("test", "items", {
+            "fields": [{"name": "name", "type": "string", "required": True}]
+        })
+        
+        # Insert multiple rows
+        id1 = (await db.row_insert("test", "items", {"name": "Item 1"}))['id']
+        id2 = (await db.row_insert("test", "items", {"name": "Item 2"}))['id']
+        id3 = (await db.row_insert("test", "items", {"name": "Item 3"}))['id']
+        
+        # Delete them
+        result1 = await db.row_delete("test", "items", id1)
+        result2 = await db.row_delete("test", "items", id2)
+        result3 = await db.row_delete("test", "items", id3)
+        
+        assert result1['deleted'] is True
+        assert result2['deleted'] is True
+        assert result3['deleted'] is True
+        
+        # Verify all gone
+        assert (await db.row_select("test", "items", id1))['exists'] is False
+        assert (await db.row_select("test", "items", id2))['exists'] is False
+        assert (await db.row_select("test", "items", id3))['exists'] is False

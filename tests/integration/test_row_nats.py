@@ -489,3 +489,271 @@ class TestCompleteWorkflow:
         # Data should be isolated
         assert result_a['data']['data'] == "A data"
         assert result_b['data']['data'] == "B data"
+
+
+# ==================== Update & Delete Tests ====================
+
+class TestRowUpdateNATS:
+    """Test row update operations via NATS."""
+    
+    async def test_update_via_nats(self, nats_client, db_service):
+        """Test updating a row via NATS."""
+        # Register schema
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {
+                    "fields": [
+                        {"name": "name", "type": "string", "required": True},
+                        {"name": "value", "type": "integer", "required": False}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Insert
+        insert_resp = await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "items",
+                "data": {"name": "original", "value": 10}
+            }).encode(),
+            timeout=1.0
+        )
+        insert_result = json.loads(insert_resp.data.decode())
+        row_id = insert_result['id']
+        
+        # Update
+        update_resp = await nats_client.request(
+            "rosey.db.row.test.update",
+            json.dumps({
+                "table": "items",
+                "id": row_id,
+                "data": {"value": 20}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        update_result = json.loads(update_resp.data.decode())
+        assert update_result['success'] is True
+        assert update_result['updated'] is True
+        assert update_result['id'] == row_id
+        
+        # Verify update
+        select_resp = await nats_client.request(
+            "rosey.db.row.test.select",
+            json.dumps({"table": "items", "id": row_id}).encode(),
+            timeout=1.0
+        )
+        select_result = json.loads(select_resp.data.decode())
+        assert select_result['data']['name'] == "original"  # Unchanged
+        assert select_result['data']['value'] == 20  # Updated
+    
+    async def test_update_nonexistent_row(self, nats_client, db_service):
+        """Test updating non-existent row returns exists=false."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {"fields": [{"name": "name", "type": "string", "required": True}]}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        response = await nats_client.request(
+            "rosey.db.row.test.update",
+            json.dumps({
+                "table": "items",
+                "id": 99999,
+                "data": {"name": "test"}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(response.data.decode())
+        assert result['success'] is True
+        assert result['exists'] is False
+    
+    async def test_update_immutable_field_rejected(self, nats_client, db_service):
+        """Test that updating immutable fields is rejected."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {"fields": [{"name": "name", "type": "string", "required": True}]}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Insert
+        insert_resp = await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({"table": "items", "data": {"name": "Item"}}).encode(),
+            timeout=1.0
+        )
+        row_id = json.loads(insert_resp.data.decode())['id']
+        
+        # Try to update id
+        response = await nats_client.request(
+            "rosey.db.row.test.update",
+            json.dumps({
+                "table": "items",
+                "id": row_id,
+                "data": {"id": 999}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(response.data.decode())
+        assert result['success'] is False
+        assert result['error']['code'] == "VALIDATION_ERROR"
+        assert "immutable" in result['error']['message'].lower()
+    
+    async def test_update_missing_fields_rejected(self, nats_client, db_service):
+        """Test that update with missing fields is rejected."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {"fields": [{"name": "name", "type": "string", "required": True}]}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Missing 'data' field
+        response = await nats_client.request(
+            "rosey.db.row.test.update",
+            json.dumps({"table": "items", "id": 1}).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(response.data.decode())
+        assert result['success'] is False
+        assert result['error']['code'] == "MISSING_FIELD"
+
+
+class TestRowDeleteNATS:
+    """Test row delete operations via NATS."""
+    
+    async def test_delete_via_nats(self, nats_client, db_service):
+        """Test deleting a row via NATS."""
+        # Register schema
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {"fields": [{"name": "name", "type": "string", "required": True}]}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Insert
+        insert_resp = await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({"table": "items", "data": {"name": "Item"}}).encode(),
+            timeout=1.0
+        )
+        row_id = json.loads(insert_resp.data.decode())['id']
+        
+        # Delete
+        delete_resp = await nats_client.request(
+            "rosey.db.row.test.delete",
+            json.dumps({"table": "items", "id": row_id}).encode(),
+            timeout=1.0
+        )
+        
+        delete_result = json.loads(delete_resp.data.decode())
+        assert delete_result['success'] is True
+        assert delete_result['deleted'] is True
+        
+        # Verify deleted
+        select_resp = await nats_client.request(
+            "rosey.db.row.test.select",
+            json.dumps({"table": "items", "id": row_id}).encode(),
+            timeout=1.0
+        )
+        select_result = json.loads(select_resp.data.decode())
+        assert select_result['exists'] is False
+    
+    async def test_delete_nonexistent_row_idempotent(self, nats_client, db_service):
+        """Test that deleting non-existent row is idempotent."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {"fields": [{"name": "name", "type": "string", "required": True}]}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Delete non-existent row
+        response = await nats_client.request(
+            "rosey.db.row.test.delete",
+            json.dumps({"table": "items", "id": 99999}).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(response.data.decode())
+        assert result['success'] is True
+        assert result['deleted'] is False  # No error, just returns False
+    
+    async def test_delete_twice_idempotent(self, nats_client, db_service):
+        """Test that deleting same row twice is idempotent."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {"fields": [{"name": "name", "type": "string", "required": True}]}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Insert
+        insert_resp = await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({"table": "items", "data": {"name": "Item"}}).encode(),
+            timeout=1.0
+        )
+        row_id = json.loads(insert_resp.data.decode())['id']
+        
+        # First delete
+        delete1 = await nats_client.request(
+            "rosey.db.row.test.delete",
+            json.dumps({"table": "items", "id": row_id}).encode(),
+            timeout=1.0
+        )
+        result1 = json.loads(delete1.data.decode())
+        assert result1['deleted'] is True
+        
+        # Second delete (idempotent)
+        delete2 = await nats_client.request(
+            "rosey.db.row.test.delete",
+            json.dumps({"table": "items", "id": row_id}).encode(),
+            timeout=1.0
+        )
+        result2 = json.loads(delete2.data.decode())
+        assert result2['deleted'] is False  # No error
+    
+    async def test_delete_missing_fields_rejected(self, nats_client, db_service):
+        """Test that delete with missing fields is rejected."""
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {"fields": [{"name": "name", "type": "string", "required": True}]}
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Missing 'id' field
+        response = await nats_client.request(
+            "rosey.db.row.test.delete",
+            json.dumps({"table": "items"}).encode(),
+            timeout=1.0
+        )
+        
+        result = json.loads(response.data.decode())
+        assert result['success'] is False
+        assert result['error']['code'] == "MISSING_FIELD"
