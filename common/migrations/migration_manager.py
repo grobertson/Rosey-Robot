@@ -24,7 +24,7 @@ import re
 from pathlib import Path
 from typing import List, Optional
 
-from .migration import Migration, AppliedMigration
+from .migration import AppliedMigration, Migration
 
 logger = logging.getLogger(__name__)
 

@@ -13,13 +13,13 @@ This package provides:
 - WarningLevel: Severity levels for warnings (INFO, WARNING, ERROR)
 """
 
-from .migration import Migration, AppliedMigration
-from .migration_manager import MigrationManager
+from .migration import AppliedMigration, Migration
 from .migration_executor import (
     DryRunRollback,
     MigrationExecutor,
     MigrationResult,
 )
+from .migration_manager import MigrationManager
 from .migration_validator import (
     MigrationValidator,
     ValidationWarning,

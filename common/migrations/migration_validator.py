@@ -160,8 +160,8 @@ class MigrationValidator:
         return warnings
 
     def verify_checksums(
-        self, 
-        migration: Migration, 
+        self,
+        migration: Migration,
         stored_checksum: str
     ) -> List[ValidationWarning]:
         """

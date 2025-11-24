@@ -30,9 +30,9 @@ except ImportError:
 
 from common.database import BotDatabase
 from common.migrations import (
-    MigrationManager,
-    MigrationExecutor,
     DryRunRollback,
+    MigrationExecutor,
+    MigrationManager,
     MigrationValidator,
     WarningLevel,
 )
@@ -73,7 +73,7 @@ class DatabaseService:
         # Can run in separate process from bot
     """
 
-    def __init__(self, nats_client, db_path: str = 'bot_data.db', 
+    def __init__(self, nats_client, db_path: str = 'bot_data.db',
                  cleanup_interval_seconds: int = 300):
         """Initialize database service.
 

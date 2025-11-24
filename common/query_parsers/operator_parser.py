@@ -24,23 +24,23 @@ Example:
     ...     ]
     ... }
     >>> parser = OperatorParser(schema)
-    >>> 
+    >>>
     >>> # Simple equality (backward compatible)
     >>> filters = {'username': 'alice'}
     >>> clauses = parser.parse_filters(filters, table)
-    >>> 
+    >>>
     >>> # Range query
     >>> filters = {'score': {'$gte': 100, '$lte': 200}}
     >>> clauses = parser.parse_filters(filters, table)
-    >>> 
+    >>>
     >>> # Set membership
     >>> filters = {'username': {'$in': ['alice', 'bob']}}
     >>> clauses = parser.parse_filters(filters, table)
-    >>> 
+    >>>
     >>> # Pattern matching
     >>> filters = {'username': {'$like': 'test_%'}}
     >>> clauses = parser.parse_filters(filters, table)
-    >>> 
+    >>>
     >>> # Compound logic (Sortie 3)
     >>> filters = {
     ...     '$and': [
@@ -49,14 +49,15 @@ Example:
     ...     ]
     ... }
     >>> clauses = parser.parse_filters(filters, table)
-    >>> 
+    >>>
     >>> # Atomic updates (Sortie 3)
     >>> updates = {'score': {'$inc': 10}, 'high_score': {'$max': 95}}
     >>> expressions = parser.parse_update_operations(updates, table)
 """
 
 from typing import Any, Dict, List, Union
-from sqlalchemy import Column, and_, or_, not_, func
+
+from sqlalchemy import Column, and_, func, not_, or_
 
 
 class OperatorParser:
@@ -374,13 +375,13 @@ class OperatorParser:
         Examples:
             >>> # Comparison: range operator on integer
             >>> clause = parser._parse_operator('score', '$gte', 100, 'integer', col)
-            >>> 
+            >>>
             >>> # Set: membership check
             >>> clause = parser._parse_operator('status', '$in', ['active', 'pending'], 'string', col)
-            >>> 
+            >>>
             >>> # Pattern: SQL wildcard match
             >>> clause = parser._parse_operator('name', '$like', 'test_%', 'string', col)
-            >>> 
+            >>>
             >>> # Existence: null check
             >>> clause = parser._parse_operator('rating', '$exists', True, 'float', col)
         """
@@ -538,8 +539,8 @@ class OperatorParser:
                             )
 
     def parse_update_operations(
-        self, 
-        operations: Dict[str, Any], 
+        self,
+        operations: Dict[str, Any],
         table
     ) -> Dict[str, Any]:
         """
@@ -645,8 +646,8 @@ class OperatorParser:
         return updates
 
     def parse_aggregations(
-        self, 
-        aggregates: Dict[str, Dict[str, str]], 
+        self,
+        aggregates: Dict[str, Dict[str, str]],
         table
     ) -> List:
         """
@@ -763,8 +764,8 @@ class OperatorParser:
         return agg_exprs
 
     def parse_sort(
-        self, 
-        sort_spec: Union[Dict[str, str], List[Dict[str, str]]], 
+        self,
+        sort_spec: Union[Dict[str, str], List[Dict[str, str]]],
         table
     ) -> List:
         """

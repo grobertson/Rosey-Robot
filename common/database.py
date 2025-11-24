@@ -17,14 +17,25 @@ import os
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Any, Optional, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
-from sqlalchemy import delete, func, insert, literal_column, or_, select, text, update, MetaData, Table, and_
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy import (
+    MetaData,
+    Table,
+    and_,
+    delete,
+    func,
+    insert,
+    literal_column,
+    or_,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from common.query_parsers.operator_parser import OperatorParser
 from common.models import (
     ApiToken,
     ChannelStats,
@@ -36,6 +47,7 @@ from common.models import (
     UserCountHistory,
     UserStats,
 )
+from common.query_parsers.operator_parser import OperatorParser
 
 
 class BotDatabase:
@@ -1804,7 +1816,7 @@ class BotDatabase:
         Immutable fields (id, created_at) cannot be updated.
         The updated_at field is automatically set to current timestamp.
 
-        **Sprint 14 Sortie 3**: Supports atomic update operators ($set, $inc, $dec, 
+        **Sprint 14 Sortie 3**: Supports atomic update operators ($set, $inc, $dec,
         $mul, $max, $min) for race-condition-free updates.
 
         Args:

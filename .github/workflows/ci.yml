@@ -137,7 +137,7 @@ jobs:
       - name: Run plugin tests
         run: |
           cd plugins/quote-db
-          pytest tests/ -v --cov=quote_db --cov-report=term-missing
+          PYTHONPATH="$GITHUB_WORKSPACE:$PYTHONPATH" pytest tests/ -v --cov=quote_db --cov-report=term-missing
         env:
           NATS_URL: nats://localhost:4222
         continue-on-error: false

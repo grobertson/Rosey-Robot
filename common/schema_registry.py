@@ -35,7 +35,19 @@ import re
 import time
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, Float, Integer, MetaData, String, Table, Text, Boolean, delete, select
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    Text,
+    delete,
+    select,
+)
 
 from common.models import PluginTableSchema
 
