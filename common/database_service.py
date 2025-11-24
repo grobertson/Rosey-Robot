@@ -21,7 +21,7 @@ import asyncio
 import json
 import logging
 import sys
-from typing import Dict
+from typing import Any, Dict, List
 
 try:
     from nats.aio.client import Client as NATS  # noqa: N814 (NATS convention)

@@ -5,7 +5,7 @@ import collections
 import json
 import logging
 import re
-from typing import Optional
+from typing import Dict, List, Optional
 
 from .channel import Channel
 from .connection import ConnectionAdapter, CyTubeConnection
