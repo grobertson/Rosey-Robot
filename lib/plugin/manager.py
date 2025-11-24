@@ -95,7 +95,7 @@ class PluginInfo:
 
     def __repr__(self) -> str:
         """Developer representation."""
-        if self.plugin:
+        if self.plugin and self.metadata:
             return f"<PluginInfo: {self.name} v{self.metadata.version} ({self.state.value})>"
         return f"<PluginInfo: {self.file_path.name} ({self.state.value})>"
 
@@ -375,6 +375,7 @@ class PluginManager:
             if info.state != PluginState.LOADED:
                 continue
 
+            assert info.metadata is not None  # guaranteed when LOADED
             graph[name] = set(info.metadata.dependencies)
             in_degree[name] = 0
 
@@ -424,6 +425,7 @@ class PluginManager:
             PluginSetupError: If setup fails
         """
         info = self._plugins[name]
+        assert info.plugin is not None  # guaranteed when in registry
 
         try:
             await info.plugin.setup()
@@ -450,6 +452,7 @@ class PluginManager:
             Exception: If enable fails
         """
         info = self._plugins[name]
+        assert info.plugin is not None  # guaranteed when in registry
 
         try:
             await info.plugin.on_enable()
@@ -472,6 +475,7 @@ class PluginManager:
             name: Plugin name
         """
         info = self._plugins[name]
+        assert info.plugin is not None  # guaranteed when in registry
 
         try:
             await info.plugin.on_disable()
@@ -492,6 +496,7 @@ class PluginManager:
             name: Plugin name
         """
         info = self._plugins[name]
+        assert info.plugin is not None  # guaranteed when in registry
 
         try:
             await info.plugin.teardown()
@@ -656,7 +661,7 @@ class PluginManager:
         return [
             info.plugin
             for info in self._plugins.values()
-            if info.state == PluginState.ENABLED
+            if info.state == PluginState.ENABLED and info.plugin is not None
         ]
 
     async def unload_all(self) -> None:
