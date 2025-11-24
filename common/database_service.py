@@ -1651,7 +1651,7 @@ class DatabaseService:
                     limit=limit,
                     offset=offset
                 )
-            except ValueError as e:
+            except (ValueError, TypeError) as e:
                 await msg.respond(json.dumps({
                     "success": False,
                     "error": {

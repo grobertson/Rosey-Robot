@@ -1139,3 +1139,323 @@ class TestRowSearchNATS:
         assert result['truncated'] is True
         priorities = [row['priority'] for row in result['rows']]
         assert priorities == [4, 3]
+
+
+class TestRowSearchWithOperators:
+    """Test row search with MongoDB-style operators via NATS (Sprint 14 Sortie 1)."""
+    
+    async def test_search_with_gte_operator(self, nats_client, db_service):
+        """Test search with $gte operator."""
+        # Register schema
+        register_resp = await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "scores",
+                "schema": {
+                    "fields": [
+                        {"name": "username", "type": "string", "required": True},
+                        {"name": "score", "type": "integer", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        assert json.loads(register_resp.data.decode())['success'] is True
+        
+        # Insert test data
+        insert_resp = await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "scores",
+                "data": [
+                    {"username": "alice", "score": 50},
+                    {"username": "bob", "score": 100},
+                    {"username": "charlie", "score": 150},
+                    {"username": "diana", "score": 200}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        assert json.loads(insert_resp.data.decode())['success'] is True
+        
+        # Search with $gte operator
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "scores",
+                "filters": {"score": {"$gte": 100}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 3
+        assert all(row['score'] >= 100 for row in result['rows'])
+        usernames = sorted([row['username'] for row in result['rows']])
+        assert usernames == ['bob', 'charlie', 'diana']
+    
+    async def test_search_with_range_query(self, nats_client, db_service):
+        """Test range query (score >= 100 AND score <= 150)."""
+        # Register and insert
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "scores2",
+                "schema": {
+                    "fields": [
+                        {"name": "score", "type": "integer", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "scores2",
+                "data": [
+                    {"score": 50},
+                    {"score": 100},
+                    {"score": 150},
+                    {"score": 200}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Range query: 100 <= score <= 150
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "scores2",
+                "filters": {"score": {"$gte": 100, "$lte": 150}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        scores = sorted([row['score'] for row in result['rows']])
+        assert scores == [100, 150]
+    
+    async def test_search_with_lt_operator(self, nats_client, db_service):
+        """Test search with $lt operator."""
+        # Register and insert
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "ratings",
+                "schema": {
+                    "fields": [
+                        {"name": "rating", "type": "float", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "ratings",
+                "data": [
+                    {"rating": 1.5},
+                    {"rating": 3.0},
+                    {"rating": 4.5},
+                    {"rating": 5.0}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Search rating < 4.0
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "ratings",
+                "filters": {"rating": {"$lt": 4.0}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        assert all(row['rating'] < 4.0 for row in result['rows'])
+    
+    async def test_search_with_ne_operator(self, nats_client, db_service):
+        """Test search with $ne (not equal) operator."""
+        # Register and insert
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "users",
+                "schema": {
+                    "fields": [
+                        {"name": "username", "type": "string", "required": True},
+                        {"name": "status", "type": "string", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "users",
+                "data": [
+                    {"username": "alice", "status": "active"},
+                    {"username": "bob", "status": "banned"},
+                    {"username": "charlie", "status": "active"},
+                    {"username": "diana", "status": "suspended"}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Search status != 'banned'
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "users",
+                "filters": {"status": {"$ne": "banned"}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 3
+        assert all(row['status'] != 'banned' for row in result['rows'])
+    
+    async def test_search_mixed_simple_and_operator(self, nats_client, db_service):
+        """Test search with mix of simple equality and operators."""
+        # Register and insert
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "items",
+                "schema": {
+                    "fields": [
+                        {"name": "category", "type": "string", "required": True},
+                        {"name": "price", "type": "integer", "required": True},
+                        {"name": "available", "type": "boolean", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "items",
+                "data": [
+                    {"category": "electronics", "price": 50, "available": True},
+                    {"category": "electronics", "price": 150, "available": True},
+                    {"category": "electronics", "price": 200, "available": False},
+                    {"category": "books", "price": 120, "available": True}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Mixed: category='electronics' (simple) AND price >= 100 (operator) AND available=True (simple)
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "items",
+                "filters": {
+                    "category": "electronics",
+                    "price": {"$gte": 100},
+                    "available": True
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 1
+        assert result['rows'][0]['price'] == 150
+    
+    async def test_search_range_operator_on_string_fails(self, nats_client, db_service):
+        """Test that range operator on string field fails with clear error."""
+        # Register schema
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "names",
+                "schema": {
+                    "fields": [
+                        {"name": "name", "type": "string", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Try to use $gt on string field (should fail)
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "names",
+                "filters": {"name": {"$gt": "alice"}}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is False
+        assert result['error']['code'] == 'VALIDATION_ERROR'
+        assert 'numeric or datetime type' in result['error']['message']
+    
+    async def test_backward_compatibility_simple_filters(self, nats_client, db_service):
+        """Test backward compatibility with Sprint 13 simple equality filters."""
+        # Register and insert
+        await nats_client.request(
+            "rosey.db.row.test.schema.register",
+            json.dumps({
+                "table": "legacy",
+                "schema": {
+                    "fields": [
+                        {"name": "name", "type": "string", "required": True},
+                        {"name": "value", "type": "integer", "required": True}
+                    ]
+                }
+            }).encode(),
+            timeout=1.0
+        )
+        
+        await nats_client.request(
+            "rosey.db.row.test.insert",
+            json.dumps({
+                "table": "legacy",
+                "data": [
+                    {"name": "alpha", "value": 1},
+                    {"name": "beta", "value": 2},
+                    {"name": "alpha", "value": 3}
+                ]
+            }).encode(),
+            timeout=1.0
+        )
+        
+        # Use old-style simple equality filter (no operators)
+        search_resp = await nats_client.request(
+            "rosey.db.row.test.search",
+            json.dumps({
+                "table": "legacy",
+                "filters": {"name": "alpha"}
+            }).encode(),
+            timeout=1.0
+        )
+        result = json.loads(search_resp.data.decode())
+        
+        assert result['success'] is True
+        assert result['count'] == 2
+        assert all(row['name'] == 'alpha' for row in result['rows'])
+

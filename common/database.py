@@ -19,11 +19,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
-from sqlalchemy import delete, func, insert, literal_column, or_, select, text, update, MetaData, Table
+from sqlalchemy import delete, func, insert, literal_column, or_, select, text, update, MetaData, Table, and_
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from common.query_parsers.operator_parser import OperatorParser
 from common.models import (
     ApiToken,
     ChannelStats,
@@ -1932,13 +1933,20 @@ class BotDatabase:
         """
         Search rows with filters, sorting, and pagination.
         
-        Searches a plugin's table using equality filters (AND logic), sorting,
-        and pagination. Returns matching rows with metadata about truncation.
+        Searches a plugin's table using filters (with MongoDB-style operators),
+        sorting, and pagination. Returns matching rows with metadata about truncation.
+        
+        **Sprint 14 Enhancement**: Now supports MongoDB-style query operators
+        ($eq, $ne, $gt, $gte, $lt, $lte) in addition to simple equality filters.
         
         Args:
             plugin_name: Plugin identifier (e.g., "quote_db")
             table_name: Table name without plugin prefix (e.g., "quotes")
-            filters: Optional field equality filters (AND logic), e.g., {"status": "active"}
+            filters: Optional field filters supporting:
+                - Simple equality: {"author": "Alice", "status": "active"}
+                - Operator-based: {"score": {"$gte": 100, "$lte": 200}}
+                - Mixed: {"author": "Alice", "score": {"$gte": 100}}
+                All filters are combined with AND logic.
             sort: Optional sorting spec, e.g., {"field": "created_at", "order": "desc"}
             limit: Maximum rows to return (default 100, max 1000)
             offset: Pagination offset (default 0)
@@ -1951,21 +1959,45 @@ class BotDatabase:
             }
         
         Raises:
-            ValueError: If table not registered, invalid filter field, invalid sort field,
-                       or invalid limit (<1)
+            ValueError: If table not registered, invalid filter field, invalid operator,
+                       invalid sort field, or invalid limit (<1)
+            TypeError: If operator incompatible with field type (e.g., $gt on string)
         
-        Example:
+        Examples:
             # Search all rows
             result = await db.row_search("quote_db", "quotes")
             # {"rows": [...], "count": 5, "truncated": False}
             
-            # Search with filters
+            # Simple equality filters (backward compatible)
             result = await db.row_search("quote_db", "quotes", filters={"author": "Alice"})
+            
+            # Range query with operators (NEW in Sprint 14)
+            result = await db.row_search(
+                "trivia", "scores",
+                filters={"score": {"$gte": 100}}
+            )
+            
+            # Complex range query
+            result = await db.row_search(
+                "trivia", "scores",
+                filters={"score": {"$gte": 100, "$lte": 200}}
+            )
+            
+            # Multiple fields with operators
+            result = await db.row_search(
+                "trivia", "scores",
+                filters={
+                    "score": {"$gte": 100},
+                    "username": "alice",
+                    "active": True
+                }
+            )
             
             # Search with sorting
             result = await db.row_search(
                 "quote_db", "quotes",
-                sort={"field": "created_at", "order": "desc"}
+                filters={"rating": {"$gte": 4}},
+                sort={"field": "rating", "order": "desc"}
             )
             
             # Paginated search
@@ -1992,21 +2024,18 @@ class BotDatabase:
         # Build SELECT statement
         stmt = select(table)
         
-        # Build set of valid fields (schema fields + auto fields)
+        # Apply filters using OperatorParser (Sprint 14)
+        if filters:
+            parser = OperatorParser(schema)
+            clauses = parser.parse_filters(filters, table)
+            
+            # Combine all clauses with AND
+            if clauses:
+                stmt = stmt.where(and_(*clauses))
+        
+        # Build set of valid fields for sorting validation
         schema_fields = {f['name'] for f in schema['fields']}
         schema_fields.update({"id", "created_at", "updated_at"})
-        
-        # Apply filters (AND logic)
-        if filters:
-            for field, value in filters.items():
-                # Validate field exists
-                if field not in schema_fields:
-                    raise ValueError(
-                        f"Cannot filter on non-existent field: {field}"
-                    )
-                
-                # Apply equality filter
-                stmt = stmt.where(table.c[field] == value)
         
         # Apply sorting
         if sort:
