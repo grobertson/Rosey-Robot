@@ -282,7 +282,7 @@ class TestAuthentication:
         connection.socket = mock_socket
         mock_socket.emit.return_value = ('needPassword', {})
 
-        with pytest.raises(AuthenticationError, match="Invalid channel password"):
+        with pytest.raises(AuthenticationError, match="Invalid password for channel"):
             await connection._login()
 
     @pytest.mark.asyncio

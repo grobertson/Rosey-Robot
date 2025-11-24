@@ -9,7 +9,9 @@ import asyncio
 import json
 import logging
 import re
+import time
 from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, Dict, Optional, Tuple
 
 from ..error import LoginError, SocketConfigError
@@ -17,6 +19,18 @@ from ..socket_io import SocketIO, SocketIOError, SocketIOResponse
 from ..util import get as http_get
 from .adapter import ConnectionAdapter
 from .errors import AuthenticationError, ConnectionError, NotConnectedError, SendError
+
+
+@dataclass
+class ConnectionStats:
+    """Statistics for monitoring connection health."""
+    messages_sent: int = 0
+    messages_received: int = 0
+    reconnection_count: int = 0
+    events_processed: int = 0
+    last_error: Optional[str] = None
+    connected_since: Optional[float] = None
+    last_health_check: Optional[float] = None
 
 
 class CyTubeConnection(ConnectionAdapter):
@@ -74,27 +88,32 @@ class CyTubeConnection(ConnectionAdapter):
         """
         super().__init__(logger)
 
+        # Connection parameters
         self.domain = domain
         self.channel_name = channel
         self.channel_password = channel_password
         self.user_name = user
         self.user_password = password
 
+        # Timing configuration
         self.response_timeout = response_timeout
         self.reconnect_delay = reconnect_delay
+        self._max_reconnect_delay = 60.0
 
+        # Dependency injection
         self.get_func = get_func or http_get
         self.socket_io_func = socket_io_func or SocketIO.connect
 
+        # Connection state
         self.socket: Optional[SocketIO] = None
         self.server_url: Optional[str] = None
+        self._reconnect_attempts = 0
 
-        # Event callbacks
+        # Event handling
         self._event_handlers: Dict[str, list] = defaultdict(list)
 
-        # Reconnection state
-        self._reconnect_attempts = 0
-        self._max_reconnect_delay = 60.0
+        # Statistics and monitoring
+        self.stats = ConnectionStats()
 
     async def connect(self) -> None:
         """
@@ -129,6 +148,8 @@ class CyTubeConnection(ConnectionAdapter):
 
             self._is_connected = True
             self._reconnect_attempts = 0
+            self.stats.connected_since = time.time()
+            self.stats.reconnection_count = 0
             self.logger.info("Connected successfully")
 
             # Emit connected event
@@ -160,6 +181,7 @@ class CyTubeConnection(ConnectionAdapter):
                 self.socket = None
 
             self._is_connected = False
+            self.stats.connected_since = None
             self.logger.info("Disconnected")
 
             # Emit disconnected event
@@ -185,8 +207,7 @@ class CyTubeConnection(ConnectionAdapter):
             >>> await conn.send_message("Hello world")
             >>> await conn.send_message("Styled", meta={'bold': True})
         """
-        if not self._is_connected or not self.socket:
-            raise NotConnectedError("Not connected to channel")
+        self._ensure_connected()
 
         try:
             meta = metadata.get('meta', {})
@@ -194,7 +215,9 @@ class CyTubeConnection(ConnectionAdapter):
                 'msg': content,
                 'meta': meta
             })
+            self.stats.messages_sent += 1
         except SocketIOError as e:
+            self.stats.last_error = str(e)
             raise SendError(f"Failed to send message: {e}") from e
 
     async def send_pm(self, user: str, content: str) -> None:
@@ -212,8 +235,7 @@ class CyTubeConnection(ConnectionAdapter):
         Example:
             >>> await conn.send_pm("alice", "Private message")
         """
-        if not self._is_connected or not self.socket:
-            raise NotConnectedError("Not connected to channel")
+        self._ensure_connected()
 
         try:
             response = await self.socket.emit(
@@ -224,16 +246,21 @@ class CyTubeConnection(ConnectionAdapter):
             )
 
             if response is None:
-                raise SendError("PM response timeout")
+                raise SendError(
+                    f"PM timeout to '{user}' after {self.response_timeout}s"
+                )
 
             # Check if PM was successful
             if len(response) > 1 and isinstance(response[1], dict):
                 error = response[1].get('error')
                 if error:
-                    raise SendError(f"PM failed: {error}")
+                    raise SendError(f"PM to '{user}' failed: {error}")
+
+            self.stats.messages_sent += 1
 
         except SocketIOError as e:
-            raise SendError(f"Failed to send PM: {e}") from e
+            self.stats.last_error = str(e)
+            raise SendError(f"Failed to send PM to '{user}': {e}") from e
 
     def on_event(self, event: str, callback: Callable) -> None:
         """
@@ -277,8 +304,7 @@ class CyTubeConnection(ConnectionAdapter):
             ...     if event == 'message':
             ...         print(f"{data['user']}: {data['content']}")
         """
-        if not self._is_connected or not self.socket:
-            raise NotConnectedError("Not connected")
+        self._ensure_connected()
 
         try:
             while self._is_connected:
@@ -291,6 +317,10 @@ class CyTubeConnection(ConnectionAdapter):
                 if normalized:
                     norm_event, norm_data = normalized
 
+                    # Update statistics
+                    self.stats.messages_received += 1
+                    self.stats.events_processed += 1
+
                     # Trigger registered callbacks
                     await self._trigger_callbacks(norm_event, norm_data)
 
@@ -298,6 +328,7 @@ class CyTubeConnection(ConnectionAdapter):
                     yield norm_event, norm_data
 
         except SocketIOError as e:
+            self.stats.last_error = str(e)
             self.logger.error(f"Socket error in recv_events: {e}")
             await self._emit_normalized_event('error', {'error': str(e)})
             raise
@@ -313,6 +344,7 @@ class CyTubeConnection(ConnectionAdapter):
             ConnectionError: If reconnection fails
         """
         self._reconnect_attempts += 1
+        self.stats.reconnection_count += 1
 
         # Calculate backoff delay
         delay = min(
@@ -320,13 +352,57 @@ class CyTubeConnection(ConnectionAdapter):
             self._max_reconnect_delay
         )
 
-        self.logger.info(f"Reconnecting in {delay}s (attempt {self._reconnect_attempts})")
+        self.logger.info(
+            f"Reconnecting to {self.domain}/{self.channel_name} in {delay}s "
+            f"(attempt {self._reconnect_attempts})"
+        )
         await asyncio.sleep(delay)
 
         await self.disconnect()
         await self.connect()
 
+    async def health_check(self) -> bool:
+        """
+        Perform health check on connection.
+
+        Returns:
+            True if connection is healthy, False otherwise
+        """
+        if not self._is_connected or not self.socket:
+            return False
+
+        try:
+            # Simple ping to verify connection is alive
+            await asyncio.wait_for(
+                self.socket.emit('ping', {}),
+                timeout=2.0
+            )
+            self.stats.last_health_check = time.time()
+            return True
+        except (SocketIOError, asyncio.TimeoutError, Exception) as e:
+            self.logger.warning(f"Health check failed: {e}")
+            self.stats.last_error = str(e)
+            return False
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.connect()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.disconnect()
+        return False
+
     # Private methods
+
+    def _ensure_connected(self) -> None:
+        """Validate connection state, raise if not connected."""
+        if not self._is_connected or not self.socket:
+            raise NotConnectedError(
+                f"Not connected to {self.domain}/{self.channel_name}. "
+                f"Call connect() first."
+            )
 
     async def _get_socket_config(self) -> None:
         """
@@ -352,7 +428,9 @@ class CyTubeConnection(ConnectionAdapter):
             response = await self.get_func(url)
             config = json.loads(response)
         except Exception as e:
-            raise ConnectionError(f"Failed to fetch socket config: {e}") from e
+            error_msg = f"Failed to fetch socket config from {url}: {e}"
+            self.stats.last_error = error_msg
+            raise ConnectionError(error_msg) from e
 
         self.logger.info(f"Socket config: {config}")
 
@@ -382,7 +460,7 @@ class CyTubeConnection(ConnectionAdapter):
         self.server_url = self.SOCKET_IO_URL % data
         self.logger.info(f"Socket.io server: {self.server_url}")
 
-    async def _login(self) -> None:  # noqa: C901 (authentication complexity)
+    async def _login(self) -> None:
         """
         Authenticate and join channel.
 
@@ -391,10 +469,27 @@ class CyTubeConnection(ConnectionAdapter):
             SocketIOError: If socket communication fails
         """
         if not self.socket:
-            raise ConnectionError("Socket not connected")
+            raise ConnectionError("Socket not connected during login")
 
-        # Join channel
-        self.logger.info(f"Joining channel {self.channel_name}")
+        # Step 1: Join channel
+        await self._join_channel()
+
+        # Step 2: Authenticate user (if credentials provided)
+        if self.user_name:
+            await self._authenticate_user()
+        else:
+            self.logger.info("Connected as guest")
+
+    async def _join_channel(self) -> None:
+        """Join the CyTube channel (with optional password).
+
+        Raises:
+            AuthenticationError: If channel join fails or password invalid
+        """
+        if not self.socket:
+            raise ConnectionError("Socket not connected during channel join")
+
+        self.logger.info(f"Joining channel '{self.channel_name}'")
         channel_data = {'name': self.channel_name}
         if self.channel_password:
             channel_data['pw'] = self.channel_password
@@ -407,57 +502,107 @@ class CyTubeConnection(ConnectionAdapter):
         )
 
         if response is None:
-            raise AuthenticationError("joinChannel response timeout")
+            error_msg = (
+                f"Channel join timeout for '{self.channel_name}' "
+                f"after {self.response_timeout}s"
+            )
+            self.stats.last_error = error_msg
+            raise AuthenticationError(error_msg)
 
         if response[0] == 'needPassword':
-            raise AuthenticationError("Invalid channel password")
+            error_msg = f"Invalid password for channel '{self.channel_name}'"
+            self.stats.last_error = error_msg
+            raise AuthenticationError(error_msg)
 
-        # Authenticate user (if credentials provided)
-        if self.user_name:
-            while True:
-                self.logger.info(f"Logging in as {self.user_name}")
-                login_data = {'name': self.user_name}
+        self.logger.info(f"Successfully joined channel '{self.channel_name}'")
 
-                if self.user_password:
-                    # Registered user login
-                    login_data['pw'] = self.user_password
+    async def _authenticate_user(self) -> None:
+        """Authenticate user with CyTube (handles rate limiting).
 
-                response = await self.socket.emit(
-                    'login',
-                    login_data,
-                    SocketIOResponse.match_event(r'^login$'),
-                    self.response_timeout
+        Raises:
+            AuthenticationError: If authentication fails
+        """
+        if not self.socket:
+            raise ConnectionError("Socket not connected during authentication")
+
+        max_retries = 3
+        retry_count = 0
+
+        while retry_count < max_retries:
+            self.logger.info(f"Authenticating as '{self.user_name}'")
+            login_data = {'name': self.user_name}
+
+            if self.user_password:
+                login_data['pw'] = self.user_password
+
+            response = await self.socket.emit(
+                'login',
+                login_data,
+                SocketIOResponse.match_event(r'^login$'),
+                self.response_timeout
+            )
+
+            if response is None:
+                error_msg = (
+                    f"Authentication timeout for user '{self.user_name}' "
+                    f"after {self.response_timeout}s"
                 )
+                self.stats.last_error = error_msg
+                raise AuthenticationError(error_msg)
 
-                if response is None:
-                    raise AuthenticationError("login response timeout")
+            result = response[1] if len(response) > 1 else {}
+            self.logger.debug(f"Login response: {result}")
 
-                result = response[1] if len(response) > 1 else {}
-                self.logger.info(f"Login response: {result}")
+            # Success case
+            if result.get('success', False):
+                self.logger.info(f"Successfully authenticated as '{self.user_name}'")
+                return
 
-                if result.get('success', False):
-                    self.logger.info("Login successful")
-                    break
+            # Error handling
+            error = result.get('error', 'Unknown authentication error')
+            self.logger.error(f"Authentication failed: {error}")
 
-                # Handle login error
-                error = result.get('error', 'Unknown error')
-                self.logger.error(f"Login error: {error}")
+            # Check for rate limiting
+            if await self._handle_rate_limit(error):
+                retry_count += 1
+                continue
 
-                # Check for guest login rate limit
-                match = self.GUEST_LOGIN_LIMIT.match(error)
-                if match:
-                    try:
-                        wait_time = max(int(match.group(1)), 1)
-                        self.logger.warning(f"Guest login rate limited, waiting {wait_time}s")
-                        await asyncio.sleep(wait_time)
-                        # Retry login
-                        continue
-                    except ValueError:
-                        raise AuthenticationError(error)
+            # Non-retriable error
+            error_msg = f"Failed to authenticate user '{self.user_name}': {error}"
+            self.stats.last_error = error_msg
+            raise AuthenticationError(error_msg)
 
-                raise AuthenticationError(error)
-        else:
-            self.logger.info("Connected as guest")
+        # Max retries exceeded
+        error_msg = (
+            f"Authentication failed after {max_retries} retries "
+            f"for user '{self.user_name}'"
+        )
+        self.stats.last_error = error_msg
+        raise AuthenticationError(error_msg)
+
+    async def _handle_rate_limit(self, error: str) -> bool:
+        """Handle guest login rate limiting.
+
+        Args:
+            error: Error message from login response
+
+        Returns:
+            True if rate limit detected and handled, False otherwise
+        """
+        match = self.GUEST_LOGIN_LIMIT.match(error)
+        if not match:
+            return False
+
+        try:
+            wait_time = max(int(match.group(1)), 1)
+            self.logger.warning(
+                f"Guest login rate limited. Waiting {wait_time}s before retry..."
+            )
+            await asyncio.sleep(wait_time)
+            return True
+        except (ValueError, IndexError) as e:
+            self.logger.error(f"Failed to parse rate limit duration: {e}")
+            return False
 
     def _normalize_cytube_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """Normalize CyTube user object to platform-agnostic structure.
@@ -490,6 +635,9 @@ class CyTubeConnection(ConnectionAdapter):
         """
         Normalize CyTube event to platform-agnostic format.
 
+        Uses a cleaner mapping approach for better maintainability.
+        Unknown events pass through as-is for backward compatibility.
+
         Args:
             event: CyTube event name
             data: CyTube event data
@@ -497,71 +645,71 @@ class CyTubeConnection(ConnectionAdapter):
         Returns:
             Tuple of (normalized_event, normalized_data) or None to skip
         """
-        # Chat message
-        # ✅ NORMALIZATION COMPLETE: Platform-agnostic message structure
-        # All top-level fields are normalized, platform-specific data in platform_data
-        if event == 'chatMsg':
-            return ('message', {
-                'user': data.get('username', ''),
-                'content': data.get('msg', ''),
-                'timestamp': data.get('time', 0) // 1000,
-                'platform_data': data
-            })
+        # Map CyTube events to normalization handlers
+        normalizers = {
+            'chatMsg': self._normalize_message,
+            'addUser': self._normalize_user_join,
+            'userLeave': self._normalize_user_leave,
+            'userlist': self._normalize_user_list,
+            'pm': self._normalize_pm,
+        }
 
-        # User joined
-        # ✅ NORMALIZATION COMPLETE: Adds user_data for platform-agnostic user handling
-        # Includes both 'user' (string) and 'user_data' (full normalized object)
-        elif event == 'addUser':
-            return ('user_join', {
-                'user': data.get('name', ''),
-                'user_data': self._normalize_cytube_user(data),
-                'timestamp': data.get('time', 0),
-                'platform_data': data
-            })
+        normalizer = normalizers.get(event)
+        if normalizer:
+            return normalizer(data)
 
-        # User left
-        # ✅ NORMALIZATION COMPLETE: Adds optional user_data for enhanced logging
-        # CyTube user_leave may or may not include full user data
-        elif event == 'userLeave':
-            normalized = {
-                'user': data.get('name', ''),
-                'timestamp': data.get('time', 0),
-                'platform_data': data
-            }
+        # Pass through unknown events as-is (backward compatibility)
+        return (event, data)
 
-            # Add user_data if available (has rank or afk fields)
-            if 'rank' in data or 'afk' in data:
-                normalized['user_data'] = self._normalize_cytube_user(data)
+    def _normalize_message(self, data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """Normalize chat message event."""
+        return ('message', {
+            'user': data.get('username', ''),
+            'content': data.get('msg', ''),
+            'timestamp': data.get('time', 0) // 1000,
+            'platform_data': data
+        })
 
-            return ('user_leave', normalized)
+    def _normalize_user_join(self, data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """Normalize user join event."""
+        return ('user_join', {
+            'user': data.get('name', ''),
+            'user_data': self._normalize_cytube_user(data),
+            'timestamp': data.get('time', 0),
+            'platform_data': data
+        })
 
-        # User list
-        # ✅ NORMALIZATION COMPLETE: Array of user objects (not strings)
-        # ⚠️ BREAKING CHANGE: 'users' now contains full objects, not just usernames
-        # Handlers must use user['username'] instead of treating user as string
-        elif event == 'userlist':
-            return ('user_list', {
-                'users': [self._normalize_cytube_user(u) for u in data],  # type: ignore[arg-type]
-                'count': len(data),
-                'platform_data': data
-            })
+    def _normalize_user_leave(self, data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """Normalize user leave event."""
+        normalized = {
+            'user': data.get('name', ''),
+            'timestamp': data.get('time', 0),
+            'platform_data': data
+        }
 
-        # Private message
-        # ✅ NORMALIZATION COMPLETE: Adds recipient field for bi-directional support
-        # For CyTube, bot is always the recipient (PMs are always TO the bot)
-        elif event == 'pm':
-            return ('pm', {
-                'user': data.get('username', ''),
-                'recipient': self.user_name or 'bot',  # Bot is recipient
-                'content': data.get('msg', ''),
-                'timestamp': data.get('time', 0) // 1000,
-                'platform_data': data
-            })
+        # Add user_data if available (CyTube may include rank/afk)
+        if 'rank' in data or 'afk' in data:
+            normalized['user_data'] = self._normalize_cytube_user(data)
 
-        # Pass through other events as-is for now
-        # Bot layer can still access CyTube-specific events
-        else:
-            return (event, data)
+        return ('user_leave', normalized)
+
+    def _normalize_user_list(self, data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """Normalize user list event."""
+        return ('user_list', {
+            'users': [self._normalize_cytube_user(u) for u in data],  # type: ignore[arg-type]
+            'count': len(data),
+            'platform_data': data
+        })
+
+    def _normalize_pm(self, data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+        """Normalize private message event."""
+        return ('pm', {
+            'user': data.get('username', ''),
+            'recipient': self.user_name or 'bot',
+            'content': data.get('msg', ''),
+            'timestamp': data.get('time', 0) // 1000,
+            'platform_data': data
+        })
 
     async def _emit_normalized_event(self, event: str, data: Dict[str, Any]) -> None:
         """
