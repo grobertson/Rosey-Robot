@@ -693,6 +693,122 @@ class ApiToken(Base):
 
 
 # ============================================================================
+# Plugin KV Storage (Sprint 12)
+# ============================================================================
+
+class PluginKVStorage(Base):
+    """
+    Key-value storage for plugins with TTL support.
+    
+    Each plugin gets an isolated namespace identified by plugin_name.
+    Values are stored as JSON and can optionally expire after a TTL.
+    
+    Sprint: 12 (KV Storage Foundation)
+    Sortie: 1 (Schema & Model)
+    """
+    __tablename__ = 'plugin_kv_storage'
+    
+    # Composite primary key
+    plugin_name: Mapped[str] = mapped_column(
+        String(100),
+        primary_key=True,
+        nullable=False,
+        comment="Plugin identifier (e.g., 'trivia', 'quote-db')"
+    )
+    
+    key: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+        nullable=False,
+        comment="Key name within plugin namespace"
+    )
+    
+    # Value storage (JSON serialized)
+    value_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        comment="JSON-serialized value (string, number, object, array)"
+    )
+    
+    # TTL support
+    expires_at: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="Expiration timestamp (Unix epoch, NULL = never expires)"
+    )
+    
+    # Timestamps
+    created_at: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="When key was first created (Unix epoch)"
+    )
+    
+    updated_at: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="When key was last updated (Unix epoch)"
+    )
+    
+    # Table-level constraints and indexes
+    __table_args__ = (
+        # Index for TTL cleanup queries
+        Index('idx_plugin_kv_expires', 'expires_at'),
+        # Index for prefix queries
+        Index('idx_plugin_kv_prefix', 'plugin_name', 'key'),
+        {'comment': 'Plugin key-value storage with TTL support'}
+    )
+    
+    def __repr__(self) -> str:
+        expired = " [EXPIRED]" if self.is_expired else ""
+        return f"<PluginKVStorage(plugin={self.plugin_name}, key={self.key}{expired})>"
+    
+    @property
+    def is_expired(self) -> bool:
+        """Check if this entry has expired."""
+        if self.expires_at is None:
+            return False
+        import time
+        return time.time() >= self.expires_at
+    
+    def get_value(self):
+        """
+        Deserialize and return the stored value.
+        
+        Returns:
+            Deserialized Python object (dict, list, str, int, etc.)
+            
+        Raises:
+            json.JSONDecodeError: If value_json is invalid JSON
+        """
+        import json
+        return json.loads(self.value_json)
+    
+    def set_value(self, value) -> None:
+        """
+        Serialize and store a Python value as JSON.
+        
+        Args:
+            value: Any JSON-serializable Python object
+            
+        Raises:
+            TypeError: If value is not JSON-serializable
+            ValueError: If serialized value exceeds 64KB
+        """
+        import json
+        serialized = json.dumps(value)
+        
+        # Check size limit (64KB)
+        size_bytes = len(serialized.encode('utf-8'))
+        if size_bytes > 65536:
+            raise ValueError(
+                f"Value size ({size_bytes} bytes) exceeds 64KB limit (65536 bytes)"
+            )
+        
+        self.value_json = serialized
+
+
+# ============================================================================
 # Utility Functions
 # ============================================================================
 
@@ -750,6 +866,7 @@ __all__ = [
     'CurrentStatus',
     'OutboundMessage',
     'ApiToken',
+    'PluginKVStorage',
     'get_model_by_tablename',
     'get_all_models',
 ]
