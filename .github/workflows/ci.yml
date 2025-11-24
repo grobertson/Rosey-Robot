@@ -100,6 +100,14 @@ jobs:
             echo "DATABASE_URL=sqlite+aiosqlite:///:memory:" >> $GITHUB_ENV
           fi
       
+      - name: Initialize database schema
+        run: |
+          # Run initial migration to create tables for fresh database
+          alembic upgrade 000_initial
+          echo "✓ Database schema initialized"
+        env:
+          ROSEY_DATABASE_URL: sqlite+aiosqlite:///test_bot_data.db
+      
       - name: Start database service
         run: |
           # Start database service in background with nohup
