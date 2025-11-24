@@ -1,6 +1,4 @@
 """Quote database plugin package."""
-import sys
-
 try:
     from .quote_db import QuoteDBPlugin
 except ImportError:
@@ -12,8 +10,8 @@ except ImportError:
         except ImportError as e:
             # If this also fails, re-raise with helpful message
             raise ImportError(
-                f"Cannot import QuoteDBPlugin. Ensure quote_db.py is in the "
-                f"Python path or use package import. Original error: {e}"
+                f"Cannot import QuoteDBPlugin. Ensure quote_db.py is in "
+                f"the Python path or use package import. Original error: {e}"
             ) from e
     else:
         # Re-raise if it's a package import failure (likely missing dependency)
