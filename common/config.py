@@ -8,7 +8,7 @@ import sys
 from lib import SocketIO, set_proxy
 
 try:
-    import yaml
+    import yaml  # type: ignore[import-untyped]
     HAS_YAML = True
 except ImportError:
     HAS_YAML = False

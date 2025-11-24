@@ -8,7 +8,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Dict, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 try:
     from watchdog.events import FileModifiedEvent, FileSystemEventHandler  # noqa: F401
@@ -242,10 +242,10 @@ class HotReloadWatcher:
         self.logger = logger or logging.getLogger("plugin.hot_reload")
 
         # Watchdog observer
-        self._observer: Optional["Observer"] = None  # type: ignore[name-defined]
+        self._observer: Optional[Any] = None  # type: ignore[name-defined]
 
         # Reload handler
-        self._handler: Optional["ReloadHandler"] = None  # type: ignore[name-defined]
+        self._handler: Optional[Any] = None  # type: ignore[name-defined]
 
         # State
         self._enabled = False

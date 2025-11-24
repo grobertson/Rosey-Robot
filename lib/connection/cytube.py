@@ -262,7 +262,7 @@ class CyTubeConnection(ConnectionAdapter):
         except (KeyError, ValueError):
             self.logger.warning(f"Handler not found for {event}")
 
-    async def recv_events(self) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:  # type: ignore[override]
+    async def recv_events(self) -> AsyncIterator[Tuple[str, Dict[str, Any]]]:  # type: ignore[misc]
         """
         Async iterator yielding normalized events.
 
