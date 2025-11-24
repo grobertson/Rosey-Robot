@@ -11,12 +11,17 @@ Migration History:
     v0.6.0: SQLAlchemy ORM (Sprint 11 Sortie 2)
     v0.6.1: PostgreSQL support (Sprint 11 Sortie 3)
 """
+import json
 import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from typing import Any, Optional
 
 from sqlalchemy import delete, func, literal_column, or_, select, text, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from common.models import (
@@ -24,6 +29,7 @@ from common.models import (
     ChannelStats,
     CurrentStatus,
     OutboundMessage,
+    PluginKVStorage,
     RecentChat,
     UserAction,
     UserCountHistory,
@@ -1155,6 +1161,261 @@ class BotDatabase:
                 }
                 for token in tokens
             ]
+
+    # ========================================================================
+    # Plugin KV Storage Methods (Sprint 12)
+    # ========================================================================
+
+    async def kv_set(
+        self,
+        plugin_name: str,
+        key: str,
+        value: Any,
+        ttl_seconds: Optional[int] = None
+    ) -> None:
+        """
+        Set a key-value pair for a plugin with optional TTL.
+        
+        Args:
+            plugin_name: Plugin identifier
+            key: Key name
+            value: Any JSON-serializable value
+            ttl_seconds: Optional TTL in seconds (None = no expiration)
+            
+        Raises:
+            ValueError: If value exceeds 64KB when serialized
+            TypeError: If value is not JSON-serializable
+            
+        Example:
+            await db.kv_set('trivia', 'config', {'theme': 'dark'})
+            await db.kv_set('trivia', 'session', data, ttl_seconds=1800)
+        """
+        # Serialize value to JSON
+        try:
+            value_json = json.dumps(value)
+        except (TypeError, ValueError) as e:
+            raise TypeError(f"Value is not JSON-serializable: {e}")
+        
+        # Check size limit (64KB)
+        size_bytes = len(value_json.encode('utf-8'))
+        if size_bytes > 65536:
+            raise ValueError(
+                f"Value size ({size_bytes} bytes) exceeds 64KB limit (65536 bytes)"
+            )
+        
+        # Calculate expiration timestamp
+        expires_at = None
+        if ttl_seconds is not None and ttl_seconds > 0:
+            expires_at = int(time.time()) + ttl_seconds
+        
+        # Get current timestamp
+        now = int(time.time())
+        
+        async with self._get_session() as session:
+            # Use dialect-specific insert for upsert
+            if self.is_postgresql:
+                # PostgreSQL: INSERT ... ON CONFLICT DO UPDATE
+                stmt = pg_insert(PluginKVStorage).values(
+                    plugin_name=plugin_name,
+                    key=key,
+                    value_json=value_json,
+                    expires_at=expires_at,
+                    created_at=now,
+                    updated_at=now
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=['plugin_name', 'key'],
+                    set_={
+                        'value_json': value_json,
+                        'expires_at': expires_at,
+                        'updated_at': now
+                    }
+                )
+            else:
+                # SQLite: INSERT ... ON CONFLICT DO UPDATE
+                stmt = sqlite_insert(PluginKVStorage).values(
+                    plugin_name=plugin_name,
+                    key=key,
+                    value_json=value_json,
+                    expires_at=expires_at,
+                    created_at=now,
+                    updated_at=now
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=['plugin_name', 'key'],
+                    set_={
+                        'value_json': value_json,
+                        'expires_at': expires_at,
+                        'updated_at': now
+                    }
+                )
+            
+            await session.execute(stmt)
+
+    async def kv_get(
+        self,
+        plugin_name: str,
+        key: str
+    ) -> dict:
+        """
+        Get a key-value pair for a plugin.
+        
+        Args:
+            plugin_name: Plugin identifier
+            key: Key name
+        
+        Returns:
+            {'exists': bool, 'value': Any}
+            If key doesn't exist or is expired: {'exists': False}
+            
+        Example:
+            result = await db.kv_get('trivia', 'config')
+            if result['exists']:
+                config = result['value']
+        """
+        async with self._get_session() as session:
+            result = await session.execute(
+                select(PluginKVStorage).where(
+                    PluginKVStorage.plugin_name == plugin_name,
+                    PluginKVStorage.key == key
+                )
+            )
+            row = result.scalar_one_or_none()
+            
+            if row is None:
+                return {'exists': False}
+            
+            # Check expiration
+            if row.is_expired:
+                return {'exists': False}
+            
+            # Deserialize value
+            try:
+                value = json.loads(row.value_json)
+            except json.JSONDecodeError as e:
+                # Log error but don't crash
+                self.logger.error(
+                    f"Failed to deserialize KV value for {plugin_name}/{key}: {e}"
+                )
+                return {'exists': False}
+            
+            return {
+                'exists': True,
+                'value': value
+            }
+
+    async def kv_delete(
+        self,
+        plugin_name: str,
+        key: str
+    ) -> bool:
+        """
+        Delete a key-value pair for a plugin.
+        
+        Args:
+            plugin_name: Plugin identifier
+            key: Key name
+        
+        Returns:
+            True if key was deleted, False if didn't exist
+            
+        Example:
+            deleted = await db.kv_delete('trivia', 'old_session')
+            if deleted:
+                print('Session deleted')
+        """
+        async with self._get_session() as session:
+            result = await session.execute(
+                delete(PluginKVStorage).where(
+                    PluginKVStorage.plugin_name == plugin_name,
+                    PluginKVStorage.key == key
+                )
+            )
+            return result.rowcount > 0
+
+    async def kv_list(
+        self,
+        plugin_name: str,
+        prefix: str = '',
+        limit: int = 1000
+    ) -> dict:
+        """
+        List keys for a plugin with optional prefix filter.
+        
+        Args:
+            plugin_name: Plugin identifier
+            prefix: Optional key prefix filter
+            limit: Maximum keys to return (default 1000)
+        
+        Returns:
+            {
+                'keys': [str],           # List of key names
+                'count': int,            # Number of keys returned
+                'truncated': bool        # True if more results available
+            }
+            
+        Example:
+            # List all keys
+            result = await db.kv_list('trivia')
+            
+            # List keys with prefix
+            result = await db.kv_list('trivia', prefix='user:')
+        """
+        now = int(time.time())
+        
+        async with self._get_session() as session:
+            # Build query
+            stmt = select(PluginKVStorage.key).where(
+                PluginKVStorage.plugin_name == plugin_name,
+                # Only non-expired entries
+                or_(
+                    PluginKVStorage.expires_at.is_(None),
+                    PluginKVStorage.expires_at > now
+                )
+            )
+            
+            # Apply prefix filter if provided
+            if prefix:
+                stmt = stmt.where(PluginKVStorage.key.like(f'{prefix}%'))
+            
+            # Order by key and fetch limit+1 to detect truncation
+            stmt = stmt.order_by(PluginKVStorage.key).limit(limit + 1)
+            
+            result = await session.execute(stmt)
+            keys = [row[0] for row in result.fetchall()]
+            
+            # Check if results were truncated
+            truncated = len(keys) > limit
+            if truncated:
+                keys = keys[:limit]
+            
+            return {
+                'keys': keys,
+                'count': len(keys),
+                'truncated': truncated
+            }
+
+    async def kv_cleanup_expired(self) -> int:
+        """
+        Remove all expired keys across all plugins.
+        
+        Returns:
+            Number of keys deleted
+            
+        Example:
+            deleted = await db.kv_cleanup_expired()
+            print(f'Cleaned up {deleted} expired keys')
+        """
+        now = int(time.time())
+        
+        async with self._get_session() as session:
+            result = await session.execute(
+                delete(PluginKVStorage).where(
+                    PluginKVStorage.expires_at.is_not(None),
+                    PluginKVStorage.expires_at < now
+                )
+            )
+            return result.rowcount
 
     async def perform_maintenance(self):
         """
