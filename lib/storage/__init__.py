@@ -19,6 +19,7 @@ from .sql_errors import (
     NamespaceViolationError,
     ParameterError,
     PermissionDeniedError,
+    RequestValidationError,
     SQLSyntaxError,
     SQLValidationError,
     StackedQueryError,
@@ -28,6 +29,7 @@ from .sql_errors import (
 )
 from .sql_executor import PreparedStatementExecutor
 from .sql_formatter import ResultFormatter
+from .sql_handler import SQLExecutionHandler, extract_plugin_from_subject
 from .sql_parameter import ParameterBinder
 from .sql_validator import QueryValidator
 from .sqlite import SQLiteStorage
@@ -59,4 +61,8 @@ __all__ = [
     "TimeoutError",
     "PermissionDeniedError",
     "ExecutionError",
+    # NATS handler (Sprint 17, Sortie 3)
+    "SQLExecutionHandler",
+    "extract_plugin_from_subject",
+    "RequestValidationError",
 ]

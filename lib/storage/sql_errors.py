@@ -210,6 +210,38 @@ class StackedQueryError(ForbiddenStatementError):
         super().__init__("STACKED_QUERIES", message, details)
 
 
+class RequestValidationError(SQLValidationError):
+    """
+    NATS request validation error.
+
+    Raised when the incoming NATS request is malformed:
+    - Missing required fields (query)
+    - Invalid field types
+    - Out-of-range values (timeout_ms, max_rows)
+    - Malformed JSON
+    """
+
+    def __init__(
+        self,
+        message: str,
+        field: Optional[str] = None,
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """
+        Initialize request validation error.
+
+        Args:
+            message: Human-readable error message
+            field: Name of the field that caused the error
+            details: Optional additional context
+        """
+        self.field = field
+        full_details = details or {}
+        if field:
+            full_details["field"] = field
+        super().__init__("REQUEST_VALIDATION_ERROR", message, full_details)
+
+
 @dataclass
 class ValidationResult:
     """
