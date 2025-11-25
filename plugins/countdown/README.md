@@ -1,10 +1,13 @@
 # ⏰ Countdown Plugin
 
-The Countdown plugin provides event countdown timers for chat channels, with automatic T-0 announcements and persistent storage.
+The Countdown plugin provides event countdown timers for chat channels, with automatic T-0 announcements, recurring patterns, customizable alerts, and persistent storage.
 
 ## Features
 
 - **One-Time Countdowns**: Create countdowns to specific dates/times
+- **Recurring Countdowns**: Weekly, daily, or monthly repeating events
+- **T-Minus Alerts**: Customizable warnings before countdown completion
+- **Pause/Resume**: Pause and resume recurring countdowns
 - **Multiple Formats**: Supports various datetime input formats
 - **Channel-Scoped**: Each channel has its own countdowns
 - **Automatic Announcements**: T-0 announcements when countdowns complete
@@ -15,7 +18,7 @@ The Countdown plugin provides event countdown timers for chat channels, with aut
 
 ### `!countdown <name> <datetime>`
 
-Create a new countdown.
+Create a new one-time countdown.
 
 ```
 User: !countdown movie_night 2025-12-01 20:00
@@ -28,6 +31,27 @@ User: !countdown meeting in 2 hours
 Rosey: ⏰ Countdown 'meeting' created! Time remaining: 2 hours
 ```
 
+### `!countdown <name> every <pattern>`
+
+Create a recurring countdown.
+
+```
+User: !countdown friday_movie every friday 19:00
+Rosey: ⏰🔄 Recurring countdown 'friday_movie' created!
+       Pattern: Every Friday at 19:00
+       Next occurrence: 2 days, 10 hours
+
+User: !countdown standup every day 09:30
+Rosey: ⏰🔄 Recurring countdown 'standup' created!
+       Pattern: Every day at 09:30
+       Next occurrence: 14 hours, 15 minutes
+
+User: !countdown paycheck every 15th 12:00
+Rosey: ⏰🔄 Recurring countdown 'paycheck' created!
+       Pattern: Every 15th at 12:00
+       Next occurrence: 8 days, 2 hours
+```
+
 ### `!countdown <name>`
 
 Check remaining time for a countdown.
@@ -35,6 +59,11 @@ Check remaining time for a countdown.
 ```
 User: !countdown movie_night
 Rosey: ⏰ 'movie_night' — 6 days, 4 hours, 28 minutes remaining
+
+User: !countdown friday_movie
+Rosey: ⏰🔄 'friday_movie' (recurring, active)
+       Pattern: Every Friday at 19:00
+       Next: 2 days, 10 hours
 ```
 
 ### `!countdown list`
@@ -45,8 +74,38 @@ List all active countdowns in the channel.
 User: !countdown list
 Rosey: ⏰ Active countdowns:
   • movie_night — 6d 4h 28m
-  • birthday — 18h 15m
-  • meeting — 1h 45m
+  • friday_movie — 2d 10h (🔄 recurring)
+  • standup — 14h 15m (🔄 recurring)
+```
+
+### `!countdown alerts <name> <minutes>`
+
+Set custom T-minus alerts (default: 5 and 1 minute).
+
+```
+User: !countdown alerts movie_night 15,5,1
+Rosey: ⏰ Alerts set for 'movie_night': 15, 5, 1 minutes before
+
+User: !countdown alerts standup 10,5
+Rosey: ⏰ Alerts set for 'standup': 10, 5 minutes before
+```
+
+### `!countdown pause <name>`
+
+Pause a recurring countdown.
+
+```
+User: !countdown pause friday_movie
+Rosey: ⏰⏸️ 'friday_movie' paused. Use !countdown resume to continue.
+```
+
+### `!countdown resume <name>`
+
+Resume a paused recurring countdown.
+
+```
+User: !countdown resume friday_movie
+Rosey: ⏰▶️ 'friday_movie' resumed! Next: 5 days, 8 hours
 ```
 
 ### `!countdown delete <name>`
@@ -60,6 +119,8 @@ Rosey: ⏰ Countdown 'meeting' deleted.
 
 ## Supported Datetime Formats
 
+### One-Time Countdowns
+
 | Format | Example |
 |--------|---------|
 | Standard | `2025-12-01 20:00` |
@@ -72,7 +133,41 @@ Rosey: ⏰ Countdown 'meeting' deleted.
 | Relative (days) | `in 3 days` or `3 days` |
 | Relative (weeks) | `in 1 week` |
 
+### Recurring Patterns
+
+| Pattern | Example |
+|---------|---------|
+| Daily | `every day 09:00` |
+| Weekly (full) | `every friday 19:00` |
+| Weekly (abbrev) | `every fri 19:00` |
+| Monthly | `every 1st 12:00`, `every 15th 14:00` |
+
 All times are interpreted as **UTC**.
+
+## T-Minus Alerts
+
+Alerts notify the channel when a countdown is approaching completion:
+
+```
+Rosey: ⏰ 5 minutes until 'movie_night'!
+...
+Rosey: ⏰ 1 minute until 'movie_night'!
+...
+Rosey: 🎉 TIME'S UP! 'movie_night' has arrived!
+```
+
+Default alerts are at 5 and 1 minute. Customize per-countdown with `!countdown alerts`.
+
+## Recurring Behavior
+
+When a recurring countdown completes:
+
+1. 🎉 Announces completion to the channel
+2. 🔄 Automatically calculates next occurrence
+3. 📢 Announces next scheduled time
+4. ⏰ Resumes countdown to next occurrence
+
+Pausing a recurring countdown prevents it from auto-repeating.
 
 ## Configuration
 
@@ -84,7 +179,10 @@ Edit `config.json` to customize behavior:
   "max_countdowns_per_channel": 20,
   "max_duration_days": 365,
   "emit_events": true,
-  "announce_completion": true
+  "announce_completion": true,
+  "default_alerts": [5, 1],
+  "allow_custom_alerts": true,
+  "max_alert_minutes": 60
 }
 ```
 
@@ -95,6 +193,9 @@ Edit `config.json` to customize behavior:
 | `max_duration_days` | int | 365 | Max days in future for countdown |
 | `emit_events` | bool | true | Emit analytics events |
 | `announce_completion` | bool | true | Announce T-0 to channel |
+| `default_alerts` | list | [5, 1] | Default T-minus alerts (minutes) |
+| `allow_custom_alerts` | bool | true | Allow per-countdown alert config |
+| `max_alert_minutes` | int | 60 | Max minutes for alert setting |
 
 ## NATS Integration
 
@@ -106,6 +207,9 @@ Edit `config.json` to customize behavior:
 | `rosey.command.countdown.check` | Check remaining time |
 | `rosey.command.countdown.list` | List countdowns |
 | `rosey.command.countdown.delete` | Delete countdown |
+| `rosey.command.countdown.alerts` | Configure alerts |
+| `rosey.command.countdown.pause` | Pause recurring |
+| `rosey.command.countdown.resume` | Resume recurring |
 
 ### Event Subjects
 
@@ -114,6 +218,10 @@ Edit `config.json` to customize behavior:
 | `rosey.event.countdown.created` | Countdown created |
 | `rosey.event.countdown.completed` | Countdown reached T-0 |
 | `rosey.event.countdown.deleted` | Countdown deleted |
+| `rosey.event.countdown.alert` | T-minus alert fired |
+| `rosey.event.countdown.recurring_reset` | Recurring countdown reset |
+| `rosey.event.countdown.paused` | Recurring countdown paused |
+| `rosey.event.countdown.resumed` | Recurring countdown resumed |
 
 ### Storage Subjects (via NATS Storage API)
 
@@ -131,7 +239,7 @@ Edit `config.json` to customize behavior:
 {
   "channel": "lobby",
   "user": "username",
-  "args": "movie_night 2025-12-01 20:00",
+  "args": "friday_movie every friday 19:00",
   "reply_to": "rosey.reply.abc123"
 }
 ```
@@ -142,12 +250,14 @@ Edit `config.json` to customize behavior:
 {
   "success": true,
   "result": {
-    "name": "movie_night",
-    "target_time": "2025-12-01T20:00:00+00:00",
+    "name": "friday_movie",
+    "target_time": "2025-11-28T19:00:00+00:00",
     "created_by": "username",
     "channel": "lobby",
-    "remaining": "6 days, 4 hours, 30 minutes",
-    "message": "⏰ Countdown 'movie_night' created! Time remaining: 6 days, 4 hours, 30 minutes"
+    "remaining": "2 days, 10 hours",
+    "is_recurring": true,
+    "recurrence": "Every Friday at 19:00",
+    "message": "⏰🔄 Recurring countdown 'friday_movie' created!"
   }
 }
 ```
@@ -166,6 +276,9 @@ CREATE TABLE countdowns (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     is_recurring BOOLEAN DEFAULT FALSE NOT NULL,
     recurrence_rule TEXT NULL,
+    is_paused BOOLEAN DEFAULT FALSE NOT NULL,
+    alert_minutes TEXT NULL,
+    last_alert_sent INTEGER NULL,
     completed BOOLEAN DEFAULT FALSE NOT NULL,
     
     UNIQUE(channel, name)
@@ -199,27 +312,33 @@ Or with coverage:
 pytest --cov=. --cov-report=term-missing
 ```
 
+Current test count: **151 tests**
+
 ## Architecture
 
 The plugin follows the NATS-based architecture:
 
 1. **Plugin Process**: Standalone process communicating via NATS
 2. **Scheduler**: Asyncio-based timer checking pending countdowns
-3. **Storage**: All persistence via NATS storage API (no direct DB access)
-4. **Events**: Event emission for analytics and other plugins
+3. **Alert Manager**: Tracks and fires T-minus alerts
+4. **Recurrence Engine**: Calculates next occurrence for recurring events
+5. **Storage**: All persistence via NATS storage API (no direct DB access)
+6. **Events**: Event emission for analytics and other plugins
 
 ```
 ┌─────────────────┐     NATS     ┌─────────────────┐
 │  Bot / Router   │ ←──────────→ │ CountdownPlugin │
 └─────────────────┘              └────────┬────────┘
                                           │
-                                          ▼
-                                 ┌─────────────────┐
-                                 │    Scheduler    │
-                                 │  (asyncio loop) │
-                                 └─────────────────┘
-                                          │
-                                          ▼
+                           ┌──────────────┼──────────────┐
+                           │              │              │
+                           ▼              ▼              ▼
+                    ┌──────────┐   ┌──────────┐   ┌──────────┐
+                    │Scheduler │   │ Alert    │   │Recurrence│
+                    │  (async) │   │ Manager  │   │ Engine   │
+                    └──────────┘   └──────────┘   └──────────┘
+                           │
+                           ▼
 ┌─────────────────┐     NATS     ┌─────────────────┐
 │ Storage Service │ ←──────────→ │  Storage API    │
 └─────────────────┘              │ (NATS subjects) │
@@ -228,14 +347,8 @@ The plugin follows the NATS-based architecture:
 
 ## Version History
 
+- **2.0.0** - Added recurring countdowns, T-minus alerts, pause/resume
 - **1.0.0** - Initial release with one-time countdowns
-
-## Future Enhancements (Sortie 4)
-
-- Recurring countdowns (`!countdown friday_movie every friday 19:00`)
-- T-minus alerts (5 min, 1 min warnings)
-- Timezone support (`!countdown ... EST`)
-- User-specific countdowns (DM reminders)
 
 ## License
 

@@ -66,7 +66,7 @@ class TestPluginInit:
     def test_init_has_version(self, mock_nats):
         """Plugin has version set."""
         plugin = CountdownPlugin(mock_nats)
-        assert plugin.VERSION == "1.0.0"
+        assert plugin.VERSION == "2.0.0"
 
 
 # =============================================================================
@@ -82,14 +82,17 @@ class TestPluginLifecycle:
         plugin = CountdownPlugin(mock_nats)
         await plugin.initialize()
         
-        # Should have subscribed to 4 command subjects
-        assert len(mock_nats._subscriptions) == 4
+        # Should have subscribed to 7 command subjects
+        assert len(mock_nats._subscriptions) == 7
         
         subjects = [s.subject for s in mock_nats._subscriptions]
         assert "rosey.command.countdown.create" in subjects
         assert "rosey.command.countdown.check" in subjects
         assert "rosey.command.countdown.list" in subjects
         assert "rosey.command.countdown.delete" in subjects
+        assert "rosey.command.countdown.alerts" in subjects
+        assert "rosey.command.countdown.pause" in subjects
+        assert "rosey.command.countdown.resume" in subjects
         
         await plugin.shutdown()
     

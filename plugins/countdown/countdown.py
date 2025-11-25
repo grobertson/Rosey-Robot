@@ -198,8 +198,11 @@ class Countdown:
         target_time: When the countdown ends (UTC).
         created_by: Username who created the countdown.
         created_at: When the countdown was created (UTC).
-        is_recurring: Whether this is a recurring countdown (Sortie 4).
-        recurrence_rule: Rule for recurring countdowns (Sortie 4).
+        is_recurring: Whether this is a recurring countdown.
+        recurrence_rule: Rule string for recurring countdowns.
+        is_paused: Whether a recurring countdown is paused.
+        alert_minutes: Comma-separated alert minutes (e.g., "5,1").
+        last_alert_sent: Minutes value of last alert sent.
         completed: Whether the countdown has fired.
     """
     
@@ -211,6 +214,9 @@ class Countdown:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     is_recurring: bool = False
     recurrence_rule: Optional[str] = None
+    is_paused: bool = False
+    alert_minutes: Optional[str] = None
+    last_alert_sent: Optional[int] = None
     completed: bool = False
     
     @property
@@ -259,6 +265,9 @@ class Countdown:
             "created_at": self.created_at.isoformat(),
             "is_recurring": self.is_recurring,
             "recurrence_rule": self.recurrence_rule,
+            "is_paused": self.is_paused,
+            "alert_minutes": self.alert_minutes,
+            "last_alert_sent": self.last_alert_sent,
             "completed": self.completed,
         }
     
@@ -293,5 +302,8 @@ class Countdown:
             created_at=created_at,
             is_recurring=data.get("is_recurring", False),
             recurrence_rule=data.get("recurrence_rule"),
+            is_paused=data.get("is_paused", False),
+            alert_minutes=data.get("alert_minutes"),
+            last_alert_sent=data.get("last_alert_sent"),
             completed=data.get("completed", False),
         )

@@ -10,7 +10,7 @@ easier to manage.
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Callable, Dict, List, Optional, Awaitable
 
 
@@ -27,12 +27,14 @@ class CountdownScheduler:
     Args:
         check_interval: Seconds between checks (default: 30).
         on_complete: Async callback when countdown completes.
+        on_check: Async callback for each countdown during checks (for alerts).
     """
     
     def __init__(
         self,
         check_interval: float = 30.0,
-        on_complete: Optional[Callable[[str], Awaitable[None]]] = None
+        on_complete: Optional[Callable[[str], Awaitable[None]]] = None,
+        on_check: Optional[Callable[[str, timedelta], Awaitable[None]]] = None
     ):
         """
         Initialize the scheduler.
@@ -40,9 +42,11 @@ class CountdownScheduler:
         Args:
             check_interval: Seconds between scheduler checks.
             on_complete: Async callback called with countdown_id when complete.
+            on_check: Async callback called with (countdown_id, remaining) each check.
         """
         self.check_interval = check_interval
         self.on_complete = on_complete
+        self.on_check = on_check
         self.running = False
         self._task: Optional[asyncio.Task] = None
         self._pending: Dict[str, datetime] = {}  # countdown_id -> target_time
@@ -134,13 +138,35 @@ class CountdownScheduler:
         
         Runs until stopped, checking all pending countdowns each interval.
         When a countdown completes, calls the on_complete callback.
+        For pending countdowns, calls on_check for alert processing.
         """
         self.logger.debug("Check loop started")
         
         while self.running:
             try:
+                now = datetime.now(timezone.utc)
+                
                 # Find completed countdowns
                 completed = self._get_completed()
+                
+                # Process non-completed countdowns for alerts
+                if self.on_check:
+                    for countdown_id, target_time in self._pending.items():
+                        if countdown_id in completed:
+                            continue  # Skip completed ones
+                        
+                        # Handle both aware and naive datetimes
+                        if target_time.tzinfo is None:
+                            target_time = target_time.replace(tzinfo=timezone.utc)
+                        
+                        remaining = target_time - now
+                        if remaining.total_seconds() > 0:
+                            try:
+                                await self.on_check(countdown_id, remaining)
+                            except Exception as e:
+                                self.logger.error(
+                                    f"Error in check callback for {countdown_id}: {e}"
+                                )
                 
                 # Process each completed countdown
                 for countdown_id in completed:

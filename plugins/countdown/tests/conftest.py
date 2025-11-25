@@ -34,10 +34,10 @@ def mock_nats():
         response = MagicMock()
         
         if "migrate" in subject and "status" in subject:
-            # Migration status check
+            # Migration status check - return version 2 for advanced features
             response.data = json.dumps({
                 "success": True,
-                "current_version": 1,
+                "current_version": 2,
                 "pending_count": 0
             }).encode()
         elif "select" in subject:
@@ -86,5 +86,8 @@ def sample_countdown_data():
         "created_at": "2025-11-24T10:00:00+00:00",
         "is_recurring": False,
         "recurrence_rule": None,
+        "is_paused": False,
+        "alert_minutes": None,
+        "last_alert_sent": None,
         "completed": False,
     }
