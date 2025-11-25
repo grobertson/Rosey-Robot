@@ -11,6 +11,9 @@ asyncpg==0.29.0  # Async PostgreSQL driver for production
 greenlet==3.0.3  # Required for SQLAlchemy async operations
 psycopg2-binary==2.9.9  # Fallback sync PostgreSQL driver
 
+# SQL Parsing (Sprint 17 - Parameterized SQL)
+sqlparse>=0.5.0  # For SQL query parsing and validation
+
 # NATS messaging (for Quicksilver architecture)
 nats-py>=2.7.0  # NATS client for event-driven messaging
 

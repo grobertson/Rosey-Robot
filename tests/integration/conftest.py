@@ -65,6 +65,10 @@ async def integration_db(tmp_path):
     """Real database for integration testing."""
     db_path = str(tmp_path / "integration_test.db")
     db = BotDatabase(db_path)
+    # Initialize schema
+    async with db.engine.begin() as conn:
+        from common.models import Base
+        await conn.run_sync(Base.metadata.create_all)
     await db.connect()
     yield db
     # Close async connection

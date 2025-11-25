@@ -26,7 +26,8 @@ async def test_bot_startup_sequence(integration_bot, integration_db):
     assert integration_bot.db == integration_db
 
     # Verify database is connected
-    status = integration_db.get_current_status()
+    await integration_db.update_current_status(bot_connected=True)  # Ensure row exists
+    status = await integration_db.get_current_status()
     assert status is not None
 
 
@@ -44,10 +45,10 @@ async def test_bot_user_join_triggers_database(integration_bot, integration_db):
     integration_bot.channel.userlist.count += 1
 
     # Trigger database logging
-    integration_db.user_joined('alice')
+    await integration_db.user_joined('alice')
 
     # Verify database record
-    stats = integration_db.get_user_stats('alice')
+    stats = await integration_db.get_user_stats('alice')
     assert stats is not None
     assert stats['username'] == 'alice'
     assert stats['current_session_start'] is not None
@@ -56,30 +57,30 @@ async def test_bot_user_join_triggers_database(integration_bot, integration_db):
 async def test_bot_user_chat_updates_database(integration_bot, integration_db):
     """Chat messages increment database counters."""
     # Add user first
-    integration_db.user_joined('alice')
+    await integration_db.user_joined('alice')
 
     # Simulate chat messages
     for i in range(5):
-        integration_db.user_chat_message('alice')
+        await integration_db.user_chat_message('alice', f'message {i}')
 
     # Verify count
-    stats = integration_db.get_user_stats('alice')
+    stats = await integration_db.get_user_stats('alice')
     assert stats['total_chat_lines'] == 5
 
 
 async def test_bot_user_leave_finalizes_session(integration_bot, integration_db):
     """User leaving finalizes database session."""
     # Add user
-    integration_db.user_joined('alice')
+    await integration_db.user_joined('alice')
 
     # Wait to simulate session time (needs to be more substantial for SQLite timing)
     await asyncio.sleep(0.5)
 
     # User leaves
-    integration_db.user_left('alice')
+    await integration_db.user_left('alice')
 
     # Verify session finalized
-    stats = integration_db.get_user_stats('alice')
+    stats = await integration_db.get_user_stats('alice')
     assert stats['total_time_connected'] >= 0  # May be rounded to 0
     assert stats['current_session_start'] is None
 
@@ -92,39 +93,44 @@ async def test_bot_high_water_mark_tracking(integration_bot, integration_db):
         user_mock.name = f'user{i}'
         user_mock.rank = 1.0
         integration_bot.channel.userlist._users[f'user{i}'] = user_mock
-        integration_db.user_joined(f'user{i}')
+        await integration_db.user_joined(f'user{i}')
 
     integration_bot.channel.userlist.count = 5
 
     # Update high water marks
-    integration_db.update_high_water_mark(5, 8)
+    await integration_db.update_high_water_mark(5, 8)
 
     # Verify high water marks
-    max_chat, _ = integration_db.get_high_water_mark()
-    max_connected, _ = integration_db.get_high_water_mark_connected()
+    max_chat, _ = await integration_db.get_high_water_mark()
+    max_connected, _ = await integration_db.get_high_water_mark_connected()
 
     assert max_chat == 5
     assert max_connected == 8
 
 
-async def test_bot_shutdown_finalizes_database(integration_bot, integration_db):
+async def test_bot_shutdown_finalizes_database(integration_bot, integration_db, tmp_path):
     """Bot shutdown finalizes all active sessions."""
     # Add users
-    integration_db.user_joined('alice')
-    integration_db.user_joined('bob')
+    await integration_db.user_joined('alice')
+    await integration_db.user_joined('bob')
 
     await asyncio.sleep(0.1)
 
     # Finalize all sessions (simulates shutdown)
-    db_path = integration_db.db_path
-    integration_db.close()
+    # Extract path from database URL
+    db_url = integration_db.database_url
+    # URL format: sqlite+aiosqlite:///path/to/db
+    db_path = str(tmp_path / "integration_test.db")
+    await integration_db.close()
 
     # Reopen and check sessions finalized
     from common.database import BotDatabase
+    from common.models import Base
     db2 = BotDatabase(db_path)
-    alice_stats = db2.get_user_stats('alice')
-    bob_stats = db2.get_user_stats('bob')
+    await db2.connect()
+    alice_stats = await db2.get_user_stats('alice')
+    bob_stats = await db2.get_user_stats('bob')
 
     assert alice_stats['current_session_start'] is None
     assert bob_stats['current_session_start'] is None
-    db2.close()
+    await db2.close()

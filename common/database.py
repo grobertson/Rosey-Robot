@@ -445,7 +445,7 @@ class BotDatabase:
                 for msg in messages
             ]
 
-    async def log_chat(self, username: str, message: str, timestamp: int = None) -> None:
+    async def log_chat(self, username: str, message: str, timestamp: Optional[int] = None) -> None:
         """
         Log chat message to database.
 

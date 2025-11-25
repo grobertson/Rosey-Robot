@@ -2,7 +2,7 @@
 
 **Sprint**: 17-parameterized-sql  
 **Sortie**: 2 of 5  
-**Status**: Draft  
+**Status**: Complete  
 **Author**: Platform Team  
 **Created**: November 24, 2025  
 **Last Updated**: November 24, 2025
@@ -49,14 +49,14 @@ This sortie builds on Sortie 1's validation foundation to safely execute queries
 
 ### 1.4 Success Criteria
 
-- [ ] Prepared statements execute queries safely (no SQL injection possible)
-- [ ] Parameter binding converts PostgreSQL $N syntax to SQLite ? syntax
-- [ ] Timeout enforcement works (queries abort after configured limit)
-- [ ] Row limit enforcement works (results truncated at max_rows)
-- [ ] Results are JSON-serializable (no Python objects in output)
-- [ ] Execution metadata accurate (row_count, execution_time_ms)
-- [ ] 30+ unit tests pass
-- [ ] Integration tests with real SQLite database pass
+- [x] Prepared statements execute queries safely (no SQL injection possible)
+- [x] Parameter binding converts PostgreSQL $N syntax to SQLite ? syntax
+- [x] Timeout enforcement works (queries abort after configured limit)
+- [x] Row limit enforcement works (results truncated at max_rows)
+- [x] Results are JSON-serializable (no Python objects in output)
+- [x] Execution metadata accurate (row_count, execution_time_ms)
+- [x] 30+ unit tests pass (60 new tests added)
+- [x] Integration tests with real SQLite database pass (11 integration tests)
 
 ---
 

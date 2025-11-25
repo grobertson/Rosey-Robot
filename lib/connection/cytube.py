@@ -11,7 +11,7 @@ import logging
 import re
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Dict, Optional, Tuple
 
 from ..error import LoginError, SocketConfigError
@@ -208,6 +208,7 @@ class CyTubeConnection(ConnectionAdapter):
             >>> await conn.send_message("Styled", meta={'bold': True})
         """
         self._ensure_connected()
+        assert self.socket is not None  # Type narrowing for mypy
 
         try:
             meta = metadata.get('meta', {})
@@ -236,6 +237,7 @@ class CyTubeConnection(ConnectionAdapter):
             >>> await conn.send_pm("alice", "Private message")
         """
         self._ensure_connected()
+        assert self.socket is not None  # Type narrowing for mypy
 
         try:
             response = await self.socket.emit(
@@ -305,6 +307,7 @@ class CyTubeConnection(ConnectionAdapter):
             ...         print(f"{data['user']}: {data['content']}")
         """
         self._ensure_connected()
+        assert self.socket is not None  # Type narrowing for mypy
 
         try:
             while self._is_connected:

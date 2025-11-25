@@ -123,6 +123,7 @@ class OllamaProvider(LLMProvider):
         # Add any extra options
         payload['options'].update(kwargs)
 
+        assert self.session is not None  # set in __aenter__
         async with self.session.post(url, json=payload) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"Ollama API error: {resp.status} - {await resp.text()}")
@@ -154,6 +155,7 @@ class OllamaProvider(LLMProvider):
 
         payload['options'].update(kwargs)
 
+        assert self.session is not None  # set in __aenter__
         async with self.session.post(url, json=payload) as resp:
             if resp.status != 200:
                 raise RuntimeError(f"Ollama API error: {resp.status} - {await resp.text()}")
@@ -240,6 +242,7 @@ class OpenRouterProvider(LLMProvider):
         # Add any extra parameters
         payload.update(kwargs)
 
+        assert self.session is not None  # set in __aenter__
         async with self.session.post(url, json=payload, headers=self._get_headers()) as resp:
             if resp.status != 200:
                 error_text = await resp.text()
@@ -344,6 +347,7 @@ class OpenAIProvider(LLMProvider):
         timeout = aiohttp.ClientTimeout(total=self.timeout)
 
         try:
+            assert self.session is not None  # set in __aenter__
             async with self.session.post(
                 url,
                 json=payload,
