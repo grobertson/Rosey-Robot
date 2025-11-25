@@ -83,12 +83,20 @@ def game_config():
     )
 
 
+import json
+
 @pytest.fixture
 def mock_nats():
     """Mock NATS client."""
     nats = AsyncMock()
     nats.subscribe = AsyncMock(return_value=MagicMock())
     nats.publish = AsyncMock()
+    
+    # Setup default request response
+    mock_response = MagicMock()
+    mock_response.data = json.dumps({"success": True}).encode()
+    nats.request.return_value = mock_response
+    
     return nats
 
 

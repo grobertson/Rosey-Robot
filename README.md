@@ -4,71 +4,37 @@
 
 **Fair warning: This implementation is over-engineered. I may do crazy things here at any time. If you're not a person who likes reading documentation, this may not be the project for you. With that said, welcome! As with most of my hobby projects this is MIT licensed, keep FOSS fun and open!**
 
-[![Version](https://img.shields.io/badge/version-0.6.1-blue.svg)](https://github.com/grobertson/Rosey-Robot/releases)
+[![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](https://github.com/grobertson/Rosey-Robot/releases)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Database](https://img.shields.io/badge/database-SQLite%20%7C%20PostgreSQL-green.svg)](docs/DATABASE_SETUP.md)
 
 **Rosey** is an event-driven Python bot framework for [CyTube](https://github.com/calzoneman/sync) channels, built on an **Event-Driven Microservices** architecture. Services communicate through [NATS](https://nats.io/) messaging, enabling loosely-coupled components that can scale independently while staying simple to develop and deploy.
 
-## 🎯 Architecture: Event-Driven Microservices
+## 🎮 Features & Plugins
 
-Rosey uses **NATS** as a lightweight message bus to connect independent services. The architecture strictly separates **Core Services** (stability) from **Plugins** (extensibility):
+**Core Framework:**
+- **Event-Driven Architecture**: NATS pub/sub and request/reply messaging
+- **Service-Oriented**: Database, LLM, and connection layers as independent services
+- **Modern Python**: Async/await, SQLAlchemy 2.0 ORM, comprehensive type hints
+- **Dual Database**: SQLite (dev) and PostgreSQL (prod) with Alembic migrations
+- **Production Ready**: Systemd services, monitoring, hot reload, 85%+ test coverage
 
-```mermaid
-graph LR
-    subgraph Infrastructure
-        N((NATS Message Bus))
-    end
+**Games & Entertainment** (Sprint 18 - Funny Games):
+- **🎲 Dice Roller**: Full D&D dice notation (`!roll 2d6+3`, `!roll 4d6kh3`)
+- **🔮 Magic 8-Ball**: Mystical fortune telling with personality
+- **⏰ Countdowns**: One-time and recurring timers with T-minus alerts
+- **🧠 Trivia**: Multi-category quiz game with scoring and leaderboards
 
-    subgraph "Core Services (Stable)"
-        C[CyTube Connection]
-        D[Database Service]
-        R[Rosey Core Logic]
-    end
+**AI & Automation:**
+- **💬 LLM Chat**: OpenAI, Ollama, Azure OpenAI, and OpenRouter support
+- **📝 Quote Database**: Save and recall memorable quotes
+- **🎵 Playlist Manager**: Media queue management
 
-    subgraph "Plugins (Flexible)"
-        L[LLM Connector]
-        P[Playlist Manager]
-        W[Web Dashboard]
-        X[Custom Plugins...]
-    end
+**Admin & Observability:**
+- **🔍 Inspector**: Real-time NATS event monitoring (admin-only)
+- **📊 Web Dashboard**: Status and metrics (coming soon)
 
-    C <-->|Events| N
-    D <-->|Data| N
-    R <-->|Commands| N
-    
-    L <-->|AI| N
-    P <-->|Media| N
-    W <-->|Metrics| N
-    X <-->|Extensions| N
-
-    style N fill:#2980b9,stroke:#fff,stroke-width:4px,color:#fff
-    
-    style C fill:#27ae60,stroke:#fff,stroke-width:2px,color:#fff
-    style D fill:#27ae60,stroke:#fff,stroke-width:2px,color:#fff
-    style R fill:#27ae60,stroke:#fff,stroke-width:2px,color:#fff
-
-    style L fill:#e67e22,stroke:#fff,stroke-width:2px,color:#fff
-    style P fill:#e67e22,stroke:#fff,stroke-width:2px,color:#fff
-    style W fill:#e67e22,stroke:#fff,stroke-width:2px,color:#fff
-    style X fill:#e67e22,stroke:#fff,stroke-width:2px,color:#fff
-```
-
-**Benefits:**
-
-- **Core Stability**: Plugins run in separate processes and cannot crash the bot core
-- **Limitless Extensibility**: Add any feature (logging, search, games) as a new plugin
-- **Language Agnostic**: Write plugins in Python, Go, Node.js, or anything that speaks NATS
-- **Hot Pluggable**: Start/stop plugins without restarting the main connection
-
-## ✨ Features
-
-- **Event-Driven**: Everything communicates through NATS pub/sub and request/reply
-- **Service-Oriented**: Database, LLM, and connection layers run as independent services
-- **Modern Python**: Async/await throughout, SQLAlchemy 2.0 ORM, type hints
-- **Dual Database**: SQLite for development, PostgreSQL for production (with migrations)
-- **AI-Powered**: OpenAI, Ollama, and custom LLM providers with smart triggers
-- **Production Ready**: Systemd services, monitoring, hot reload, comprehensive testing
+See **[docs/PLUGINS.md](docs/PLUGINS.md)** for complete plugin documentation.
 
 ## 🚀 Quick Start
 

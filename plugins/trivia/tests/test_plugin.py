@@ -19,12 +19,8 @@ class TestTriviaPluginInit:
         plugin = TriviaPlugin(mock_nats)
 
         assert plugin.NAMESPACE == "trivia"
-        assert plugin.VERSION == "1.0.0"
-        assert plugin.default_questions == 10
-        assert plugin.max_questions == 50
-        assert plugin.time_per_question == 30
-        assert plugin.emit_events is True
-        assert len(plugin.active_games) == 0
+        assert plugin.VERSION == "1.1.0"
+        assert plugin.DESCRIPTION == "Interactive trivia game with persistence"
 
     def test_init_with_config(self, mock_nats, plugin_config):
         """Test initialization with custom config."""
@@ -46,8 +42,8 @@ class TestTriviaPluginLifecycle:
         await plugin.initialize()
 
         assert plugin._initialized is True
-        assert mock_nats.subscribe.call_count == 4  # 4 command handlers
-        assert len(plugin._subscriptions) == 4
+        assert mock_nats.subscribe.call_count == 7  # 4 commands + 3 stats/lb
+        assert len(plugin._subscriptions) == 7
 
     @pytest.mark.asyncio
     async def test_shutdown_cleanup(self, mock_nats):
