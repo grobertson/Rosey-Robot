@@ -114,6 +114,88 @@ class ParameterError(SQLValidationError):
     pass
 
 
+class TimeoutError(SQLValidationError):
+    """
+    Query execution timeout.
+
+    Raised when query execution exceeds the configured timeout limit.
+    Includes the timeout duration for error reporting.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        timeout_ms: int,
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """
+        Initialize timeout error.
+
+        Args:
+            message: Human-readable error message
+            timeout_ms: Timeout value that was exceeded (milliseconds)
+            details: Optional additional context
+        """
+        self.timeout_ms = timeout_ms
+        super().__init__("TIMEOUT", message, details)
+
+
+class PermissionDeniedError(SQLValidationError):
+    """
+    Insufficient permissions for SQL operation.
+
+    Raised when:
+    - Write operation (INSERT/UPDATE/DELETE) attempted without allow_write=True
+    - Access to restricted table attempted
+    """
+
+    def __init__(
+        self,
+        message: str,
+        required_permission: str = "allow_write",
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """
+        Initialize permission denied error.
+
+        Args:
+            message: Human-readable error message
+            required_permission: Permission that was missing
+            details: Optional additional context
+        """
+        self.required_permission = required_permission
+        super().__init__("PERMISSION_DENIED", message, details)
+
+
+class ExecutionError(SQLValidationError):
+    """
+    Database execution error.
+
+    Raised when database operation fails due to:
+    - Constraint violations (unique, foreign key, not null)
+    - Database locked
+    - No such table (shouldn't occur after validation)
+    - Other SQLite errors
+    """
+
+    def __init__(
+        self,
+        message: str,
+        original_error: Optional[Exception] = None,
+        details: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """
+        Initialize execution error.
+
+        Args:
+            message: Human-readable error message
+            original_error: The original exception that caused this error
+            details: Optional additional context
+        """
+        self.original_error = original_error
+        super().__init__("EXECUTION_ERROR", message, details)
+
+
 class StackedQueryError(ForbiddenStatementError):
     """
     Multiple SQL statements detected (SQL injection vector).

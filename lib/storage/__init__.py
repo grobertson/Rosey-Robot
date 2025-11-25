@@ -14,15 +14,20 @@ from .errors import (
     StorageError,
 )
 from .sql_errors import (
+    ExecutionError,
     ForbiddenStatementError,
     NamespaceViolationError,
     ParameterError,
+    PermissionDeniedError,
     SQLSyntaxError,
     SQLValidationError,
     StackedQueryError,
     StatementType,
+    TimeoutError,
     ValidationResult,
 )
+from .sql_executor import PreparedStatementExecutor
+from .sql_formatter import ResultFormatter
 from .sql_parameter import ParameterBinder
 from .sql_validator import QueryValidator
 from .sqlite import SQLiteStorage
@@ -48,4 +53,10 @@ __all__ = [
     "NamespaceViolationError",
     "ParameterError",
     "StackedQueryError",
+    # SQL execution (Sprint 17, Sortie 2)
+    "PreparedStatementExecutor",
+    "ResultFormatter",
+    "TimeoutError",
+    "PermissionDeniedError",
+    "ExecutionError",
 ]
