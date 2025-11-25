@@ -11,6 +11,9 @@ Commands:
     !remove [id] - Remove from queue
     !clear - Clear queue (admin)
     !shuffle - Shuffle queue
+    !voteskip - Vote to skip current item
+    !history [n] - Show recent plays (default 10)
+    !mystats - Show your playlist statistics
 
 NATS Subjects:
     Subscribe:
@@ -21,6 +24,9 @@ NATS Subjects:
         rosey.command.playlist.clear
         rosey.command.playlist.shuffle
         rosey.command.playlist.move
+        rosey.command.playlist.voteskip
+        rosey.command.playlist.history
+        rosey.command.playlist.mystats
     
     Publish:
         playlist.item.added - When item added to queue
@@ -44,12 +50,16 @@ try:
     from .service import PlaylistService
     from .metadata import MetadataFetcher
     from .voting import SkipVoteManager
+    from .storage import PlaylistStorage
+    from .quotas import QuotaManager, QuotaConfig
 except ImportError:
     from models import MediaParser, MediaType, PlaylistItem
     from queue import PlaylistQueue
     from service import PlaylistService
     from metadata import MetadataFetcher
     from voting import SkipVoteManager
+    from storage import PlaylistStorage
+    from quotas import QuotaManager, QuotaConfig
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +92,8 @@ class PlaylistPlugin:
     SUBJECT_SHUFFLE = "rosey.command.playlist.shuffle"
     SUBJECT_MOVE = "rosey.command.playlist.move"
     SUBJECT_VOTESKIP = "rosey.command.playlist.voteskip"
+    SUBJECT_HISTORY = "rosey.command.playlist.history"
+    SUBJECT_MYSTATS = "rosey.command.playlist.mystats"
     
     # Events
     EVENT_ITEM_ADDED = "playlist.item.added"
@@ -93,13 +105,14 @@ class PlaylistPlugin:
     EVENT_SKIP_PASSED = "playlist.skip.passed"
     EVENT_SHUFFLED = "playlist.shuffled"
     
-    def __init__(self, nats_client: NATS, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, nats_client: NATS, config: Optional[Dict[str, Any]] = None, db_service = None):
         """
         Initialize playlist plugin.
         
         Args:
             nats_client: Connected NATS client for messaging
             config: Plugin configuration dict
+            db_service: DatabaseService instance for persistence (optional)
         """
         self.nats = nats_client
         self.config = config or {}
@@ -113,6 +126,7 @@ class PlaylistPlugin:
         self.allowed_media_types = self.config.get("allowed_media_types", [])
         self.emit_events = self.config.get("emit_events", True)
         self.admins = self.config.get("admins", [])
+        self.persist_queue = self.config.get("persist_queue", True)
         
         # Channel-specific queues
         self.queues: Dict[str, PlaylistQueue] = {}
@@ -130,6 +144,20 @@ class PlaylistPlugin:
             timeout_minutes=self.config.get("skip_vote_timeout", 5)
         )
         
+        # Initialize storage (optional)
+        self.storage: Optional[PlaylistStorage] = None
+        if db_service:
+            self.storage = PlaylistStorage(db_service)
+        
+        # Initialize quota manager
+        quota_config = QuotaConfig(
+            max_items_per_user=self.config.get("max_items_per_user", 5),
+            max_duration_per_user=self.config.get("max_duration_per_user", 1800),
+            rate_limit_count=self.config.get("rate_limit_count", 3),
+            rate_limit_window=self.config.get("rate_limit_window", 10)
+        )
+        self.quota_manager = QuotaManager(quota_config)
+        
         # Service will be initialized in setup()
         self.service: Optional[PlaylistService] = None
         
@@ -139,6 +167,19 @@ class PlaylistPlugin:
         """Initialize plugin and register command handlers."""
         if self._initialized:
             return
+        
+        # Initialize database tables if storage enabled
+        if self.storage:
+            await self.storage.create_tables()
+            
+            # Recover queues from database
+            channels = await self.storage.get_persisted_channels()
+            for channel in channels:
+                items = await self.storage.load_queue(channel)
+                if items:
+                    queue = self._get_queue(channel)
+                    queue.items = items
+                    self.logger.info(f"Recovered {len(items)} items for {channel}")
         
         # Initialize PlaylistService
         self.service = PlaylistService(
@@ -174,12 +215,24 @@ class PlaylistPlugin:
         self._subscriptions.append(
             await self.nats.subscribe(self.SUBJECT_VOTESKIP, cb=self._handle_voteskip)
         )
+        self._subscriptions.append(
+            await self.nats.subscribe(self.SUBJECT_HISTORY, cb=self._handle_history)
+        )
+        self._subscriptions.append(
+            await self.nats.subscribe(self.SUBJECT_MYSTATS, cb=self._handle_mystats)
+        )
         
         self._initialized = True
         self.logger.info(f"{self.NAMESPACE} plugin ready")
     
     async def teardown(self) -> None:
         """Cleanup plugin resources."""
+        # Persist queues if storage enabled
+        if self.storage and self.persist_queue:
+            for channel, queue in self.queues.items():
+                await self.storage.save_queue(channel, queue.items)
+            self.logger.info("Persisted all queues to database")
+        
         # Unsubscribe from all subjects
         for sub in self._subscriptions:
             try:
@@ -256,11 +309,28 @@ class PlaylistPlugin:
             if not url:
                 return await self._reply_error(msg, "Usage: !add <url>")
             
+            # Check quota before adding
+            queue = self._get_queue(channel)
+            quota_check = self.quota_manager.check_quota(channel, user, queue.items)
+            if not quota_check["allowed"]:
+                return await self._reply_error(msg, quota_check["reason"])
+            
             # Use service to add item (handles metadata fetching)
             result = await self.service.add_item(channel, url, user, fetch_metadata=True)
             
             if not result.success:
                 return await self._reply_error(msg, result.error)
+            
+            # Record add for quota tracking
+            self.quota_manager.record_add(channel, user)
+            
+            # Record add in storage
+            if self.storage:
+                await self.storage.record_add(user, result.item.duration)
+            
+            # Persist queue if enabled
+            if self.storage and self.persist_queue:
+                await self.storage.save_queue(channel, queue.items)
             
             message = f"📺 Added to queue (#{result.position}): {result.item.title}"
             await self._reply_success(msg, message, {
@@ -331,8 +401,16 @@ class PlaylistPlugin:
             if not queue.current:
                 return await self._reply_error(msg, "Nothing is playing!")
             
+            # Record play in history (skipped)
+            if self.storage and queue.current:
+                await self.storage.record_play(channel, queue.current, play_duration=0, skipped=True)
+            
             # Use service to skip (emits events)
             next_item = await self.service.skip(channel, user)
+            
+            # Persist queue if enabled
+            if self.storage and self.persist_queue:
+                await self.storage.save_queue(channel, queue.items)
             
             if next_item:
                 message = f"⏭️ Skipped. Now playing: {next_item.title}"
@@ -496,3 +574,86 @@ class PlaylistPlugin:
         except Exception as e:
             self.logger.error(f"Error in _handle_voteskip: {e}", exc_info=True)
             await self._reply_error(msg, "Internal error voting to skip")
+    
+    async def _handle_history(self, msg) -> None:
+        """Handle !history command."""
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data.get("channel", "")
+            args = data.get("args", "").strip().split()
+            
+            if not self.storage:
+                return await self._reply_error(msg, "History tracking not enabled")
+            
+            limit = 10
+            if args and args[0].isdigit():
+                limit = min(int(args[0]), 50)
+            
+            history = await self.storage.get_history(channel, limit=limit)
+            
+            if not history:
+                return await self._reply_success(msg, "📜 No play history")
+            
+            lines = [f"📜 **Recent Plays** (last {len(history)}):\n"]
+            
+            for i, entry in enumerate(history, 1):
+                title = entry["title"]
+                added_by = entry["added_by"]
+                skipped = "⏭️" if entry.get("skipped") else "✅"
+                
+                # Format timestamp
+                from datetime import datetime
+                played_at = entry.get("played_at")
+                if isinstance(played_at, str):
+                    played_at = datetime.fromisoformat(played_at)
+                time_str = played_at.strftime("%H:%M") if played_at else "unknown"
+                
+                lines.append(f"{i}. {skipped} {title} - {added_by} ({time_str})")
+            
+            message = "\n".join(lines)
+            await self._reply_success(msg, message, {"history": history})
+            
+        except Exception as e:
+            self.logger.error(f"Error in _handle_history: {e}", exc_info=True)
+            await self._reply_error(msg, "Internal error fetching history")
+    
+    async def _handle_mystats(self, msg) -> None:
+        """Handle !mystats command."""
+        try:
+            data = json.loads(msg.data.decode())
+            user = data.get("user", "")
+            
+            if not self.storage:
+                return await self._reply_error(msg, "Stats tracking not enabled")
+            
+            stats = await self.storage.get_user_stats(user)
+            
+            if not stats:
+                return await self._reply_success(msg, "📊 No stats yet! Add some items to get started.")
+            
+            lines = [f"📊 **Stats for {user}**\n"]
+            lines.append(f"Items Added: {stats['items_added']}")
+            lines.append(f"Items Played: {stats['items_played']}")
+            lines.append(f"Items Skipped: {stats['items_skipped']}")
+            
+            # Format durations
+            added_mins = stats["total_duration_added"] // 60
+            played_mins = stats["total_duration_played"] // 60
+            lines.append(f"Time Added: {added_mins}m")
+            lines.append(f"Time Played: {played_mins}m")
+            
+            # Last add
+            last_add = stats.get("last_add")
+            if last_add:
+                from datetime import datetime
+                if isinstance(last_add, str):
+                    last_add = datetime.fromisoformat(last_add)
+                lines.append(f"Last Add: {last_add.strftime('%Y-%m-%d %H:%M')}")
+            
+            message = "\n".join(lines)
+            await self._reply_success(msg, message, {"stats": stats})
+            
+        except Exception as e:
+            self.logger.error(f"Error in _handle_mystats: {e}", exc_info=True)
+            await self._reply_error(msg, "Internal error fetching stats")
+

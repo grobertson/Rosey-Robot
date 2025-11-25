@@ -23,7 +23,7 @@ The Playlist Plugin manages media queues for channels, providing commands for ad
 
 - **Sortie 1** ✅: Foundation - basic commands and queue management
 - **Sortie 2** ✅: Service interface, metadata fetching, skip voting
-- **Sortie 3** (Next): Persistence, history, external catalog integration
+- **Sortie 3** ✅: Persistence, history tracking, user quotas
 
 ---
 
@@ -113,6 +113,37 @@ Vote to skip the current item. When enough votes are collected (configurable thr
 
 !voteskip  # Another user votes
 ⏭️ Skip vote passed! (3 votes)
+```
+
+#### `!history [n]`
+Show recent plays for this channel (default 10, max 50).
+
+**Example:**
+```
+!history 5
+📜 **Recent Plays** (last 5):
+
+1. ✅ Cool Video - Alice (14:30)
+2. ⏭️ Another Video - Bob (14:25)
+3. ✅ Third Video - Alice (14:20)
+4. ✅ Fourth Video - Charlie (14:15)
+5. ⏭️ Fifth Video - Bob (14:10)
+```
+
+#### `!mystats`
+Show your personal playlist statistics.
+
+**Example:**
+```
+!mystats
+📊 **Stats for Alice**
+
+Items Added: 42
+Items Played: 38
+Items Skipped: 4
+Time Added: 180m
+Time Played: 165m
+Last Add: 2025-11-24 14:30
 ```
 
 ### Admin Commands
@@ -253,6 +284,81 @@ The skip vote system allows democratic playlist control:
 
 ---
 
+## Persistence & History (Sortie 3)
+
+The playlist plugin now includes full database persistence for queue state and play history.
+
+### Queue Persistence
+
+Queues are automatically saved to the database and recovered on bot restart:
+
+- **Auto-save**: Queue state persisted after adds/removes/skips
+- **Auto-recovery**: Queues restored on startup
+- **Per-channel**: Each channel's queue is independently persisted
+
+**Configuration:**
+```json
+{
+  "persist_queue": true
+}
+```
+
+### Play History
+
+Every item that plays is recorded in the database:
+
+- **Track plays**: Records title, user, duration, timestamp
+- **Track skips**: Marks items that were skipped vs completed
+- **Per-channel**: History isolated by channel
+- **Query via `!history`**: Users can view recent plays
+
+**History Fields:**
+- `title`: Item title
+- `added_by`: User who added it
+- `played_at`: Timestamp of play
+- `play_duration`: Actual seconds played
+- `skipped`: Whether item was skipped
+
+### User Statistics
+
+The plugin tracks per-user statistics across all channels:
+
+- **Items added**: Total items user has added
+- **Items played**: How many of their items played
+- **Items skipped**: How many were skipped
+- **Total duration added**: Total seconds of content added
+- **Total duration played**: Actual playtime of their content
+- **Last add**: Timestamp of most recent add
+
+**Query via `!mystats`**: Users can view their own stats
+
+### User Quotas
+
+To prevent abuse, quotas limit how much a single user can add:
+
+**Item Count Quota:**
+- Default: 5 items max per user in queue
+- Configurable via `max_items_per_user`
+
+**Duration Quota:**
+- Default: 1800 seconds (30 minutes) max per user
+- Configurable via `max_duration_per_user`
+- Prevents one user from dominating queue time
+
+**Rate Limiting:**
+- Default: 3 adds per 10 seconds
+- Prevents spam/flooding
+- Configurable via `rate_limit_count` and `rate_limit_window`
+
+**Example Error Messages:**
+```
+You have 5 items in queue (max 5)
+Adding would exceed 30 minute limit (1900s total)
+Rate limit: max 3 adds per 10 seconds
+```
+
+---
+
 ## Configuration
 
 Configuration file: `plugins/playlist/config.json`
@@ -261,10 +367,17 @@ Configuration file: `plugins/playlist/config.json`
 {
   "max_queue_size": 100,
   "max_items_per_user": 5,
+  "max_duration_per_user": 1800,
+  "rate_limit_count": 3,
+  "rate_limit_window": 10,
   "allowed_media_types": [],
   "require_duration_check": false,
   "emit_events": true,
-  "admins": ["admin1", "admin2"]
+  "admins": ["admin1", "admin2"],
+  "persist_queue": true,
+  "skip_threshold": 0.5,
+  "min_skip_votes": 2,
+  "skip_vote_timeout": 5
 }
 ```
 
@@ -274,10 +387,17 @@ Configuration file: `plugins/playlist/config.json`
 |--------|------|---------|-------------|
 | `max_queue_size` | int | 100 | Maximum items in queue |
 | `max_items_per_user` | int | 5 | Max items per user |
+| `max_duration_per_user` | int | 1800 | Max total duration (seconds) |
+| `rate_limit_count` | int | 3 | Max adds per time window |
+| `rate_limit_window` | int | 10 | Rate limit window (seconds) |
 | `allowed_media_types` | array | `[]` | Whitelist of media types (empty = all allowed) |
 | `require_duration_check` | bool | false | Reject items without duration info |
 | `emit_events` | bool | true | Publish events to NATS |
 | `admins` | array | `[]` | List of admin usernames |
+| `persist_queue` | bool | true | Persist queue to database |
+| `skip_threshold` | float | 0.5 | Vote threshold (50%) |
+| `min_skip_votes` | int | 2 | Minimum votes to skip |
+| `skip_vote_timeout` | int | 5 | Vote timeout (minutes) |
 
 ### Media Type Codes
 
