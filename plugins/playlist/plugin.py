@@ -41,9 +41,15 @@ except ImportError:
 try:
     from .models import MediaParser, MediaType, PlaylistItem
     from .queue import PlaylistQueue
+    from .service import PlaylistService
+    from .metadata import MetadataFetcher
+    from .voting import SkipVoteManager
 except ImportError:
     from models import MediaParser, MediaType, PlaylistItem
     from queue import PlaylistQueue
+    from service import PlaylistService
+    from metadata import MetadataFetcher
+    from voting import SkipVoteManager
 
 logger = logging.getLogger(__name__)
 
@@ -75,12 +81,17 @@ class PlaylistPlugin:
     SUBJECT_CLEAR = "rosey.command.playlist.clear"
     SUBJECT_SHUFFLE = "rosey.command.playlist.shuffle"
     SUBJECT_MOVE = "rosey.command.playlist.move"
+    SUBJECT_VOTESKIP = "rosey.command.playlist.voteskip"
     
     # Events
     EVENT_ITEM_ADDED = "playlist.item.added"
     EVENT_ITEM_REMOVED = "playlist.item.removed"
     EVENT_ITEM_PLAYING = "playlist.item.playing"
     EVENT_CLEARED = "playlist.cleared"
+    EVENT_METADATA_FETCHED = "playlist.metadata.fetched"
+    EVENT_SKIP_VOTE = "playlist.skip.vote"
+    EVENT_SKIP_PASSED = "playlist.skip.passed"
+    EVENT_SHUFFLED = "playlist.shuffled"
     
     def __init__(self, nats_client: NATS, config: Optional[Dict[str, Any]] = None):
         """
@@ -106,12 +117,37 @@ class PlaylistPlugin:
         # Channel-specific queues
         self.queues: Dict[str, PlaylistQueue] = {}
         
+        # Initialize metadata fetcher
+        self.metadata_fetcher = MetadataFetcher(
+            youtube_api_key=self.config.get("youtube_api_key"),
+            timeout=self.config.get("metadata_timeout", 10.0)
+        )
+        
+        # Initialize vote manager
+        self.vote_manager = SkipVoteManager(
+            threshold=self.config.get("skip_threshold", 0.5),
+            min_votes=self.config.get("min_skip_votes", 2),
+            timeout_minutes=self.config.get("skip_vote_timeout", 5)
+        )
+        
+        # Service will be initialized in setup()
+        self.service: Optional[PlaylistService] = None
+        
         self.logger.info(f"{self.NAMESPACE} v{self.VERSION} initialized")
     
     async def setup(self) -> None:
         """Initialize plugin and register command handlers."""
         if self._initialized:
             return
+        
+        # Initialize PlaylistService
+        self.service = PlaylistService(
+            queues=self.queues,
+            metadata_fetcher=self.metadata_fetcher,
+            vote_manager=self.vote_manager,
+            event_callback=self._emit_event,
+            config=self.config
+        )
         
         # Subscribe to command subjects
         self._subscriptions.append(
@@ -135,6 +171,9 @@ class PlaylistPlugin:
         self._subscriptions.append(
             await self.nats.subscribe(self.SUBJECT_MOVE, cb=self._handle_move)
         )
+        self._subscriptions.append(
+            await self.nats.subscribe(self.SUBJECT_VOTESKIP, cb=self._handle_voteskip)
+        )
         
         self._initialized = True
         self.logger.info(f"{self.NAMESPACE} plugin ready")
@@ -147,6 +186,9 @@ class PlaylistPlugin:
                 await sub.unsubscribe()
             except Exception as e:
                 self.logger.error(f"Error unsubscribing: {e}")
+        
+        # Close metadata fetcher
+        await self.metadata_fetcher.close()
         
         self._subscriptions.clear()
         self.queues.clear()
@@ -173,6 +215,13 @@ class PlaylistPlugin:
             await self.nats.publish(event_name, json.dumps(data).encode())
         except Exception as e:
             self.logger.error(f"Error publishing event {event_name}: {e}")
+    
+    async def _emit_event(self, event_type: str, data: dict) -> None:
+        """Emit event via service (adds timestamp and event type)."""
+        from datetime import datetime
+        data["event"] = event_type
+        data["timestamp"] = datetime.utcnow().isoformat()
+        await self._publish_event(event_type, data)
     
     async def _reply(self, msg, response: dict) -> None:
         """Send reply to NATS request."""
@@ -207,50 +256,16 @@ class PlaylistPlugin:
             if not url:
                 return await self._reply_error(msg, "Usage: !add <url>")
             
-            # Parse URL
-            try:
-                media_type, media_id = MediaParser.parse(url)
-            except ValueError as e:
-                return await self._reply_error(msg, str(e))
+            # Use service to add item (handles metadata fetching)
+            result = await self.service.add_item(channel, url, user, fetch_metadata=True)
             
-            # Check if media type is allowed
-            if self.allowed_media_types and media_type.value not in self.allowed_media_types:
-                return await self._reply_error(msg, f"Media type {media_type.value} not allowed")
+            if not result.success:
+                return await self._reply_error(msg, result.error)
             
-            # Check per-user limit
-            queue = self._get_queue(channel)
-            user_items = queue.find_by_user(user)
-            if len(user_items) >= self.max_items_per_user:
-                return await self._reply_error(
-                    msg,
-                    f"You already have {len(user_items)} items in queue (max: {self.max_items_per_user})"
-                )
-            
-            # Create item (title will be placeholder for now, can be enriched in Sortie 2)
-            item = PlaylistItem(
-                id="",  # Will be assigned by queue
-                media_type=media_type,
-                media_id=media_id,
-                title=f"[{media_type.value}] {media_id[:20]}",  # Placeholder
-                duration=0,  # Will be fetched in Sortie 2
-                added_by=user,
-            )
-            
-            # Add to queue
-            if not queue.add(item):
-                return await self._reply_error(msg, "Queue is full!")
-            
-            position = queue.length
-            message = f"📺 Added to queue (#{position}): {item.title}"
-            
-            await self._reply_success(msg, message, {"item": item.to_dict(), "position": position})
-            
-            # Emit event
-            await self._publish_event(self.EVENT_ITEM_ADDED, {
-                "event": self.EVENT_ITEM_ADDED,
-                "channel": channel,
-                "item": item.to_dict(),
-                "position": position,
+            message = f"📺 Added to queue (#{result.position}): {result.item.title}"
+            await self._reply_success(msg, message, {
+                "item": result.item.to_dict(),
+                "position": result.position
             })
             
         except Exception as e:
@@ -316,31 +331,15 @@ class PlaylistPlugin:
             if not queue.current:
                 return await self._reply_error(msg, "Nothing is playing!")
             
-            skipped = queue.current
-            next_item = queue.advance()
+            # Use service to skip (emits events)
+            next_item = await self.service.skip(channel, user)
             
             if next_item:
                 message = f"⏭️ Skipped. Now playing: {next_item.title}"
                 await self._reply_success(msg, message, {"next": next_item.to_dict()})
-                
-                # Emit playing event
-                await self._publish_event(self.EVENT_ITEM_PLAYING, {
-                    "event": self.EVENT_ITEM_PLAYING,
-                    "channel": channel,
-                    "item": next_item.to_dict(),
-                })
             else:
                 message = "⏭️ Skipped. Queue is now empty."
                 await self._reply_success(msg, message)
-            
-            # Emit removed event
-            await self._publish_event(self.EVENT_ITEM_REMOVED, {
-                "event": self.EVENT_ITEM_REMOVED,
-                "channel": channel,
-                "item": skipped.to_dict(),
-                "reason": "skipped",
-                "by": user,
-            })
             
         except Exception as e:
             self.logger.error(f"Error in _handle_skip: {e}", exc_info=True)
@@ -400,19 +399,11 @@ class PlaylistPlugin:
             if not self._is_admin(user):
                 return await self._reply_error(msg, "Admin only command")
             
-            queue = self._get_queue(channel)
-            count = queue.clear()
+            # Use service to clear (emits event and resets votes)
+            count = await self.service.clear(channel, user)
             
             message = f"🗑️ Cleared {count} items from queue"
             await self._reply_success(msg, message, {"count": count})
-            
-            # Emit event
-            await self._publish_event(self.EVENT_CLEARED, {
-                "event": self.EVENT_CLEARED,
-                "channel": channel,
-                "count": count,
-                "by": user,
-            })
             
         except Exception as e:
             self.logger.error(f"Error in _handle_clear: {e}", exc_info=True)
@@ -423,16 +414,18 @@ class PlaylistPlugin:
         try:
             data = json.loads(msg.data.decode())
             channel = data.get("channel", "")
+            user = data.get("user", "")
             
             queue = self._get_queue(channel)
             
             if queue.length < 2:
                 return await self._reply_error(msg, "Need at least 2 items to shuffle")
             
-            queue.shuffle()
+            # Use service to shuffle (emits event)
+            count = await self.service.shuffle(channel, user)
             
-            message = f"🔀 Shuffled {queue.length} items"
-            await self._reply_success(msg, message, {"count": queue.length})
+            message = f"🔀 Shuffled {count} items"
+            await self._reply_success(msg, message, {"count": count})
             
         except Exception as e:
             self.logger.error(f"Error in _handle_shuffle: {e}", exc_info=True)
@@ -471,3 +464,35 @@ class PlaylistPlugin:
         except Exception as e:
             self.logger.error(f"Error in _handle_move: {e}", exc_info=True)
             await self._reply_error(msg, "Internal error moving item")
+    
+    async def _handle_voteskip(self, msg) -> None:
+        """Handle !voteskip command."""
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data.get("channel", "")
+            user = data.get("user", "")
+            
+            # Use service for vote skip
+            result = await self.service.vote_skip(channel, user)
+            
+            if not result["success"]:
+                return await self._reply_error(msg, result.get("error", "Vote failed"))
+            
+            if result.get("already_voted"):
+                return await self._reply(msg, {
+                    "success": True,
+                    "message": "You already voted to skip!",
+                    "votes": result["votes"],
+                    "needed": result["needed"]
+                })
+            
+            if result.get("passed"):
+                message = f"⏭️ Skip vote passed! ({result['votes']} votes)"
+            else:
+                message = f"⏭️ Vote recorded ({result['votes']}/{result['needed']} needed)"
+            
+            await self._reply_success(msg, message, result)
+            
+        except Exception as e:
+            self.logger.error(f"Error in _handle_voteskip: {e}", exc_info=True)
+            await self._reply_error(msg, "Internal error voting to skip")

@@ -21,9 +21,9 @@ The Playlist Plugin manages media queues for channels, providing commands for ad
 
 ### Roadmap
 
-- **Sortie 1** (Current): Foundation - basic commands and queue management
-- **Sortie 2** (Next): Service interface for other plugins, event integration
-- **Sortie 3** (Future): Persistence, history, external catalog integration
+- **Sortie 1** ✅: Foundation - basic commands and queue management
+- **Sortie 2** ✅: Service interface, metadata fetching, skip voting
+- **Sortie 3** (Next): Persistence, history, external catalog integration
 
 ---
 
@@ -103,6 +103,18 @@ Randomize the queue order.
 🔀 Shuffled 7 items
 ```
 
+#### `!voteskip`
+Vote to skip the current item. When enough votes are collected (configurable threshold), the item is automatically skipped.
+
+**Example:**
+```
+!voteskip
+⏭️ Vote recorded (2/3 needed)
+
+!voteskip  # Another user votes
+⏭️ Skip vote passed! (3 votes)
+```
+
 ### Admin Commands
 
 #### `!clear`
@@ -121,6 +133,122 @@ Move an item to a different position.
 ```
 !move abc123 xyz789  # Move abc123 after xyz789
 !move abc123 start   # Move abc123 to start of queue
+```
+
+---
+
+## Service API (Sortie 2)
+
+The Playlist Plugin exposes a `PlaylistService` interface for programmatic access by other plugins.
+
+### Getting the Service
+
+```python
+# From another plugin
+playlist_service = await bot.get_service("playlist")
+```
+
+### Service Methods
+
+#### `add_item(channel, url, user, fetch_metadata=True)` → `AddResult`
+
+Add an item to the playlist programmatically.
+
+```python
+result = await playlist_service.add_item(
+    channel="lobby",
+    url="https://youtube.com/watch?v=dQw4w9WgXcQ",
+    user="bot_user",
+    fetch_metadata=True
+)
+
+if result.success:
+    print(f"Added: {result.item.title} at position {result.position}")
+else:
+    print(f"Error: {result.error}")
+```
+
+#### `remove_item(channel, item_id, user, is_admin=False)` → `Optional[PlaylistItem]`
+
+Remove an item from the playlist.
+
+#### `get_queue(channel)` → `List[PlaylistItem]`
+
+Get all items in the queue.
+
+```python
+items = playlist_service.get_queue("lobby")
+for item in items:
+    print(f"{item.title} - {item.formatted_duration}")
+```
+
+#### `get_current(channel)` → `Optional[PlaylistItem]`
+
+Get the currently playing item.
+
+#### `get_stats(channel)` → `QueueStats`
+
+Get queue statistics (total items, duration, unique users).
+
+#### `skip(channel, user)` → `Optional[PlaylistItem]`
+
+Skip to the next item (direct skip).
+
+#### `vote_skip(channel, user)` → `Dict`
+
+Cast a skip vote. Returns vote status with `votes`, `needed`, and `passed` fields.
+
+```python
+result = await playlist_service.vote_skip("lobby", "user1")
+print(f"Votes: {result['votes']}/{result['needed']}")
+if result['passed']:
+    print("Item skipped!")
+```
+
+#### `shuffle(channel, user)` → `int`
+
+Shuffle the queue. Returns number of items shuffled.
+
+#### `clear(channel, user)` → `int`
+
+Clear the queue. Returns number of items removed.
+
+#### `subscribe(channel, callback)`
+
+Subscribe to playlist events for a channel.
+
+```python
+def on_playlist_event(event_type, data):
+    print(f"Event: {event_type}, Data: {data}")
+
+playlist_service.subscribe("lobby", on_playlist_event)
+```
+
+### Metadata Fetching
+
+The service automatically fetches metadata (title, duration, thumbnail) for supported platforms using oEmbed APIs:
+- **YouTube**: Title, author, thumbnail
+- **Vimeo**: Title, author, duration, thumbnail  
+- **SoundCloud**: Title, author, thumbnail
+
+Metadata fetching is asynchronous and non-blocking. Items are added immediately with placeholder titles, then updated when metadata arrives.
+
+### Skip Voting
+
+The skip vote system allows democratic playlist control:
+
+- **Configurable threshold**: Default 50% of active users
+- **Minimum votes**: Ensures at least N votes needed (default 2)
+- **Auto-reset**: Votes reset when item changes
+- **Timeout**: Vote sessions expire after 5 minutes (configurable)
+
+**Configuration:**
+```json
+{
+  "skip_threshold": 0.5,
+  "min_skip_votes": 2,
+  "skip_vote_timeout": 5
+}
 ```
 
 ---
