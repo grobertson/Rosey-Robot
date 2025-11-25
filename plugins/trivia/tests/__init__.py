@@ -1,0 +1,1 @@
+"""Trivia plugin test package."""
