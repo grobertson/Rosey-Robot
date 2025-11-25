@@ -1,14 +1,16 @@
 # LLM Plugin
 
-LLM chat integration for Rosey-Robot with support for multiple providers and personas.
+LLM chat integration for Rosey-Robot with support for multiple providers, personas, and persistent memory.
 
 ## Features
 
 - **Multiple Providers**: Ollama (local), OpenAI, OpenRouter
 - **Conversation Context**: Per-channel conversation history
+- **Persistent Memory**: NATS JetStream KeyValue storage for messages and memories
 - **Personas**: Multiple response styles (default, concise, technical, creative)
 - **NATS Integration**: Event-driven architecture with service interface
-- **Streaming Support**: Ready for streaming responses (Foundation in Sortie 4, implementation in Sortie 5)
+- **Memory Commands**: Remember facts, recall memories, forget entries
+- **Plugin-Safe Architecture**: NO direct database access - all persistence via NATS
 
 ## Installation
 
@@ -134,6 +136,32 @@ Switch between response styles:
 !chat help
 ```
 
+### Memory Commands
+
+#### Remember Facts
+Store information for later recall:
+```
+!chat remember Alice likes Python programming
+!chat remember The bot was deployed on November 25, 2025
+!chat remember Project deadline is December 1st
+```
+
+#### Recall Memories
+Search stored memories by keyword:
+```
+!chat recall Alice
+!chat recall Python
+!chat recall deadline
+```
+
+#### Forget Memories
+Remove a specific memory by ID:
+```
+!chat forget abc12345
+```
+
+**Note**: Memory IDs are shown when you remember facts and in recall results.
+
 ### Service Interface (Plugin-to-Plugin)
 
 Other plugins can use the LLM service through NATS:
@@ -181,9 +209,72 @@ await nc.publish("llm.request", json.dumps(request).encode())
 ### NATS Subjects
 
 - **rosey.command.chat**: User commands (!chat)
+- **rosey.command.chat.remember**: Remember fact command
+- **rosey.command.chat.recall**: Recall memories command
+- **rosey.command.chat.forget**: Forget memory command
 - **llm.request**: Service requests from other plugins
 - **llm.response**: Chat/completion responses
 - **llm.error**: Error notifications
+
+## Architecture
+
+### Memory Storage (NATS JetStream KV)
+
+The LLM plugin uses **NATS JetStream KeyValue** store for all persistence, adhering to the plugin-safe architecture principle:
+
+**✅ Correct**: Plugins use NATS KV for storage  
+**❌ Incorrect**: Plugins never access database directly
+
+#### NATS KV Buckets
+
+**llm_data**: Single bucket for all LLM storage
+- **messages:{channel}:recent**: Recent conversation messages (JSON array)
+- **memories:{channel}:{id}**: Individual memories (JSON objects)
+- **user:{user_id}:context**: User preferences (JSON)
+
+#### Data Structures
+
+```python
+# Message storage
+{
+    "role": "user" | "assistant" | "system",
+    "content": "message text",
+    "user_id": "username",
+    "timestamp": "2025-11-25T12:00:00"
+}
+
+# Memory storage
+{
+    "id": "abc12345",
+    "content": "fact or memory text",
+    "category": "fact" | "preference" | "topic",
+    "importance": 1-5,
+    "user_id": "username",
+    "created_at": "2025-11-25T12:00:00",
+    "accessed_at": "2025-11-25T13:00:00"
+}
+```
+
+#### Benefits of NATS KV
+
+1. **Plugin-Safe**: No direct database coupling
+2. **Distributed**: Works across NATS cluster
+3. **Lightweight**: Simple key-value operations
+4. **Isolated**: Per-channel data separation
+5. **Versioned**: JetStream provides history tracking
+
+#### Memory Operations
+
+```python
+# ConversationMemory API (internal)
+await memory.add_message(channel, role, content, user_id)
+messages = await memory.get_recent_messages(channel, limit=20)
+await memory.reset_context(channel)
+
+memory_id = await memory.remember(channel, content, category, importance)
+memories = await memory.recall(channel, query, limit=5)
+await memory.forget(channel, memory_id)
+```
 
 ## Personas
 
@@ -206,9 +297,11 @@ Engaging, imaginative responses with vivid language. Makes topics more interesti
 ```
 plugins/llm/
 ├── __init__.py           # Package exports
-├── plugin.py             # NATS plugin (commands, service interface)
+├── plugin.py             # NATS plugin (commands, service interface, memory)
 ├── service.py            # LLMService (chat interface, context management)
 ├── prompts.py            # System prompts for personas
+├── memory.py             # ConversationMemory (NATS KV storage)
+├── summarizer.py         # ConversationSummarizer (LLM-based)
 ├── config.json           # Default configuration
 ├── README.md             # This file
 ├── providers/
@@ -221,6 +314,7 @@ plugins/llm/
     ├── __init__.py
     ├── test_providers.py # Provider tests
     ├── test_service.py   # Service tests
+    ├── test_memory.py    # Memory system tests (NATS KV)
     └── test_plugin.py    # Plugin integration tests
 ```
 

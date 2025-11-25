@@ -2,10 +2,22 @@
 LLM Plugin for NATS-based chat integration.
 
 This plugin provides chat functionality through LLM providers, supporting
-multiple personas and conversation context management.
+multiple personas, conversation memory (via NATS KV), and context management.
+
+Features:
+    - Multi-provider LLM support (Ollama, OpenAI, OpenRouter)
+    - Persistent conversation history (NATS JetStream KV)
+    - Automatic summarization
+    - Memory recall and storage (NATS-based)
+    - Per-channel context isolation
+    - Multiple personas
+
+Architecture:
+    - NO direct database access
+    - ALL persistence via NATS JetStream KeyValue store
+    - Plugin-safe distributed storage
 """
 
-import asyncio
 import json
 import logging
 from typing import Any, Optional
@@ -15,18 +27,30 @@ from nats.aio.client import Client as NATS
 from .service import LLMService
 from .prompts import SystemPrompts
 from .providers import ProviderError
+from .memory import ConversationMemory, MemoryConfig
+from .summarizer import ConversationSummarizer
 
 logger = logging.getLogger(__name__)
 
 
 class LLMPlugin:
-    """NATS plugin for LLM chat functionality.
+    """NATS plugin for LLM chat functionality with persistent memory.
     
     Handles !chat commands and provides LLM services to other plugins
-    through NATS messaging.
+    through NATS messaging. Uses NATS JetStream KV for ALL persistence.
+    
+    Features:
+        - Persistent conversation history (NATS KV)
+        - Automatic summarization
+        - Memory storage and recall (NATS KV)
+        - Context management
+        - Plugin-safe architecture (no database access)
     
     Subjects:
         - rosey.command.chat: Chat command handler
+        - rosey.command.chat.remember: Remember fact
+        - rosey.command.chat.recall: Recall memories
+        - rosey.command.chat.forget: Forget memory
         - llm.request: Service request handler
         - llm.response: Response publication
         - llm.error: Error publication
@@ -42,6 +66,8 @@ class LLMPlugin:
         self.nc = nc
         self.config = config
         self.service: Optional[LLMService] = None
+        self.memory: Optional[ConversationMemory] = None
+        self.summarizer: Optional[ConversationSummarizer] = None
         self._subscriptions = []
         
         logger.info("LLM plugin initialized")
@@ -68,10 +94,42 @@ class LLMPlugin:
             else:
                 logger.info(f"Provider {provider_name} is available")
             
+            # Initialize NATS KV-based memory system
+            logger.info("Initializing NATS KV memory system")
+            
+            memory_config = MemoryConfig(
+                max_messages_in_context=self.config.get("max_context", 20)
+            )
+            self.memory = ConversationMemory(self.nc, memory_config)
+            await self.memory.initialize()
+            
+            self.summarizer = ConversationSummarizer(self.service)
+            
+            logger.info("NATS KV memory system initialized")
+            
             # Subscribe to command subject
             sub = await self.nc.subscribe(
                 "rosey.command.chat",
                 cb=self._handle_chat_command
+            )
+            self._subscriptions.append(sub)
+            
+            # Subscribe to memory command subjects
+            sub = await self.nc.subscribe(
+                "rosey.command.chat.remember",
+                cb=self._handle_remember_command
+            )
+            self._subscriptions.append(sub)
+            
+            sub = await self.nc.subscribe(
+                "rosey.command.chat.recall",
+                cb=self._handle_recall_command
+            )
+            self._subscriptions.append(sub)
+            
+            sub = await self.nc.subscribe(
+                "rosey.command.chat.forget",
+                cb=self._handle_forget_command
             )
             self._subscriptions.append(sub)
             
@@ -111,7 +169,6 @@ class LLMPlugin:
         try:
             data = json.loads(msg.data.decode())
             
-            command = data.get("command", "")
             args = data.get("args", [])
             channel_id = data.get("channel_id", "")
             username = data.get("username", "User")
@@ -162,11 +219,26 @@ class LLMPlugin:
             message: User's message
         """
         try:
+            # Add user message to memory
+            await self.memory.add_message(
+                channel=channel_id,
+                role="user",
+                content=message,
+                user_id=username
+            )
+            
             # Get response from service
             response = await self.service.chat(
                 user_message=message,
                 channel_id=channel_id,
                 username=username
+            )
+            
+            # Add assistant response to memory
+            await self.memory.add_message(
+                channel=channel_id,
+                role="assistant",
+                content=response
             )
             
             # Publish response
@@ -191,12 +263,16 @@ class LLMPlugin:
         Args:
             channel_id: Channel identifier
         """
+        # Reset service context
         context_size = self.service.get_context_size(channel_id)
         self.service.reset_context(channel_id)
         
+        # Clear NATS KV memory
+        cleared = await self.memory.reset_context(channel_id)
+        
         await self._send_response(
             channel_id,
-            f"Conversation context reset ({context_size} messages cleared)."
+            f"Conversation context reset ({context_size} in-memory, {cleared} persisted messages cleared)."
         )
     
     async def _handle_persona(
@@ -245,6 +321,9 @@ class LLMPlugin:
 !chat <message> - Send a message to the LLM
 !chat reset - Clear conversation context
 !chat persona [name] - Change or list personas (default, concise, technical, creative)
+!chat remember <fact> - Store a fact in memory
+!chat recall <query> - Recall memories by keyword
+!chat forget <id> - Forget a specific memory
 !chat help - Show this help message"""
         
         await self._send_response(channel_id, help_text)
@@ -372,3 +451,137 @@ class LLMPlugin:
             "llm.error",
             json.dumps(event).encode()
         )
+    
+    async def _handle_remember_command(self, msg) -> None:
+        """Handle !chat remember command.
+        
+        Args:
+            msg: NATS message with command data
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            
+            args = data.get("args", [])
+            channel_id = data.get("channel_id", "")
+            username = data.get("username", "User")
+            
+            if len(args) < 2:
+                await self._send_error(
+                    channel_id,
+                    "Usage: !chat remember <fact>"
+                )
+                return
+            
+            # Join all args after "remember"
+            fact = " ".join(args[1:])
+            
+            # Store in memory
+            memory_id = await self.memory.remember(
+                channel=channel_id,
+                content=fact,
+                user_id=username
+            )
+            
+            await self._send_response(
+                channel_id,
+                f"Remembered: {fact} (ID: {memory_id})"
+            )
+        
+        except Exception as e:
+            logger.error(f"Error in remember command: {e}")
+            await self._send_error(
+                data.get("channel_id", ""),
+                f"Failed to remember: {e}"
+            )
+    
+    async def _handle_recall_command(self, msg) -> None:
+        """Handle !chat recall command.
+        
+        Args:
+            msg: NATS message with command data
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            
+            args = data.get("args", [])
+            channel_id = data.get("channel_id", "")
+            
+            if len(args) < 2:
+                await self._send_error(
+                    channel_id,
+                    "Usage: !chat recall <query>"
+                )
+                return
+            
+            # Join all args after "recall"
+            query = " ".join(args[1:])
+            
+            # Search memories
+            memories = await self.memory.recall(
+                channel=channel_id,
+                query=query,
+                limit=5
+            )
+            
+            if not memories:
+                await self._send_response(
+                    channel_id,
+                    f"No memories found for: {query}"
+                )
+            else:
+                response = f"Memories matching '{query}':\n" + "\n".join(
+                    f"• {mem}" for mem in memories
+                )
+                await self._send_response(channel_id, response)
+        
+        except Exception as e:
+            logger.error(f"Error in recall command: {e}")
+            await self._send_error(
+                data.get("channel_id", ""),
+                f"Failed to recall: {e}"
+            )
+    
+    async def _handle_forget_command(self, msg) -> None:
+        """Handle !chat forget command.
+        
+        Args:
+            msg: NATS message with command data
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            
+            args = data.get("args", [])
+            channel_id = data.get("channel_id", "")
+            
+            if len(args) < 2:
+                await self._send_error(
+                    channel_id,
+                    "Usage: !chat forget <memory_id>"
+                )
+                return
+            
+            memory_id = args[1]
+            
+            # Delete memory
+            success = await self.memory.forget(
+                channel=channel_id,
+                memory_id=memory_id
+            )
+            
+            if success:
+                await self._send_response(
+                    channel_id,
+                    f"Forgot memory: {memory_id}"
+                )
+            else:
+                await self._send_error(
+                    channel_id,
+                    f"Memory not found: {memory_id}"
+                )
+        
+        except Exception as e:
+            logger.error(f"Error in forget command: {e}")
+            await self._send_error(
+                data.get("channel_id", ""),
+                f"Failed to forget: {e}"
+            )

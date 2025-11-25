@@ -20,6 +20,26 @@ class TestLLMPlugin:
         nc = MagicMock()
         nc.subscribe = AsyncMock()
         nc.publish = AsyncMock()
+        
+        # Mock JetStream KV for memory system
+        mock_js = AsyncMock()
+        mock_kv = AsyncMock()
+        
+        # jetstream() is NOT async, just returns the JS context
+        nc.jetstream = MagicMock(return_value=mock_js)
+        
+        # JS methods ARE async
+        mock_js.key_value = AsyncMock(return_value=mock_kv)
+        mock_js.create_key_value = AsyncMock(return_value=mock_kv)
+        
+        # KV operations
+        mock_kv_entry = MagicMock()
+        mock_kv_entry.value = b'[]'
+        mock_kv.get = AsyncMock(return_value=mock_kv_entry)
+        mock_kv.put = AsyncMock()
+        mock_kv.delete = AsyncMock()
+        mock_kv.keys = AsyncMock(return_value=[])
+        
         return nc
     
     @pytest.fixture
@@ -57,10 +77,13 @@ class TestLLMPlugin:
             # Verify service was created
             assert mock_service_class.create_from_config.called
             
-            # Verify subscriptions
-            assert mock_nats.subscribe.call_count == 2
+            # Verify subscriptions (chat, remember, recall, forget, service request)
+            assert mock_nats.subscribe.call_count == 5
             calls = [call.args[0] for call in mock_nats.subscribe.call_args_list]
             assert "rosey.command.chat" in calls
+            assert "rosey.command.chat.remember" in calls
+            assert "rosey.command.chat.recall" in calls
+            assert "rosey.command.chat.forget" in calls
             assert "llm.request" in calls
     
     @pytest.mark.asyncio
