@@ -1,4 +1,21 @@
 """
+# ============================================================================
+# DEPRECATION NOTICE
+# ============================================================================
+# This test file is DEPRECATED and scheduled for removal.
+#
+# Reason: The lib/plugin/ module and Plugin base class have been superseded
+# by the NATS-based plugin architecture. All plugins now:
+# - Run as separate processes
+# - Communicate via NATS messaging
+# - Do not inherit from a base class
+#
+# Reference: See plugins/quote-db/ and plugins/dice-roller/ for the
+# correct plugin pattern.
+#
+# TODO: Remove this file once all legacy plugin code is deleted.
+# ============================================================================
+
 tests/unit/test_plugin_base.py
 
 Unit tests for plugin base class.

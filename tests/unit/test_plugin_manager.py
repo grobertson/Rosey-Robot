@@ -1,4 +1,19 @@
 """
+# ============================================================================
+# DEPRECATION NOTICE
+# ============================================================================
+# This test file is DEPRECATED and scheduled for removal.
+#
+# Reason: The centralized PluginManager has been superseded by the NATS-based
+# plugin architecture. Plugins now run as independent processes and communicate
+# via NATS messaging. There is no central manager.
+#
+# Reference: See plugins/quote-db/ and plugins/dice-roller/ for the
+# correct plugin pattern.
+#
+# TODO: Remove this file once all legacy plugin code is deleted.
+# ============================================================================
+
 Unit tests for plugin manager system.
 
 Tests cover:

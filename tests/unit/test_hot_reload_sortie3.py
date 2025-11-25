@@ -1,4 +1,19 @@
 """
+# ============================================================================
+# DEPRECATION NOTICE
+# ============================================================================
+# This test file is DEPRECATED and scheduled for removal.
+#
+# Reason: The lib/plugin hot reload system has been superseded by the
+# NATS-based plugin architecture. Plugins are now independent processes
+# that can be restarted individually without hot reload mechanisms.
+#
+# Reference: See plugins/quote-db/ and plugins/dice-roller/ for the
+# correct plugin pattern.
+#
+# TODO: Remove this file once all legacy plugin code is deleted.
+# ============================================================================
+
 tests/unit/test_hot_reload_sortie3.py
 
 Unit tests for hot reload system (Sprint 8 Sortie 3).

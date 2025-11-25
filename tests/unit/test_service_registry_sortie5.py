@@ -1,4 +1,19 @@
 """
+# ============================================================================
+# DEPRECATION NOTICE
+# ============================================================================
+# This test file is DEPRECATED and scheduled for removal.
+#
+# Reason: The lib/plugin service registry has been superseded by the
+# NATS-based plugin architecture. Services are now independent processes
+# communicating via NATS messaging.
+#
+# Reference: See plugins/quote-db/ and plugins/dice-roller/ for the
+# correct plugin pattern.
+#
+# TODO: Remove this file once all legacy plugin code is deleted.
+# ============================================================================
+
 tests/unit/test_service_registry_sortie5.py
 
 Comprehensive tests for Sprint 8 Sortie 5: Service Registry

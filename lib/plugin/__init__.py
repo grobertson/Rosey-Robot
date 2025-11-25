@@ -1,9 +1,26 @@
 """
 lib/plugin
 
-Plugin system for extensible bot functionality.
+DEPRECATION NOTICE
+==================
+This module is DEPRECATED and will be removed in a future version.
 
-This module provides:
+Rosey plugins now use a NATS-based architecture where each plugin:
+- Runs as a separate process
+- Communicates entirely via NATS messaging
+- Does NOT inherit from any base class
+
+For new plugin development, see:
+- plugins/quote-db/ - Reference implementation
+- plugins/dice-roller/ - Simple stateless plugin example
+- docs/NATS_MESSAGES.md - NATS message formats
+- docs/ARCHITECTURE.md - Plugin architecture overview
+
+The lib/plugin module was part of an experimental in-process plugin system
+that was superseded by the NATS-based microservices architecture.
+==================
+
+Legacy module providing (DO NOT USE FOR NEW PLUGINS):
 - Plugin: Abstract base class for all plugins
 - PluginMetadata: Plugin information and requirements
 - PluginManager: Plugin discovery, loading, and lifecycle management
@@ -34,6 +51,15 @@ Example:
     manager = PluginManager(bot, 'plugins', hot_reload=True)
     await manager.load_all()
 """
+
+import warnings
+
+warnings.warn(
+    "lib.plugin is deprecated. Use NATS-based plugins instead. "
+    "See plugins/dice-roller/ or plugins/quote-db/ for examples.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from .base import Plugin
 from .errors import (

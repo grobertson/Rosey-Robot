@@ -1,6 +1,22 @@
 """
 plugins/example_plugin.py
 
+DEPRECATION NOTICE
+==================
+This example plugin is DEPRECATED and uses an outdated architecture.
+
+Rosey plugins now use a NATS-based architecture where each plugin:
+- Runs as a separate process
+- Communicates entirely via NATS messaging
+- Does NOT inherit from any base class
+
+For new plugin development, see:
+- plugins/dice-roller/ - Simple stateless plugin example
+- plugins/quote-db/ - Reference implementation with storage
+- docs/NATS_MESSAGES.md - NATS message formats
+- docs/ARCHITECTURE.md - Plugin architecture overview
+==================
+
 Example plugin demonstrating plugin system features.
 
 This plugin shows:
@@ -11,6 +27,15 @@ This plugin shows:
 - Bot interaction (sending messages)
 - Logging
 """
+
+import warnings
+
+warnings.warn(
+    "example_plugin.py is deprecated. "
+    "See plugins/dice-roller/ for the correct NATS-based architecture.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from lib.plugin import Plugin, PluginMetadata
 

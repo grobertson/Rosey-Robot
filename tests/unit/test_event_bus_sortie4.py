@@ -1,4 +1,18 @@
 """
+# ============================================================================
+# DEPRECATION NOTICE
+# ============================================================================
+# This test file is DEPRECATED and scheduled for removal.
+#
+# Reason: The lib/plugin event bus has been superseded by the NATS-based
+# event bus architecture. Events are now handled through NATS messaging.
+#
+# Reference: See bot/rosey/core/event_bus.py for the NATS-based event bus,
+# and plugins/quote-db/ or plugins/dice-roller/ for usage patterns.
+#
+# TODO: Remove this file once all legacy plugin code is deleted.
+# ============================================================================
+
 tests/unit/test_event_bus_sortie4.py
 
 Unit tests for event bus system (Sprint 8 Sortie 4).

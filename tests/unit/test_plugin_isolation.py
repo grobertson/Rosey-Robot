@@ -1,4 +1,19 @@
 """
+# ============================================================================
+# DEPRECATION NOTICE
+# ============================================================================
+# This test file is DEPRECATED and scheduled for removal.
+#
+# Reason: Plugin process isolation is now achieved naturally through the
+# NATS-based architecture where each plugin runs as a separate process.
+# There is no need for explicit isolation mechanisms.
+#
+# Reference: See plugins/quote-db/ and plugins/dice-roller/ for the
+# correct plugin pattern.
+#
+# TODO: Remove this file once all legacy plugin code is deleted.
+# ============================================================================
+
 Unit tests for plugin process isolation system.
 
 Tests cover:
