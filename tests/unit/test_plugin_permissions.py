@@ -1,4 +1,19 @@
 """
+# ============================================================================
+# DEPRECATION NOTICE
+# ============================================================================
+# This test file is DEPRECATED and scheduled for removal.
+#
+# Reason: The plugin permission system has been superseded by the NATS-based
+# architecture. Permission control is now handled through NATS subject-based
+# authorization rather than code-level permission checks.
+#
+# Reference: See plugins/quote-db/ and plugins/dice-roller/ for the
+# correct plugin pattern.
+#
+# TODO: Remove this file once all legacy plugin code is deleted.
+# ============================================================================
+
 Unit tests for plugin permission system.
 
 Tests cover:
