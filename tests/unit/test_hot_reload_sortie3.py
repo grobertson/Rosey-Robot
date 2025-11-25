@@ -19,10 +19,15 @@ try:
         HotReloadWatcher,
         ReloadHandler,
     )
+    from lib.plugin.hot_reload import WATCHDOG_AVAILABLE
 
-    HOTRELOAD_AVAILABLE = True
+    HOTRELOAD_AVAILABLE = WATCHDOG_AVAILABLE
 except ImportError:
     HOTRELOAD_AVAILABLE = False
+    WATCHDOG_AVAILABLE = False
+
+# Skip entire module if watchdog not installed
+if not HOTRELOAD_AVAILABLE:
     pytestmark = pytest.mark.skip("watchdog not installed")
 
 

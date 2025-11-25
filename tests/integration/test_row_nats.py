@@ -1019,7 +1019,7 @@ class TestRowSearchNATS:
         result = json.loads(search_resp.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "VALIDATION_ERROR"
-        assert "non-existent field" in result['error']['message']
+        assert "not found in schema" in result['error']['message'] or "not in schema" in result['error']['message']
 
     async def test_search_invalid_sort_field_via_nats(self, nats_client, db_service):
         """Test that invalid sort field returns error via NATS."""
@@ -1048,7 +1048,7 @@ class TestRowSearchNATS:
         result = json.loads(search_resp.data.decode())
         assert result['success'] is False
         assert result['error']['code'] == "VALIDATION_ERROR"
-        assert "non-existent field" in result['error']['message']
+        assert "not found in schema" in result['error']['message'] or "not in schema" in result['error']['message']
 
     async def test_search_missing_table_via_nats(self, nats_client, db_service):
         """Test that missing table returns error via NATS."""

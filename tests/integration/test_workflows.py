@@ -24,22 +24,22 @@ async def test_complete_user_session_workflow(integration_bot, integration_db):
     user_mock.afk = False
     integration_bot.channel.userlist._users['alice'] = user_mock
     integration_bot.channel.userlist.count = 1
-    integration_db.user_joined('alice')
+    await integration_db.user_joined('alice')
 
     # 2. User chats
     for i in range(5):
-        integration_db.user_chat_message('alice')
+        await integration_db.user_chat_message('alice', f'message {i}')
 
     # 3. Query stats
-    stats = integration_db.get_user_stats('alice')
+    stats = await integration_db.get_user_stats('alice')
     assert stats['total_chat_lines'] == 5
 
     # 4. User leaves
     await asyncio.sleep(0.5)
-    integration_db.user_left('alice')
+    await integration_db.user_left('alice')
 
     # 5. Verify final stats
-    final_stats = integration_db.get_user_stats('alice')
+    final_stats = await integration_db.get_user_stats('alice')
     assert final_stats['total_time_connected'] >= 0  # May be 0 due to timing
     assert final_stats['current_session_start'] is None
 
