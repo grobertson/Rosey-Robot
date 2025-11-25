@@ -77,8 +77,10 @@ class TestLLMPlugin:
             # Verify service was created
             assert mock_service_class.create_from_config.called
             
-            # Verify subscriptions (chat, remember, recall, forget, service request)
-            assert mock_nats.subscribe.call_count == 5
+            # Verify subscriptions
+            # - 5 command subscriptions (chat, remember, recall, forget, service request)
+            # - 7 NATS service subscriptions (rosey.llm.*)
+            assert mock_nats.subscribe.call_count == 12
             calls = [call.args[0] for call in mock_nats.subscribe.call_args_list]
             assert "rosey.command.chat" in calls
             assert "rosey.command.chat.remember" in calls

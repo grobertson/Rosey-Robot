@@ -1,6 +1,6 @@
 # LLM Plugin
 
-LLM chat integration for Rosey-Robot with support for multiple providers, personas, and persistent memory.
+LLM chat integration for Rosey-Robot with support for multiple providers, personas, persistent memory, and inter-plugin communication.
 
 ## Features
 
@@ -10,6 +10,9 @@ LLM chat integration for Rosey-Robot with support for multiple providers, person
 - **Personas**: Multiple response styles (default, concise, technical, creative)
 - **NATS Integration**: Event-driven architecture with service interface
 - **Memory Commands**: Remember facts, recall memories, forget entries
+- **Rate Limiting**: Per-user request and token limits
+- **Inter-Plugin API**: NATS request/response interface for other plugins
+- **Event Publishing**: Observability events for LLM activity
 - **Plugin-Safe Architecture**: NO direct database access - all persistence via NATS
 
 ## Installation
@@ -164,37 +167,204 @@ Remove a specific memory by ID:
 
 ### Service Interface (Plugin-to-Plugin)
 
-Other plugins can use the LLM service through NATS:
+Other plugins can use the LLM service through NATS request/response interface.
+
+#### NATS Subjects
+
+**Request/Response** (await responses):
+- `rosey.llm.chat` - Chat with context and memory
+- `rosey.llm.complete` - Raw completion without memory
+- `rosey.llm.summarize` - Text summarization
+- `rosey.llm.memory.add` - Add memory
+- `rosey.llm.memory.recall` - Recall memories
+- `rosey.llm.status` - Service status
+- `rosey.llm.usage` - Usage statistics
+
+**Events** (subscribe for observability):
+- `rosey.event.llm.response` - LLM generated response
+- `rosey.event.llm.error` - LLM request failed
+- `rosey.event.llm.memory` - Memory added/recalled
+- `rosey.event.llm.summarized` - Conversation summarized
+- `rosey.event.llm.usage_threshold` - Usage threshold reached
 
 #### Chat Request
+
 ```python
-# Publish to llm.request
+import json
+from dataclasses import asdict
+from plugins.llm.schemas import ChatRequest, ChatResponse
+
+# Create request
+request = ChatRequest(
+    channel="my-channel",
+    user="alice",
+    message="What is Python?",
+    persona="technical"  # Optional
+)
+
+# Send and await response
+msg = await nc.request(
+    "rosey.llm.chat",
+    json.dumps(asdict(request)).encode(),
+    timeout=30
+)
+
+# Parse response
+response = ChatResponse(**json.loads(msg.data.decode()))
+if response.success:
+    print(response.content)
+    print(f"Tokens used: {response.tokens_used}")
+else:
+    print(f"Error: {response.error}")
+```
+
+#### Completion Request (No Memory)
+
+```python
+from plugins.llm.schemas import CompletionRequest, CompletionResponse
+
+request = CompletionRequest(
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant"},
+        {"role": "user", "content": "Explain async/await"}
+    ],
+    temperature=0.7,
+    max_tokens=200
+)
+
+msg = await nc.request("rosey.llm.complete", json.dumps(asdict(request)).encode())
+response = CompletionResponse(**json.loads(msg.data.decode()))
+```
+
+#### Summarize Request
+
+```python
+from plugins.llm.schemas import SummarizeRequest, SummaryResponse
+
+request = SummarizeRequest(
+    text="Long text to summarize...",
+    max_length=100,
+    style="concise"  # or "detailed", "bullets"
+)
+
+msg = await nc.request("rosey.llm.summarize", json.dumps(asdict(request)).encode())
+response = SummaryResponse(**json.loads(msg.data.decode()))
+```
+
+#### Memory Operations
+
+```python
+from plugins.llm.schemas import MemoryAddRequest, MemoryRecallRequest, MemoryResponse
+
+# Add memory
+add_req = MemoryAddRequest(
+    channel="my-channel",
+    content="Alice prefers Python over JavaScript",
+    category="preference",
+    user_id="alice",
+    importance=3
+)
+msg = await nc.request("rosey.llm.memory.add", json.dumps(asdict(add_req)).encode())
+add_resp = MemoryResponse(**json.loads(msg.data.decode()))
+print(f"Memory ID: {add_resp.memory_id}")
+
+# Recall memories
+recall_req = MemoryRecallRequest(
+    channel="my-channel",
+    query="Alice programming",
+    user_id="alice",
+    limit=5
+)
+msg = await nc.request("rosey.llm.memory.recall", json.dumps(asdict(recall_req)).encode())
+recall_resp = MemoryResponse(**json.loads(msg.data.decode()))
+for memory in recall_resp.memories:
+    print(f"- {memory}")
+```
+
+#### Status and Usage
+
+```python
+from plugins.llm.schemas import StatusRequest, StatusResponse, UsageRequest, UsageResponse
+
+# Get service status
+msg = await nc.request("rosey.llm.status", b"{}")
+status = StatusResponse(**json.loads(msg.data.decode()))
+print(f"Provider: {status.provider}, Model: {status.model}")
+print(f"Requests today: {status.requests_today}, Tokens: {status.tokens_today}")
+
+# Get usage for specific user
+usage_req = UsageRequest(user="alice")
+msg = await nc.request("rosey.llm.usage", json.dumps(asdict(usage_req)).encode())
+usage = UsageResponse(**json.loads(msg.data.decode()))
+print(f"Rate limits remaining: {usage.rate_limits_remaining}")
+```
+
+#### Event Subscriptions
+
+```python
+# Subscribe to response events for monitoring
+async def handle_response_event(msg):
+    from plugins.llm.schemas import LLMResponseEvent
+    event = LLMResponseEvent(**json.loads(msg.data.decode()))
+    print(f"LLM response: {event.channel}/{event.user} - {event.tokens_used} tokens, {event.latency_ms}ms")
+
+await nc.subscribe("rosey.event.llm.response", cb=handle_response_event)
+
+# Subscribe to error events
+async def handle_error_event(msg):
+    from plugins.llm.schemas import LLMErrorEvent
+    event = LLMErrorEvent(**json.loads(msg.data.decode()))
+    print(f"LLM error: {event.channel}/{event.user} - {event.error}")
+
+await nc.subscribe("rosey.event.llm.error", cb=handle_error_event)
+
+# Subscribe to usage threshold events
+async def handle_threshold_event(msg):
+    from plugins.llm.schemas import UsageThresholdEvent
+    event = UsageThresholdEvent(**json.loads(msg.data.decode()))
+    print(f"Usage threshold: {event.user} - {event.threshold_type} at {event.percentage:.0%}")
+
+await nc.subscribe("rosey.event.llm.usage_threshold", cb=handle_threshold_event)
+```
+
+#### Rate Limiting
+
+The service enforces per-user rate limits:
+- **Per minute**: 10 requests
+- **Per hour**: 100 requests
+- **Per day**: 500 requests, 50,000 tokens
+
+Rate limit errors return `ChatResponse(success=False, error="Rate limit: ...")`.
+
+Configure limits in your config:
+```json
+{
+  "rate_limits": {
+    "requests_per_minute": 10,
+    "requests_per_hour": 100,
+    "requests_per_day": 500,
+    "tokens_per_day": 50000
+  }
+}
+```
+
+### Legacy Service Interface (Deprecated)
+
+The old `llm.request` subject is still supported but deprecated. Use the new NATS service interface above.
+
+**Old Style** (Publish-only):
+```python
 request = {
     "action": "chat",
     "channel_id": "my-channel",
     "message": "What is Python?",
-    "username": "User",
-    "model": "llama3.2",        # Optional
-    "temperature": 0.7,          # Optional
-    "max_tokens": 100            # Optional
+    "username": "User"
 }
 await nc.publish("llm.request", json.dumps(request).encode())
-
-# Subscribe to llm.response
-async def handle_response(msg):
-    data = json.loads(msg.data.decode())
-    print(data["content"])
 ```
 
-#### Raw Completion
-```python
-request = {
-    "action": "complete",
-    "channel_id": "my-channel",
-    "message": "Complete this sentence: Python is",
-    "temperature": 0.5
-}
-await nc.publish("llm.request", json.dumps(request).encode())
+**New Style** (Request/Response):
+Use the typed request/response schemas shown above for better error handling and type safety.
 ```
 
 #### Reset Context

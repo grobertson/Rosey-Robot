@@ -25,6 +25,8 @@ from typing import Any, Optional
 from nats.aio.client import Client as NATS
 
 from .service import LLMService
+from .service_nats import LLMServiceNATS
+from .rate_limiter import RateLimiter, RateLimitConfig
 from .prompts import SystemPrompts
 from .providers import ProviderError
 from .memory import ConversationMemory, MemoryConfig
@@ -54,6 +56,7 @@ class LLMPlugin:
         - llm.request: Service request handler
         - llm.response: Response publication
         - llm.error: Error publication
+        - rosey.llm.*: NATS service endpoints for inter-plugin communication
     """
     
     def __init__(self, nc: NATS, config: dict[str, Any]):
@@ -66,8 +69,10 @@ class LLMPlugin:
         self.nc = nc
         self.config = config
         self.service: Optional[LLMService] = None
+        self.nats_service: Optional[LLMServiceNATS] = None
         self.memory: Optional[ConversationMemory] = None
         self.summarizer: Optional[ConversationSummarizer] = None
+        self.rate_limiter: Optional[RateLimiter] = None
         self._subscriptions = []
         
         logger.info("LLM plugin initialized")
@@ -106,6 +111,27 @@ class LLMPlugin:
             self.summarizer = ConversationSummarizer(self.service)
             
             logger.info("NATS KV memory system initialized")
+            
+            # Initialize rate limiter
+            rate_config = self.config.get("rate_limits", {})
+            rate_limit_config = RateLimitConfig(
+                requests_per_minute=rate_config.get("requests_per_minute", 10),
+                requests_per_hour=rate_config.get("requests_per_hour", 100),
+                requests_per_day=rate_config.get("requests_per_day", 500),
+                tokens_per_day=rate_config.get("tokens_per_day", 50_000),
+            )
+            self.rate_limiter = RateLimiter(rate_limit_config)
+            
+            # Initialize NATS service for inter-plugin communication
+            self.nats_service = LLMServiceNATS(
+                nc=self.nc,
+                service=self.service,
+                memory=self.memory,
+                rate_limiter=self.rate_limiter,
+            )
+            await self.nats_service.start()
+            
+            logger.info("NATS LLM service started")
             
             # Subscribe to command subject
             sub = await self.nc.subscribe(
@@ -148,6 +174,10 @@ class LLMPlugin:
     
     async def stop(self) -> None:
         """Stop the plugin and unsubscribe from NATS subjects."""
+        # Stop NATS service
+        if self.nats_service:
+            await self.nats_service.stop()
+        
         for sub in self._subscriptions:
             await sub.unsubscribe()
         
