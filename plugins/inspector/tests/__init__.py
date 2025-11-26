@@ -1,0 +1,1 @@
+"""Inspector plugin tests."""

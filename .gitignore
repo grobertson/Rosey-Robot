@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.egg-info
+.pytest_cache
+.coverage
+#config.yaml
+config.json
+# Build artifacts
+/build
+/dist
+
+# Config files with sensitive data
+bots/**/config.json
+!bots/**/config.json.example
+
+# Database and log files
+*.db
+*.db-journal
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# Old structure (archived)
+/_old/
+
+# Development
+.DS_Store
+*.bak
+*.swp
+*~
+bots/tui/config.yaml
