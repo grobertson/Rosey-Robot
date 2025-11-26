@@ -33,13 +33,14 @@ except ImportError:
     print("ERROR: NATS client not installed. Run: pip install nats-py")
     sys.exit(1)
 
-# LLM imports (optional)
+# LLM imports - now optional, provided by plugins
+HAS_LLM = False  # LLM functionality is now provided by the LLM plugin
 try:
-    from lib.llm import LLMClient
-    from lib.llm.triggers import TriggerConfig, TriggerManager
-    HAS_LLM = True
+    # Check if LLM plugin is available via NATS
+    # This is now handled by the plugin system
+    pass
 except ImportError:
-    HAS_LLM = False
+    pass
 
 def log_chat(logger, event, data):
     """Log a chat message or private message to the chat log

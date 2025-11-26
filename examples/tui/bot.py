@@ -643,7 +643,9 @@ class TUIBot(Bot):
             data (dict): Media data from CyTube (can be uid or PlaylistItem)
         """
         # If data is a PlaylistItem object, use it directly
-        from lib.playlist import PlaylistItem
+        # Playlist items are now managed by the playlist plugin
+        # from plugins.playlist.models import MediaItem
+        from lib.media_link import MediaLink
         if isinstance(data, PlaylistItem):
             title = data.title
             self.current_media_title = str(title)
