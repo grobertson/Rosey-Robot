@@ -37,31 +37,35 @@ class ToolCallParser:
         """
         tool_calls = []
         
-        # Check for function_call (older format)
-        if "function_call" in response:
-            fc = response["function_call"]
-            try:
-                args = json.loads(fc.get("arguments", "{}"))
-                tool_calls.append(ToolCall(
-                    id="call_0",
-                    name=fc["name"],
-                    arguments=args,
-                ))
-            except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse function_call arguments: {e}")
-        
-        # Check for tool_calls (newer format)
-        if "tool_calls" in response:
-            for idx, tc in enumerate(response["tool_calls"]):
+        # Handle nested response structure
+        if "choices" in response and len(response["choices"]) > 0:
+            message = response["choices"][0].get("message", {})
+            
+            # Check for function_call (older format)
+            if "function_call" in message:
+                fc = message["function_call"]
                 try:
-                    args = json.loads(tc["function"].get("arguments", "{}"))
+                    args = json.loads(fc.get("arguments", "{}"))
                     tool_calls.append(ToolCall(
-                        id=tc.get("id", f"call_{idx}"),
-                        name=tc["function"]["name"],
+                        id="call_0",
+                        name=fc["name"],
                         arguments=args,
                     ))
                 except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse tool_call arguments: {e}")
+                    logger.error(f"Failed to parse function_call arguments: {e}")
+            
+            # Check for tool_calls (newer format)
+            if "tool_calls" in message:
+                for idx, tc in enumerate(message["tool_calls"]):
+                    try:
+                        args = json.loads(tc["function"].get("arguments", "{}"))
+                        tool_calls.append(ToolCall(
+                            id=tc.get("id", f"call_{idx}"),
+                            name=tc["function"]["name"],
+                            arguments=args,
+                        ))
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Failed to parse tool_call arguments: {e}")
         
         return tool_calls
     
@@ -116,8 +120,8 @@ class ToolCallParser:
         
         # Try auto-detection if format is "auto"
         if format == "auto":
-            # Check for OpenAI markers
-            if "function_call" in response or "tool_calls" in response:
+            # Check for OpenAI markers (choices structure)
+            if "choices" in response:
                 format = "openai"
             # Check for Anthropic markers
             elif "content" in response and isinstance(response["content"], list):

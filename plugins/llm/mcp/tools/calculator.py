@@ -72,14 +72,17 @@ async def calculate(arguments: Dict[str, Any], context: dict) -> str:
     expression = arguments.get("expression", "")
     
     if not expression:
-        raise ValueError("No expression provided")
+        return "Error: No expression provided"
     
-    # Remove whitespace
+    # Store original with whitespace for result
+    original = expression
+    
+    # Remove whitespace for validation and evaluation
     expression = expression.replace(" ", "")
     
-    # Validate expression (only digits, operators, parentheses)
-    if not re.match(r'^[\d+\-*/().%^]+$', expression):
-        raise ValueError("Expression contains invalid characters")
+    # Validate expression (only digits, operators, parentheses, support **)
+    if not re.match(r'^[\d+\-*/().%*]+$', expression):
+        return "Error: Expression contains invalid characters"
     
     try:
         # Parse expression into AST
@@ -93,10 +96,10 @@ async def calculate(arguments: Dict[str, Any], context: dict) -> str:
         return f"{expression} = {result}"
         
     except ZeroDivisionError:
-        raise ValueError("Division by zero")
+        return "Error: Division by zero"
     except Exception as e:
         logger.error(f"Calculation error: {e}")
-        raise ValueError(f"Invalid expression: {str(e)}")
+        return f"Error: {str(e)}"
 
 
 # Tool definition

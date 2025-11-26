@@ -37,6 +37,7 @@ class Tool:
         self.handler = handler
         self._last_used: Dict[str, float] = {}  # user -> timestamp
         self._call_count = 0
+        self.last_called = None  # Track last execution time
     
     async def execute(
         self, 
@@ -74,6 +75,7 @@ class Tool:
             if user:
                 self._last_used[user] = time.time()
             self._call_count += 1
+            self.last_called = time.time()  # Update last called timestamp
             
             return ToolResult(
                 tool_call_id=context.get("call_id", ""),
@@ -177,20 +179,19 @@ class ToolRegistry:
     def list_tools(
         self, 
         category: Optional[str] = None
-    ) -> List[ToolDefinition]:
+    ) -> List[str]:
         """
-        List available tools.
+        List available tool names.
         
         Args:
             category: Filter by category (optional)
             
         Returns:
-            List of tool definitions
+            List of tool names
         """
         if category:
-            names = self._categories.get(category, [])
-            return [self._tools[n].definition for n in names]
-        return [t.definition for t in self._tools.values()]
+            return list(self._categories.get(category, []))
+        return list(self._tools.keys())
     
     def get_schemas(
         self,
@@ -205,7 +206,11 @@ class ToolRegistry:
         Returns:
             List of tool schemas in standard format
         """
-        tools = self.list_tools(category)
+        if category:
+            names = self._categories.get(category, [])
+            tools = [self._tools[n].definition for n in names]
+        else:
+            tools = [t.definition for t in self._tools.values()]
         return [t.to_schema() for t in tools]
     
     def categories(self) -> List[str]:

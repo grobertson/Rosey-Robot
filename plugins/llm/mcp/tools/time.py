@@ -37,7 +37,8 @@ async def get_current_time(arguments: Dict[str, Any], context: dict) -> str:
         
     except Exception as e:
         logger.error(f"Time formatting error: {e}")
-        raise ValueError(f"Invalid format string: {str(e)}")
+        # Return current time with default format on error
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 # Tool definition
