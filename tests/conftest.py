@@ -59,22 +59,30 @@ def mock_event_bus():
         async def disconnect(self):
             self.connected = False
             
-        async def publish(self, subject: str, data: Dict[str, Any], **kwargs):
-            """Record published events"""
-            event = {
-                'subject': subject,
-                'data': data,
-                **kwargs
+        async def publish(self, event, headers=None):
+            """Record published events - takes Event object"""
+            event_dict = {
+                'subject': event.subject,
+                'data': event.data,
+                'event_type': event.event_type,
+                'source': event.source
             }
-            self.published_events.append(event)
-            return event
+            self.published_events.append(event_dict)
             
         async def subscribe(self, subject: str, callback, **kwargs):
-            """Record subscriptions"""
+            """Record subscriptions - returns subscription ID"""
             if subject not in self.subscribers:
                 self.subscribers[subject] = []
             self.subscribers[subject].append(callback)
-            return MagicMock(unsubscribe=AsyncMock())
+            return len(self.subscribers[subject])  # Return subscription ID
+            
+        async def unsubscribe(self, sub_id: int):
+            """Mock unsubscribe"""
+            pass
+            
+        def is_connected(self) -> bool:
+            """Check if connected"""
+            return self.connected
             
         async def request(self, subject: str, data: Dict[str, Any], timeout: float = 5.0):
             """Mock request/reply"""
@@ -207,34 +215,34 @@ def test_config():
 def mock_cytube_events():
     """Factory for creating mock CyTube events"""
     
-    def create_chat_event(username: str = "TestUser", msg: str = "test message"):
-        return {
-            'username': username,
-            'msg': msg,
-            'time': 1234567890,
-            'meta': {}
-        }
+    class MockCytubeEvents:
+        @staticmethod
+        def chat(msg: str = "test message", username: str = "TestUser"):
+            return {
+                'username': username,
+                'msg': msg,
+                'time': 1234567890,
+                'meta': {}
+            }
+        
+        @staticmethod
+        def user_join(username: str = "TestUser"):
+            return {
+                'name': username,
+                'rank': 1,
+                'profile': {}
+            }
+        
+        @staticmethod
+        def media(title: str = "Test Video", duration: int = 180):
+            return {
+                'title': title,
+                'duration': duration,
+                'type': 'yt',
+                'id': 'test123'
+            }
     
-    def create_user_join_event(username: str = "TestUser"):
-        return {
-            'name': username,
-            'rank': 1,
-            'profile': {}
-        }
-    
-    def create_media_event(title: str = "Test Video", duration: int = 180):
-        return {
-            'title': title,
-            'duration': duration,
-            'type': 'yt',
-            'id': 'test123'
-        }
-    
-    return type('MockCytubeEvents', (), {
-        'chat': create_chat_event,
-        'user_join': create_user_join_event,
-        'media': create_media_event
-    })()
+    return MockCytubeEvents()
 
 
 # ============================================================================

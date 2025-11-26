@@ -49,12 +49,14 @@ class TestEventBus:
     async def test_connect(self, mock_connect):
         """Test EventBus connection"""
         mock_nc = AsyncMock()
+        mock_nc.is_connected = True
+        mock_nc.jetstream = MagicMock()
         mock_connect.return_value = mock_nc
         
-        bus = EventBus("nats://localhost:4222")
+        bus = EventBus(servers=["nats://localhost:4222"])
         await bus.connect()
         
-        assert bus.connected
+        assert bus.is_connected()
         mock_connect.assert_called_once()
         
     @pytest.mark.asyncio
@@ -62,13 +64,15 @@ class TestEventBus:
     async def test_disconnect(self, mock_connect):
         """Test EventBus disconnection"""
         mock_nc = AsyncMock()
+        mock_nc.is_connected = True
+        mock_nc.jetstream = MagicMock()
         mock_connect.return_value = mock_nc
         
-        bus = EventBus("nats://localhost:4222")
+        bus = EventBus(servers=["nats://localhost:4222"])
         await bus.connect()
         await bus.disconnect()
         
-        assert not bus.connected
+        assert not bus.is_connected()
         mock_nc.drain.assert_called_once()
         
     @pytest.mark.asyncio
@@ -76,17 +80,21 @@ class TestEventBus:
     async def test_publish(self, mock_connect):
         """Test event publishing"""
         mock_nc = AsyncMock()
+        mock_nc.is_connected = True
+        mock_nc.jetstream = MagicMock()
         mock_connect.return_value = mock_nc
         
-        bus = EventBus("nats://localhost:4222")
+        bus = EventBus(servers=["nats://localhost:4222"])
         await bus.connect()
         
-        event = await bus.publish(
+        event = Event(
             subject="test.subject",
             data={"key": "value"},
             event_type="test",
             source="test_component"
         )
+        
+        await bus.publish(event)
         
         assert event.subject == "test.subject"
         assert event.data == {"key": "value"}
@@ -97,15 +105,20 @@ class TestEventBus:
     async def test_subscribe(self, mock_connect):
         """Test event subscription"""
         mock_nc = AsyncMock()
+        mock_nc.is_connected = True
+        mock_nc.jetstream = MagicMock()
+        mock_sub = MagicMock()
+        mock_sub._id = 1
+        mock_nc.subscribe.return_value = mock_sub
         mock_connect.return_value = mock_nc
         
-        bus = EventBus("nats://localhost:4222")
+        bus = EventBus(servers=["nats://localhost:4222"])
         await bus.connect()
         
         callback = AsyncMock()
-        sub = await bus.subscribe("test.>", callback)
+        sub_id = await bus.subscribe("test.>", callback)
         
-        assert sub is not None
+        assert sub_id == 1
         mock_nc.subscribe.assert_called_once()
         
     @pytest.mark.asyncio
@@ -113,12 +126,14 @@ class TestEventBus:
     async def test_request_reply(self, mock_connect):
         """Test request/reply pattern"""
         mock_nc = AsyncMock()
+        mock_nc.is_connected = True
+        mock_nc.jetstream = MagicMock()
         mock_response = MagicMock()
         mock_response.data = b'{"success": true, "data": "test"}'
         mock_nc.request.return_value = mock_response
         mock_connect.return_value = mock_nc
         
-        bus = EventBus("nats://localhost:4222")
+        bus = EventBus(servers=["nats://localhost:4222"])
         await bus.connect()
         
         response = await bus.request(
@@ -128,6 +143,7 @@ class TestEventBus:
         )
         
         assert response is not None
+        assert "success" in response
         mock_nc.request.assert_called_once()
         
     @pytest.mark.asyncio

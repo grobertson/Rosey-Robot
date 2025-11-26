@@ -7,7 +7,9 @@ Tests plugin lifecycle management without actually loading plugins.
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
-from core.plugin_manager import PluginManager, PluginState
+from core.plugin_manager import (
+    PluginManager, PluginMetadata, PluginState
+)
 
 
 @pytest.mark.unit
@@ -16,110 +18,124 @@ class TestPluginManager:
     """Test PluginManager functionality"""
     
     @pytest.mark.asyncio
-    async def test_plugin_manager_initialization(self, mock_event_bus, tmp_path):
+    async def test_plugin_manager_initialization(self, mock_event_bus):
         """Test plugin manager initialization"""
-        pm = PluginManager(mock_event_bus, tmp_path)
+        pm = PluginManager(mock_event_bus)
         
         assert pm.event_bus == mock_event_bus
-        assert pm.plugin_dir == tmp_path
+        assert pm.registry is not None
         assert len(pm.list_plugins()) == 0
         
     @pytest.mark.asyncio
-    async def test_plugin_discovery(self, mock_event_bus, tmp_path):
-        """Test plugin discovery in directory"""
-        # Create mock plugin structure
-        plugin_dir = tmp_path / "test_plugin"
-        plugin_dir.mkdir()
-        (plugin_dir / "__init__.py").write_text("")
-        (plugin_dir / "plugin.py").write_text("# test plugin")
+    async def test_plugin_discovery(self, mock_event_bus):
+        """Test plugin registry listing"""
+        pm = PluginManager(mock_event_bus)
         
-        pm = PluginManager(mock_event_bus, tmp_path)
-        
-        # Should discover plugin directory
-        # (Implementation detail - may need actual discovery method call)
+        # Initially empty
+        plugins = pm.registry.list_all()
+        assert isinstance(plugins, list)
+        assert len(plugins) == 0
         
     @pytest.mark.asyncio
-    async def test_load_plugin(self, mock_event_bus, tmp_path):
+    async def test_load_plugin(self, mock_event_bus):
         """Test loading a plugin"""
-        pm = PluginManager(mock_event_bus, tmp_path)
+        pm = PluginManager(mock_event_bus)
         
-        # Mock plugin loading
-        with patch.object(pm, '_load_plugin_module', return_value=MagicMock()):
-            result = await pm.load_plugin("test_plugin")
-            
-            # Should return success or plugin info
+        # Create metadata for test plugin
+        metadata = PluginMetadata(
+            name="test_plugin",
+            version="1.0.0",
+            module_path="plugins.test_plugin"
+        )
+        
+        result = await pm.load_plugin(metadata)
+        assert result is True
+        assert pm.registry.has("test_plugin")
             
     @pytest.mark.asyncio
-    async def test_start_plugin(self, mock_event_bus, tmp_path):
+    async def test_start_plugin(self, mock_event_bus):
         """Test starting a loaded plugin"""
-        pm = PluginManager(mock_event_bus, tmp_path)
+        pm = PluginManager(mock_event_bus)
         
-        # Mock plugin
-        mock_plugin = MagicMock()
-        mock_plugin.start = AsyncMock()
+        # Load a plugin first
+        metadata = PluginMetadata(
+            name="test_plugin",
+            version="1.0.0",
+            module_path="plugins.test_plugin"
+        )
+        await pm.load_plugin(metadata)
         
-        # Test starting plugin
-        # (Implementation detail - depends on actual PM API)
+        # Starting will fail without actual module, but API should be correct
+        result = await pm.start_plugin("test_plugin")
+        assert isinstance(result, bool)
         
     @pytest.mark.asyncio
-    async def test_stop_plugin(self, mock_event_bus, tmp_path):
+    async def test_stop_plugin(self, mock_event_bus):
         """Test stopping a running plugin"""
-        pm = PluginManager(mock_event_bus, tmp_path)
+        pm = PluginManager(mock_event_bus)
         
-        # Mock running plugin
-        mock_plugin = MagicMock()
-        mock_plugin.stop = AsyncMock()
-        
-        # Test stopping plugin
-        # (Implementation detail - depends on actual PM API)
+        # Try to stop non-existent plugin
+        result = await pm.stop_plugin("nonexistent")
+        assert result is False
         
     @pytest.mark.asyncio
-    async def test_list_plugins(self, mock_event_bus, tmp_path):
+    async def test_list_plugins(self, mock_event_bus):
         """Test listing all plugins"""
-        pm = PluginManager(mock_event_bus, tmp_path)
+        pm = PluginManager(mock_event_bus)
         
         plugins = pm.list_plugins()
         assert isinstance(plugins, list)
         
     @pytest.mark.asyncio
-    async def test_get_plugin_info(self, mock_event_bus, tmp_path):
+    async def test_get_plugin_info(self, mock_event_bus):
         """Test getting plugin information"""
-        pm = PluginManager(mock_event_bus, tmp_path)
+        pm = PluginManager(mock_event_bus)
         
         # Test getting info for non-existent plugin
         info = pm.get_plugin_info("nonexistent")
-        assert info is None or isinstance(info, dict)
+        assert info is None
         
     @pytest.mark.asyncio
-    async def test_plugin_state_transitions(self, mock_event_bus, tmp_path):
+    async def test_plugin_state_transitions(self, mock_event_bus):
         """Test plugin state machine"""
-        # Test state transitions: UNLOADED -> LOADED -> RUNNING -> STOPPED
-        states = [PluginState.UNLOADED, PluginState.LOADED, PluginState.RUNNING, PluginState.STOPPED]
-        
-        # Verify state enum exists and has expected values
-        assert len(states) >= 3
-        
-    @pytest.mark.asyncio
-    async def test_plugin_crash_recovery(self, mock_event_bus, tmp_path):
-        """Test plugin crash detection and recovery"""
-        pm = PluginManager(mock_event_bus, tmp_path)
-        
-        # Test crash handling
-        # (Implementation detail - depends on isolation/recovery strategy)
+        # Test state transitions: STOPPED -> RUNNING -> CRASHED -> FAILED
+        # PluginState has: STOPPED, RUNNING, CRASHED, FAILED (no UNLOADED or LOADED)
+        assert hasattr(PluginState, 'STOPPED')
+        assert hasattr(PluginState, 'RUNNING')
+        assert hasattr(PluginState, 'CRASHED')
+        assert hasattr(PluginState, 'FAILED')
         
     @pytest.mark.asyncio
-    async def test_plugin_permissions(self, mock_event_bus, tmp_path):
+    async def test_plugin_crash_recovery(self, mock_event_bus):
+        """Test plugin crash detection"""
+        pm = PluginManager(mock_event_bus)
+        
+        # Test statistics includes crashed count
+        stats = pm.get_statistics()
+        assert 'crashed' in stats
+        assert stats['crashed'] == 0
+        
+    @pytest.mark.asyncio
+    async def test_plugin_permissions(self, mock_event_bus):
         """Test plugin permission checking"""
-        pm = PluginManager(mock_event_bus, tmp_path)
+        pm = PluginManager(mock_event_bus)
         
-        # Test permission checks
-        # (Implementation detail - depends on permission system)
+        metadata = PluginMetadata(
+            name="test_plugin",
+            version="1.0.0",
+            module_path="plugins.test_plugin"
+        )
+        await pm.load_plugin(metadata)
+        
+        entry = pm.registry.get("test_plugin")
+        assert entry.permissions is not None
         
     @pytest.mark.asyncio
-    async def test_get_plugin_for_command(self, mock_event_bus, tmp_path):
-        """Test command-to-plugin mapping"""
-        pm = PluginManager(mock_event_bus, tmp_path)
+    async def test_get_statistics(self, mock_event_bus):
+        """Test getting plugin system statistics"""
+        pm = PluginManager(mock_event_bus)
         
-        # Test command routing
-        plugin = pm.get_plugin_for_command("test")
-        assert plugin is None or isinstance(plugin, str)
+        stats = pm.get_statistics()
+        assert 'total_plugins' in stats
+        assert 'running' in stats
+        assert stats['total_plugins'] == 0

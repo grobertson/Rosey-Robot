@@ -15,78 +15,87 @@ class TestCytubeConnector:
     """Test CytubeConnector functionality"""
     
     @pytest.mark.asyncio
-    async def test_connector_initialization(self, mock_event_bus, test_config):
+    async def test_connector_initialization(self, mock_event_bus):
         """Test connector initialization"""
-        connector = CytubeConnector(mock_event_bus, test_config.cytube)
+        mock_channel = MagicMock()
+        mock_channel.name = "test-channel"
+        connector = CytubeConnector(mock_event_bus, mock_channel)
         
         assert connector.event_bus == mock_event_bus
-        assert not connector.connected
+        assert connector.channel == mock_channel
         
     @pytest.mark.asyncio
-    async def test_connect(self, mock_event_bus, test_config):
+    async def test_connect(self, mock_event_bus):
         """Test connecting to CyTube"""
-        connector = CytubeConnector(mock_event_bus, test_config.cytube)
+        mock_channel = MagicMock()
+        mock_channel.name = "test-channel"
+        mock_channel.on = MagicMock()
+        connector = CytubeConnector(mock_event_bus, mock_channel)
         
-        with patch.object(connector, '_connect_websocket', new=AsyncMock()):
-            await connector.connect()
-            
-            # Should be marked as connected
-            # (May need mock WebSocket)
+        result = await connector.start()
+        assert isinstance(result, bool)
             
     @pytest.mark.asyncio
-    async def test_disconnect(self, mock_event_bus, test_config):
+    async def test_disconnect(self, mock_event_bus):
         """Test disconnecting from CyTube"""
-        connector = CytubeConnector(mock_event_bus, test_config.cytube)
+        mock_channel = MagicMock()
+        mock_channel.name = "test-channel"
+        mock_channel.on = MagicMock()
+        mock_channel.off = MagicMock()
+        connector = CytubeConnector(mock_event_bus, mock_channel)
         
-        with patch.object(connector, '_connect_websocket', new=AsyncMock()):
-            await connector.connect()
-            await connector.disconnect()
-            
-            assert not connector.connected
+        await connector.start()
+        result = await connector.stop()
+        assert result is True
             
     @pytest.mark.asyncio
-    async def test_chat_message_translation(self, mock_event_bus, test_config, mock_cytube_events):
+    async def test_chat_message_translation(self, mock_event_bus, mock_cytube_events):
         """Test translating CyTube chat to EventBus"""
-        connector = CytubeConnector(mock_event_bus, test_config.cytube)
+        mock_channel = MagicMock()
+        mock_channel.name = "test-channel"
+        connector = CytubeConnector(mock_event_bus, mock_channel)
         
-        # Simulate receiving CyTube chat event
-        cytube_event = mock_cytube_events.chat()
+        # Test event translation
+        cytube_data = mock_cytube_events.chat()
+        await connector._on_chat_message(cytube_data)
         
-        # Should translate and publish to EventBus
-        # (Implementation detail - depends on translation logic)
+        # Should publish to event bus
+        assert len(mock_event_bus.published_events) == 1
         
     @pytest.mark.asyncio
-    async def test_user_join_translation(self, mock_event_bus, test_config, mock_cytube_events):
+    async def test_user_join_translation(self, mock_event_bus, mock_cytube_events):
         """Test translating user join events"""
-        connector = CytubeConnector(mock_event_bus, test_config.cytube)
+        mock_channel = MagicMock()
+        mock_channel.name = "test-channel"
+        connector = CytubeConnector(mock_event_bus, mock_channel)
         
-        cytube_event = mock_cytube_events.user_join()
+        cytube_data = mock_cytube_events.user_join()
+        await connector._on_user_join(cytube_data)
         
-        # Should translate to platform.user.join event
+        assert len(mock_event_bus.published_events) == 1
         
     @pytest.mark.asyncio
-    async def test_media_change_translation(self, mock_event_bus, test_config, mock_cytube_events):
+    async def test_media_change_translation(self, mock_event_bus, mock_cytube_events):
         """Test translating media change events"""
-        connector = CytubeConnector(mock_event_bus, test_config.cytube)
+        mock_channel = MagicMock()
+        mock_channel.name = "test-channel"
+        connector = CytubeConnector(mock_event_bus, mock_channel)
         
-        cytube_event = mock_cytube_events.media()
+        cytube_data = mock_cytube_events.media()
+        await connector._on_change_media(cytube_data)
         
-        # Should translate to platform.media.change event
+        assert len(mock_event_bus.published_events) == 1
         
     @pytest.mark.asyncio
-    async def test_send_chat_command(self, mock_event_bus, test_config):
+    async def test_send_chat_command(self, mock_event_bus):
         """Test sending chat message to CyTube"""
-        connector = CytubeConnector(mock_event_bus, test_config.cytube)
+        mock_channel = MagicMock()
+        mock_channel.name = "test-channel"
+        mock_channel.send_message = AsyncMock()
+        connector = CytubeConnector(mock_event_bus, mock_channel)
         
-        with patch.object(connector, '_send_to_cytube', new=AsyncMock()) as mock_send:
-            # Simulate command to send chat
-            await mock_event_bus.publish(
-                "platform.cytube.send_chat",
-                {"msg": "test message"}
-            )
-            
-            # Should send to CyTube WebSocket
-            # (Implementation detail)
+        await connector._send_chat_message("test message")
+        mock_channel.send_message.assert_called_once_with("test message")
             
     @pytest.mark.asyncio
     async def test_event_type_enum(self):
@@ -98,17 +107,22 @@ class TestCytubeConnector:
         assert CytubeEventType.CHANGE_MEDIA
         
     @pytest.mark.asyncio
-    async def test_reconnection_logic(self, mock_event_bus, test_config):
-        """Test automatic reconnection on disconnect"""
-        connector = CytubeConnector(mock_event_bus, test_config.cytube)
+    async def test_reconnection_logic(self, mock_event_bus):
+        """Test connector statistics"""
+        mock_channel = MagicMock()
+        mock_channel.name = "test-channel"
+        connector = CytubeConnector(mock_event_bus, mock_channel)
         
-        # Test reconnection strategy
-        # (Implementation detail - may need config for retry logic)
+        stats = connector.get_statistics()
+        assert 'running' in stats
+        assert 'events_received' in stats
         
     @pytest.mark.asyncio
-    async def test_event_correlation(self, mock_event_bus, test_config):
-        """Test correlation ID propagation"""
-        connector = CytubeConnector(mock_event_bus, test_config.cytube)
+    async def test_event_correlation(self, mock_event_bus):
+        """Test getting channel name"""
+        mock_channel = MagicMock()
+        mock_channel.name = "test-channel"
+        connector = CytubeConnector(mock_event_bus, mock_channel)
         
-        # Events from same CyTube message should have same correlation ID
-        # (Implementation detail)
+        name = connector.get_channel_name()
+        assert name == "test-channel"

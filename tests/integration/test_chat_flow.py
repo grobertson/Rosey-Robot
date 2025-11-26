@@ -1,4 +1,4 @@
-"""
+""")
 Integration tests for chat command flow
 
 Tests full command flow: CyTube -> EventBus -> Router -> Plugin
@@ -6,6 +6,7 @@ Tests full command flow: CyTube -> EventBus -> Router -> Plugin
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+from core.event_bus import Event
 
 
 @pytest.mark.integration
@@ -17,13 +18,16 @@ class TestChatCommandFlow:
         """Test: User sends !roll -> dice plugin responds"""
         
         # 1. CyTube chat event arrives
-        chat_event = mock_cytube_events.chat(msg="!roll 2d6")
+        chat_data = mock_cytube_events.chat("!roll 2d6")
         
         # 2. Publish to EventBus
-        await mock_event_bus.publish(
-            "cytube.chat.message",
-            chat_event
+        event = Event(
+            subject="cytube.chat.message",
+            event_type="message",
+            source="test",
+            data=chat_data
         )
+        await mock_event_bus.publish(event)
         
         # 3. Verify event was published
         events = mock_event_bus.get_published("cytube.chat.message")
@@ -34,12 +38,15 @@ class TestChatCommandFlow:
     async def test_command_with_args(self, mock_event_bus, mock_cytube_events):
         """Test command parsing with multiple arguments"""
         
-        chat_event = mock_cytube_events.chat(msg="!countdown movie 2025-12-31 23:59")
+        chat_data = mock_cytube_events.chat("!countdown movie 2025-12-31 23:59")
         
-        await mock_event_bus.publish(
-            "cytube.chat.message",
-            chat_event
+        event = Event(
+            subject="cytube.chat.message",
+            event_type="message",
+            source="test",
+            data=chat_data
         )
+        await mock_event_bus.publish(event)
         
         # Command should be parsed correctly
         events = mock_event_bus.get_published("cytube.chat.message")
@@ -50,10 +57,13 @@ class TestChatCommandFlow:
         """Test: Plugin responds -> CyTube sends message"""
         
         # 1. Plugin publishes response
-        await mock_event_bus.publish(
-            "platform.cytube.send_chat",
-            {"msg": "🎲 Rolled 2d6: [3, 5] = 8"}
+        event = Event(
+            subject="platform.cytube.send_chat",
+            event_type="message",
+            source="plugin",
+            data={"msg": "🎲 Rolled 2d6: [3, 5] = 8"}
         )
+        await mock_event_bus.publish(event)
         
         # 2. Verify response was published
         responses = mock_event_bus.get_published("platform.cytube.send_chat")
@@ -65,14 +75,23 @@ class TestChatCommandFlow:
         """Test error response flow"""
         
         # 1. Invalid command
-        chat_event = mock_cytube_events.chat(msg="!roll invalid")
-        await mock_event_bus.publish("cytube.chat.message", chat_event)
+        chat_data = mock_cytube_events.chat("!roll invalid")
+        event = Event(
+            subject="cytube.chat.message",
+            event_type="message",
+            source="test",
+            data=chat_data
+        )
+        await mock_event_bus.publish(event)
         
         # 2. Plugin might send error response
-        await mock_event_bus.publish(
-            "platform.cytube.send_chat",
-            {"msg": "Error: Invalid dice notation"}
+        error_event = Event(
+            subject="platform.cytube.send_chat",
+            event_type="message",
+            source="plugin",
+            data={"msg": "Error: Invalid dice notation"}
         )
+        await mock_event_bus.publish(error_event)
         
         responses = mock_event_bus.get_published("platform.cytube.send_chat")
         assert len(responses) >= 1
@@ -88,8 +107,14 @@ class TestChatCommandFlow:
         ]
         
         for cmd in commands:
-            chat_event = mock_cytube_events.chat(msg=cmd)
-            await mock_event_bus.publish("cytube.chat.message", chat_event)
+            chat_data = mock_cytube_events.chat(cmd)
+            event = Event(
+                subject="cytube.chat.message",
+                event_type="message",
+                source="test",
+                data=chat_data
+            )
+            await mock_event_bus.publish(event)
         
         events = mock_event_bus.get_published("cytube.chat.message")
         assert len(events) == len(commands)
@@ -101,8 +126,14 @@ class TestChatCommandFlow:
         import asyncio
         
         async def send_command(user, msg):
-            event = mock_cytube_events.chat(username=user, msg=msg)
-            await mock_event_bus.publish("cytube.chat.message", event)
+            event_data = mock_cytube_events.chat(msg, user)
+            event = Event(
+                subject="cytube.chat.message",
+                event_type="message",
+                source="test",
+                data=event_data
+            )
+            await mock_event_bus.publish(event)
         
         # Simulate concurrent commands
         await asyncio.gather(
