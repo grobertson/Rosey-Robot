@@ -1851,6 +1851,10 @@ class DatabaseService:
                 return
 
             try:
+                # Ensure migrations table exists (initialize if needed)
+                async with self.db._get_session() as session:
+                    await self.migration_executor.ensure_migrations_table(session)
+                
                 # Get pending migrations
                 current_version = await self._get_current_version(plugin_name)
                 migrations = self.migration_manager.get_pending_migrations(
