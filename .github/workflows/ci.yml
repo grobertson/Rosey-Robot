@@ -134,6 +134,13 @@ jobs:
         env:
           NATS_URL: nats://localhost:4222
       
+      - name: Apply plugin migrations
+        run: |
+          # Apply quote-db plugin migrations before running plugin tests
+          python scripts/apply_plugin_migrations.py quote-db nats://localhost:4222
+        env:
+          NATS_URL: nats://localhost:4222
+      
       - name: Run plugin tests
         run: |
           cd plugins/quote-db
