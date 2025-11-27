@@ -1684,12 +1684,19 @@ class BotDatabase:
             # result = {"ids": [2, 3], "created": 2}
         """
         # Get schema
+        self.logger.info(f"TEMP: row_insert - plugin={plugin_name}, table={table_name}")
+        self.logger.info(f"TEMP: schema_registry id: {id(self.schema_registry)}")
+        self.logger.info(f"TEMP: cache keys: {list(self.schema_registry._cache.keys())}")
         schema = self.schema_registry.get_schema(plugin_name, table_name)
+        self.logger.info(f"TEMP: schema retrieved: {schema is not None}, value: {schema}")
+        self.logger.info(f"TEMP: About to check: if not schema (bool={not schema})")
         if not schema:
+            self.logger.error(f"TEMP: RAISING ValueError - schema is falsy!")
             raise ValueError(
                 f"Table '{table_name}' not registered for plugin '{plugin_name}'. "
                 f"Register schema first using schema_register."
             )
+        self.logger.info(f"TEMP: Schema check passed, continuing...")
 
         # Handle bulk vs single
         is_bulk = isinstance(data, list)
@@ -1717,28 +1724,60 @@ class BotDatabase:
         full_table_name = f"{plugin_name}_{table_name}"
         table = await self.get_table(full_table_name)
 
-        # Insert with transaction
-        async with self._get_session() as session:
-            if is_bulk:
-                # Bulk insert with RETURNING
-                stmt = insert(table).returning(table.c.id)
-                result = await session.execute(stmt, validated_rows)
-                ids = [row[0] for row in result.fetchall()]
+        # CRITICAL: In NATS handlers, async database operations get cancelled.
+        # Must use synchronous execution for actual insert.
+        return self._row_insert_sync(plugin_name, table_name, validated_rows, is_bulk, table)
 
-                return {
-                    "ids": ids,
-                    "created": len(ids)
-                }
-            else:
-                # Single insert
-                stmt = insert(table).values(**validated_rows[0]).returning(table.c.id)
-                result = await session.execute(stmt)
-                row_id = result.scalar()
-
-                return {
-                    "id": row_id,
-                    "created": True
-                }
+    def _row_insert_sync(
+        self,
+        plugin_name: str,
+        table_name: str,
+        validated_rows: List[Dict[str, Any]],
+        is_bulk: bool,
+        table: Table
+    ) -> Dict[str, Any]:
+        """Execute insert synchronously to avoid NATS handler cancellation."""
+        from sqlalchemy import create_engine, insert
+        from sqlalchemy.pool import StaticPool
+        
+        # Extract database URL and convert to sync
+        db_url = str(self.engine.url)
+        if db_url.startswith('sqlite+aiosqlite:'):
+            sync_url = db_url.replace('sqlite+aiosqlite:', 'sqlite:')
+        else:
+            sync_url = db_url
+        
+        # Create synchronous engine
+        sync_engine = create_engine(
+            sync_url,
+            connect_args={"check_same_thread": False} if 'sqlite' in sync_url else {},
+            poolclass=StaticPool if 'sqlite' in sync_url else None
+        )
+        
+        try:
+            with sync_engine.connect() as conn:
+                if is_bulk:
+                    # Bulk insert
+                    stmt = insert(table).returning(table.c.id)
+                    result = conn.execute(stmt, validated_rows)
+                    ids = [row[0] for row in result.fetchall()]
+                    conn.commit()
+                    return {
+                        "ids": ids,
+                        "created": len(ids)
+                    }
+                else:
+                    # Single insert
+                    stmt = insert(table).values(**validated_rows[0]).returning(table.c.id)
+                    result = conn.execute(stmt)
+                    row_id = result.scalar()
+                    conn.commit()
+                    return {
+                        "id": row_id,
+                        "created": True
+                    }
+        finally:
+            sync_engine.dispose()
 
     async def row_select(
         self,

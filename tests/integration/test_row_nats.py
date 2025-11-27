@@ -249,7 +249,11 @@ class TestRowInsertNATS:
         
         # Verify schema is in cache
         schema = db_service.db.schema_registry.get_schema("test", "items")
-        assert schema is not None, f"Schema not found in cache after registration. Cache: {db_service.db.schema_registry._cache}"
+        assert schema is not None, f"Schema not found in cache after registration. Cache: {db_service.db.schema_registry._cache.keys()}"
+        
+        # Small delay to ensure background task completes
+        import asyncio
+        await asyncio.sleep(0.1)
 
         # Insert row
         response = await nats_client.request(

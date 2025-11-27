@@ -221,14 +221,92 @@ class SchemaRegistry:
         # Update cache FIRST (cache-first pattern for NATS handlers)
         self._cache[key] = schema
         
-        # Create table
-        await self._create_table(plugin_name, table_name, schema)
+        # Create table synchronously (must complete before handler returns)
+        self._create_table_sync(plugin_name, table_name, schema)
 
         # Store in database (fire-and-forget to avoid cancellation)
         asyncio.create_task(self._store_schema_in_db(plugin_name, table_name, schema))
 
         self.logger.info(f"Registered schema: {plugin_name}.{table_name}")
         return True
+
+    def _create_table_sync(
+        self,
+        plugin_name: str,
+        table_name: str,
+        schema: dict
+    ) -> None:
+        """
+        Create database table from schema (synchronous version).
+        
+        Uses synchronous operations to avoid cancellation in NATS handlers.
+        """
+        full_table_name = f"{plugin_name}_{table_name}"
+
+        # Build column list
+        columns = [
+            Column('id', Integer, primary_key=True, autoincrement=True),
+        ]
+
+        # Map schema types to SQLAlchemy types
+        type_map = {
+            'string': String(255),
+            'text': Text,
+            'integer': Integer,
+            'float': Float,
+            'boolean': Boolean,
+            'datetime': DateTime(timezone=True),
+        }
+
+        for field in schema['fields']:
+            col_type = type_map[field['type']]
+            nullable = not field.get('required', False)
+
+            columns.append(
+                Column(field['name'], col_type, nullable=nullable)  # type: ignore[arg-type]
+            )
+
+        # Add timestamps
+        columns.append(
+            Column('created_at', DateTime(timezone=True), nullable=False, server_default='CURRENT_TIMESTAMP')  # type: ignore[arg-type]
+        )
+        columns.append(
+            Column('updated_at', DateTime(timezone=True), nullable=False, server_default='CURRENT_TIMESTAMP')  # type: ignore[arg-type]
+        )
+
+        # Create table synchronously using sync_engine
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import StaticPool
+        
+        # Extract database URL from async engine
+        db_url = str(self.db.engine.url)
+        # Convert async URL to sync URL
+        if db_url.startswith('sqlite+aiosqlite:'):
+            sync_url = db_url.replace('sqlite+aiosqlite:', 'sqlite:')
+        else:
+            # For other databases, this would need appropriate conversion
+            sync_url = db_url
+        
+        # Create synchronous engine with same database
+        sync_engine = create_engine(
+            sync_url,
+            connect_args={"check_same_thread": False} if 'sqlite' in sync_url else {},
+            poolclass=StaticPool if 'sqlite' in sync_url else None
+        )
+        
+        try:
+            metadata = MetaData()
+            table_obj = Table(full_table_name, metadata, *columns)
+            
+            # Create table in database
+            metadata.create_all(sync_engine, tables=[table_obj])
+            
+            # Cache the Table object to avoid needing async reflection later
+            self.db._table_cache[full_table_name] = table_obj
+            
+            self.logger.info(f"Created table: {full_table_name}")
+        finally:
+            sync_engine.dispose()
 
     async def _store_schema_in_db(
         self,
