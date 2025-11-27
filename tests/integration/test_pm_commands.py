@@ -11,6 +11,27 @@ Tests PM-based command flow with authentication and response:
 
 import pytest
 from unittest.mock import AsyncMock
+from dataclasses import dataclass
+from typing import Dict, Any
+
+
+@dataclass
+class MockEvent:
+    """Mock NATS Event for testing."""
+    subject: str
+    data: Dict[str, Any]
+
+    @classmethod
+    def create_pm_event(cls, username: str, message: str):
+        """Create a PM event with standard structure."""
+        return cls(
+            subject="rosey.platform.cytube.pm",
+            data={
+                'username': username,
+                'msg': message,
+                'time': 0
+            }
+        )
 
 
 pytestmark = pytest.mark.asyncio
@@ -25,10 +46,8 @@ async def test_pm_command_moderator_flow(integration_bot, integration_shell, int
     integration_bot.pm = AsyncMock()
 
     # Send PM command
-    await integration_shell.handle_pm_command('pm', {
-        'username': 'ModUser',
-        'msg': 'status'
-    })
+    event = MockEvent.create_pm_event('ModUser', 'status')
+    await integration_shell.handle_pm_command(event)
 
     # Verify response sent
     integration_bot.pm.assert_called()
@@ -52,10 +71,8 @@ async def test_pm_command_non_moderator_blocked(integration_bot, integration_she
     integration_bot.chat = AsyncMock()
 
     # Send PM command
-    await integration_shell.handle_pm_command('pm', {
-        'username': 'RegularUser',
-        'msg': 'say test'
-    })
+    event = MockEvent.create_pm_event('RegularUser', 'say test')
+    await integration_shell.handle_pm_command(event)
 
     # Verify no action taken
     integration_bot.pm.assert_not_called()
@@ -72,10 +89,8 @@ async def test_pm_command_triggers_bot_action(integration_bot, integration_shell
     integration_bot.chat = AsyncMock()
 
     # PM: "say Hello"
-    await integration_shell.handle_pm_command('pm', {
-        'username': 'ModUser',
-        'msg': 'say Hello everyone'
-    })
+    event = MockEvent.create_pm_event('ModUser', 'say Hello everyone')
+    await integration_shell.handle_pm_command(event)
 
     # Verify chat message sent
     integration_bot.chat.assert_called_once_with("Hello everyone")
@@ -93,10 +108,8 @@ async def test_pm_command_long_response_splits(integration_bot, integration_shel
     integration_bot.pm = AsyncMock()
 
     # Command with long response (help text)
-    await integration_shell.handle_pm_command('pm', {
-        'username': 'ModUser',
-        'msg': 'help'
-    })
+    event = MockEvent.create_pm_event('ModUser', 'help')
+    await integration_shell.handle_pm_command(event)
 
     # Should send multiple PM chunks (help text is >500 chars)
     assert integration_bot.pm.call_count >= 2
@@ -112,10 +125,8 @@ async def test_pm_command_error_sends_error_message(integration_bot, integration
     integration_bot.pause = AsyncMock(side_effect=Exception("No permission"))
 
     # Command that will error
-    await integration_shell.handle_pm_command('pm', {
-        'username': 'ModUser',
-        'msg': 'pause'
-    })
+    event = MockEvent.create_pm_event('ModUser', 'pause')
+    await integration_shell.handle_pm_command(event)
 
     # Should send error PM
     calls = [str(call) for call in integration_bot.pm.call_args_list]

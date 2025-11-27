@@ -153,9 +153,12 @@ class LLMHandlers:
         except Exception as e:
             self.logger.error("LLM error: %s", e, exc_info=True)
 
-    async def handle_pm(self, event, data):
+    async def handle_pm(self, event):
         """
         Handle private messages - stub for future implementation.
+
+        Args:
+            event: Event object from NATS with PM data
 
         Could be used for:
         - Private AI conversations
@@ -380,20 +383,29 @@ async def run_bot():
 
     # Register event handlers (using normalized event names)
     bot.on("message", log)  # Log public chat messages (normalized from chatMsg)
-    bot.on("pm", log)  # Log private messages
     bot.on("setCurrent", log_m)  # Log media changes
 
-    # Register PM command handler for moderators (if shell is enabled)
+    # Subscribe to NATS PM events for PM command handler (if shell is enabled)
     if shell.bot is not None:
-        bot.on("pm", shell.handle_pm_command)  # Handle mod commands via PM
-        print("[+] PM command shell enabled")
+        async def pm_command_wrapper(event):
+            """Wrapper to handle PM command events from NATS"""
+            await shell.handle_pm_command(event)
+        
+        await nats.subscribe('rosey.platform.cytube.pm', pm_command_wrapper)
+        chat_logger.info('PM from moderator via NATS: user=%s msg=%s', 'username', 'message')
+        print("[+] PM command shell enabled (via NATS)")
 
-    # Register LLM handlers if enabled
+    # Subscribe to NATS PM events for LLM handlers (if enabled)
     if llm_client and trigger_manager:
         llm_handlers = LLMHandlers(bot, llm_client, trigger_manager, llm_logger, conf.get('llm', {}))
         bot.on("chatMsg", llm_handlers.handle_chat_message)
-        bot.on("pm", llm_handlers.handle_pm)
         bot.on("addUser", llm_handlers.handle_user_join)
+        
+        async def pm_llm_wrapper(event):
+            """Wrapper to handle PM events for LLM"""
+            await llm_handlers.handle_pm(event)
+        
+        await nats.subscribe('rosey.platform.cytube.pm', pm_llm_wrapper)
 
     try:
         # Run Rosey (blocks until cancelled or error)

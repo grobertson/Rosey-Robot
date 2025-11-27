@@ -39,14 +39,16 @@ This needs to be:
 - Plugin structure and configuration
 - Migrate LLM client code
 - Provider abstraction layer
-- Basic LLMService interface
+- NATS service request/reply subjects for LLM operations
 - Chat command (`!chat <message>`)
 - Unit tests
 
 **Out of Scope (Sortie 5):**
 - Advanced providers (OpenAI, Anthropic)
-- Conversation memory/context
+- Conversation memory/context (beyond basic)
 - Streaming responses
+
+**Architecture Note**: LLM service exposed via NATS request/reply, NOT via `get_service()`. Other plugins send requests to `service.llm.*` subjects.
 
 ### 1.4 Dependencies
 
@@ -82,11 +84,28 @@ plugins/llm/
 
 ### 2.2 NATS Subjects
 
+**Command Subjects (for user commands):**
+
 | Subject | Direction | Purpose |
 |---------|-----------|---------|
 | `rosey.command.chat` | Subscribe | Handle `!chat` command |
 | `rosey.command.llm.reset` | Subscribe | Reset conversation |
-| `llm.request` | Subscribe | Internal LLM request |
+
+**Service Request/Reply Subjects (for other plugins):**
+
+| Subject | Type | Purpose | Request Schema | Response Schema |
+|---------|------|---------|----------------|-----------------|
+| `service.llm.chat` | Request/Reply | Send chat message | `{message, user?, channel?, system_prompt?, model?, temperature?}` | `{success, content?, error?, model?}` |
+| `service.llm.complete` | Request/Reply | Raw completion request | `{messages[], model?, temperature?, max_tokens?}` | `{success, content?, error?, model?, usage?}` |
+| `service.llm.reset_context` | Request/Reply | Reset channel context | `{channel}` | `{success}` |
+| `service.llm.is_available` | Request/Reply | Check availability | `{}` | `{success, available}` |
+| `service.llm.get_models` | Request/Reply | Get available models | `{}` | `{success, models[]}` |
+
+**Event Subjects (notifications):**
+
+| Subject | Direction | Purpose |
+|---------|-----------|---------|
+| `llm.request` | Publish | Internal LLM request event |
 | `llm.response` | Publish | LLM response event |
 | `llm.error` | Publish | LLM error event |
 
@@ -400,16 +419,20 @@ Have fun with responses while being helpful."""
         return ["default", "concise", "technical", "creative"]
 ```
 
-### 2.6 LLM Service
+### 2.6 Service Request Handlers
+
+Instead of a Python `LLMService` class for other plugins, implement NATS request/reply handlers.
+
+**Internal Helper Class (plugin-only):**
 
 ```python
-# plugins/llm/service.py
+# plugins/llm/chat_manager.py
 
 from typing import Optional, List
 from dataclasses import dataclass
 from .providers.base import (
     LLMProvider, 
-    CompletionRequest, 
+    CompletionRequest,
     CompletionResponse,
     Message,
     ProviderError,
@@ -426,17 +449,12 @@ class ChatResult:
     model: Optional[str] = None
 
 
-class LLMService:
+class ChatManager:
     """
-    Service interface for LLM interactions.
+    Internal helper for managing LLM interactions.
     
-    Exposed to other plugins for programmatic access.
-    
-    Example usage:
-        llm = await get_service("llm")
-        result = await llm.chat("Hello!", user="player1")
-        if result.success:
-            print(result.content)
+    NOT exposed to other plugins - used internally by plugin only.
+    Other plugins use NATS request/reply to service.llm.* subjects.
     """
     
     def __init__(
@@ -453,20 +471,6 @@ class LLMService:
         # More advanced memory in Sortie 5
         self._contexts: dict[str, List[Message]] = {}
     
-    @property
-    def provider_name(self) -> str:
-        """Get current provider name."""
-        return self._provider.name
-    
-    @property
-    def available_models(self) -> List[str]:
-        """Get available models."""
-        return self._provider.available_models
-    
-    async def is_available(self) -> bool:
-        """Check if LLM service is available."""
-        return await self._provider.is_available()
-    
     async def chat(
         self,
         message: str,
@@ -476,21 +480,7 @@ class LLMService:
         model: Optional[str] = None,
         temperature: float = 0.7,
     ) -> ChatResult:
-        """
-        Send a chat message and get a response.
-        
-        Args:
-            message: User's message
-            user: Username (for context)
-            channel: Channel (for context isolation)
-            system_prompt: Override system prompt
-            model: Override model
-            temperature: Response temperature
-            
-        Returns:
-            ChatResult with response or error
-        """
-        # Build messages
+        """Send a chat message and get a response."""
         messages = []
         
         # System prompt
@@ -543,19 +533,22 @@ class LLMService:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
     ) -> CompletionResponse:
-        """
-        Raw completion request (for advanced use).
-        
-        Use this for custom message flows.
-        """
+        """Raw completion request."""
         request = CompletionRequest(
             messages=messages,
             model=model,
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        
         return await self._provider.complete(request)
+    
+    async def is_available(self) -> bool:
+        """Check if provider is available."""
+        return await self._provider.is_available()
+    
+    def get_models(self) -> List[str]:
+        """Get available models."""
+        return self._provider.available_models
     
     def reset_context(self, channel: str) -> None:
         """Reset conversation context for a channel."""
@@ -577,16 +570,19 @@ class LLMService:
             self._contexts[channel] = self._contexts[channel][-self._max_context:]
 ```
 
-### 2.7 Plugin Implementation
+### 2.7 Plugin with NATS Service Handlers
 
 ```python
 # plugins/llm/plugin.py
 
 import json
+import asyncio
 from typing import Optional
+from datetime import datetime
 from lib.plugin.base import PluginBase
-from .service import LLMService
+from .chat_manager import ChatManager
 from .providers.ollama import OllamaProvider
+from .providers.base import Message
 from .prompts import SystemPrompts
 
 
@@ -598,6 +594,13 @@ class LLMPlugin(PluginBase):
         !chat <message> - Chat with the AI
         !chat reset - Reset conversation
         !chat persona <name> - Change AI persona
+    
+    Service API (via NATS request/reply):
+        service.llm.chat - Send chat message
+        service.llm.complete - Raw completion
+        service.llm.reset_context - Reset channel context
+        service.llm.is_available - Check availability
+        service.llm.get_models - Get model list
     """
     
     NAME = "llm"
@@ -609,13 +612,13 @@ class LLMPlugin(PluginBase):
         
         # Will be initialized in setup
         self.provider: Optional[OllamaProvider] = None
-        self.service: Optional[LLMService] = None
+        self.chat_manager: Optional[ChatManager] = None
         
         # Per-channel personas
         self._personas: dict[str, str] = {}
     
     async def setup(self) -> None:
-        """Initialize LLM provider and service."""
+        """Initialize LLM provider and chat manager."""
         # Initialize provider
         self.provider = OllamaProvider(
             base_url=self.config.get("ollama_url", "http://localhost:11434"),
@@ -629,27 +632,29 @@ class LLMPlugin(PluginBase):
         else:
             self.logger.info(f"LLM provider ready: {self.provider.available_models}")
         
-        # Initialize service
-        self.service = LLMService(
+        # Initialize chat manager (internal helper)
+        self.chat_manager = ChatManager(
             provider=self.provider,
             default_prompt=self.config.get("default_persona", "default"),
             max_context_messages=self.config.get("max_context", 10),
         )
         
-        # Register service
-        await self.register_service("llm", self.service)
+        # Subscribe to NATS service request/reply subjects
+        await self.subscribe("service.llm.chat", self._service_chat)
+        await self.subscribe("service.llm.complete", self._service_complete)
+        await self.subscribe("service.llm.reset_context", self._service_reset_context)
+        await self.subscribe("service.llm.is_available", self._service_is_available)
+        await self.subscribe("service.llm.get_models", self._service_get_models)
         
         # Subscribe to commands
         await self.subscribe("rosey.command.chat", self._handle_chat)
-        await self.subscribe("llm.request", self._handle_internal_request)
         
-        self.logger.info(f"{self.NAME} plugin loaded")
+        self.logger.info(f"{self.NAME} plugin loaded with service handlers")
     
     async def teardown(self) -> None:
         """Cleanup."""
         if self.provider:
             await self.provider.close()
-        await self.unregister_service("llm")
         self.logger.info(f"{self.NAME} plugin unloaded")
     
     async def _handle_chat(self, msg) -> None:
@@ -664,7 +669,7 @@ class LLMPlugin(PluginBase):
         
         # Handle subcommands
         if message.lower() == "reset":
-            self.service.reset_context(channel)
+            self.chat_manager.reset_context(channel)
             return await self._reply(msg, "🔄 Conversation reset!")
         
         if message.lower().startswith("persona "):
@@ -677,18 +682,15 @@ class LLMPlugin(PluginBase):
                 return await self._reply_error(msg, f"Unknown persona. Available: {available}")
         
         # Check availability
-        if not await self.service.is_available():
+        if not await self.chat_manager.is_available():
             return await self._reply_error(msg, "AI is currently unavailable")
         
         # Get persona for channel
         persona = self._personas.get(channel, "default")
         system_prompt = SystemPrompts.get(persona)
         
-        # Send typing indicator (optional, via CyTube)
-        # await self._send_typing(channel)
-        
         # Get response
-        result = await self.service.chat(
+        result = await self.chat_manager.chat(
             message=message,
             user=user,
             channel=channel,

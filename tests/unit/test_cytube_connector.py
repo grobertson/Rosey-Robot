@@ -150,7 +150,7 @@ class TestCytubeConnector:
         assert connector.is_running() is True
         # Should register handlers and subscribe to EventBus
         assert mock_channel.on.call_count >= 8  # Multiple event types
-        assert mock_event_bus.subscribe.call_count == 2
+        assert mock_event_bus.subscribe.call_count == 3  # MESSAGE, PM, playlist commands
 
     async def test_start_already_running(self, mock_event_bus, mock_channel):
         """Test starting already running connector"""
@@ -172,7 +172,7 @@ class TestCytubeConnector:
         assert connector.is_running() is False
         # Should unregister handlers and unsubscribe
         assert mock_channel.off.call_count >= 8
-        assert mock_event_bus.unsubscribe.call_count == 2
+        assert mock_event_bus.unsubscribe.call_count == 3  # MESSAGE, PM, playlist commands
 
     async def test_handle_chat_message(self, mock_event_bus, mock_channel):
         """Test handling incoming chat message"""
@@ -193,6 +193,30 @@ class TestCytubeConnector:
         event = mock_event_bus.publish.call_args[0][0]
         assert event.data["username"] == "testuser"
         assert event.data["message"] == "Hello world!"
+
+    async def test_handle_pm(self, mock_event_bus, mock_channel):
+        """Test handling incoming private message"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        pm_data = {
+            "username": "moduser",
+            "msg": "status",
+            "time": 123456789,
+            "to": "botname"
+        }
+
+        await connector._on_pm(pm_data)
+
+        # Should publish to EventBus with PM subject
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.pm"
+        assert event.event_type == "message"
+        assert event.metadata["cytube_event"] == "pm"
+        assert event.data["username"] == "moduser"
+        assert event.data["message"] == "status"
+        assert event.data["recipient"] == "botname"
 
     async def test_handle_user_join(self, mock_event_bus, mock_channel):
         """Test handling user join event"""
@@ -304,6 +328,98 @@ class TestCytubeConnector:
         event = mock_event_bus.publish.call_args[0][0]
         assert event.data["item"]["title"] == "Queued Video"
 
+    async def test_handle_delete(self, mock_event_bus, mock_channel):
+        """Test handling video delete event"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        delete_data = {"uid": "video-abc123"}
+
+        await connector._on_delete(delete_data)
+
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.delete"
+        assert event.data["uid"] == "video-abc123"
+        assert connector._events_received == 1
+
+    async def test_handle_delete_missing_uid(self, mock_event_bus, mock_channel):
+        """Test handling delete event with missing uid"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        delete_data = {}
+
+        await connector._on_delete(delete_data)
+
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.data["uid"] == ""
+
+    async def test_handle_move_video(self, mock_event_bus, mock_channel):
+        """Test handling video move event"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        move_data = {
+            "from": 3,
+            "to": 1,
+            "uid": "video-xyz789"
+        }
+
+        await connector._on_move_video(move_data)
+
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.moveVideo"
+        assert event.data["from"] == 3
+        assert event.data["to"] == 1
+        assert event.data["uid"] == "video-xyz789"
+        assert connector._events_received == 1
+
+    async def test_handle_move_video_without_uid(self, mock_event_bus, mock_channel):
+        """Test handling move event without uid (older CyTube versions)"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        move_data = {"from": 5, "to": 2}
+
+        await connector._on_move_video(move_data)
+
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.data["from"] == 5
+        assert event.data["to"] == 2
+        assert event.data["uid"] == ""
+
+    async def test_handle_delete_error(self, mock_event_bus, mock_channel):
+        """Test error handling in delete handler"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        # Make publish raise an exception
+        mock_event_bus.publish.side_effect = Exception("Publish failed")
+
+        delete_data = {"uid": "test-uid"}
+
+        await connector._on_delete(delete_data)
+
+        assert connector._errors == 1
+
+    async def test_handle_move_video_error(self, mock_event_bus, mock_channel):
+        """Test error handling in moveVideo handler"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        # Make publish raise an exception
+        mock_event_bus.publish.side_effect = Exception("Publish failed")
+
+        move_data = {"from": 1, "to": 3, "uid": "test-uid"}
+
+        await connector._on_move_video(move_data)
+
+        assert connector._errors == 1
+
     async def test_send_chat_message(self, mock_event_bus, mock_channel):
         """Test sending chat message to Cytube"""
         connector = CytubeConnector(mock_event_bus, mock_channel)
@@ -409,6 +525,320 @@ class TestCytubeConnector:
 
         # Should not send empty message
         mock_channel.send_message.assert_not_called()
+
+    # Playlist Command Tests
+
+    async def test_playlist_add_success(self, mock_event_bus, mock_channel):
+        """Test adding video to playlist"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        mock_channel.queue = AsyncMock()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.add",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.add",
+                "params": {
+                    "type": "yt",
+                    "id": "dQw4w9WgXcQ"
+                }
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        mock_channel.queue.assert_called_once_with("yt", "dQw4w9WgXcQ")
+        assert connector._events_sent == 1
+
+    async def test_playlist_add_missing_params(self, mock_event_bus, mock_channel):
+        """Test add command with missing parameters"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.add",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.add",
+                "params": {
+                    "type": "yt"
+                    # Missing "id"
+                }
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        # Should publish error
+        assert mock_event_bus.publish.call_count >= 1
+        error_event = None
+        for call in mock_event_bus.publish.call_args_list:
+            evt = call[0][0]
+            if evt.event_type == "error":
+                error_event = evt
+                break
+
+        assert error_event is not None
+        assert "type and id" in error_event.data["error"]
+
+    async def test_playlist_remove_success(self, mock_event_bus, mock_channel):
+        """Test removing video from playlist"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        mock_channel.delete = AsyncMock()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.remove",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.remove",
+                "params": {"uid": "abc123"}
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        mock_channel.delete.assert_called_once_with("abc123")
+        assert connector._events_sent == 1
+
+    async def test_playlist_remove_missing_uid(self, mock_event_bus, mock_channel):
+        """Test remove command with missing uid"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.remove",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.remove",
+                "params": {}
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        # Should publish error
+        error_event = None
+        for call in mock_event_bus.publish.call_args_list:
+            evt = call[0][0]
+            if evt.event_type == "error":
+                error_event = evt
+                break
+
+        assert error_event is not None
+        assert "uid" in error_event.data["error"]
+
+    async def test_playlist_move_success(self, mock_event_bus, mock_channel):
+        """Test moving video in playlist"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        mock_channel.moveMedia = AsyncMock()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.move",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.move",
+                "params": {
+                    "uid": "video1",
+                    "after": "video2"
+                }
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        mock_channel.moveMedia.assert_called_once_with("video1", "video2")
+        assert connector._events_sent == 1
+
+    async def test_playlist_move_missing_params(self, mock_event_bus, mock_channel):
+        """Test move command with missing parameters"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.move",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.move",
+                "params": {"uid": "video1"}
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        error_event = None
+        for call in mock_event_bus.publish.call_args_list:
+            evt = call[0][0]
+            if evt.event_type == "error":
+                error_event = evt
+                break
+
+        assert error_event is not None
+        assert "uid and after" in error_event.data["error"]
+
+    async def test_playlist_jump_success(self, mock_event_bus, mock_channel):
+        """Test jumping to video in playlist"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        mock_channel.jumpTo = AsyncMock()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.jump",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.jump",
+                "params": {"uid": "abc123"}
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        mock_channel.jumpTo.assert_called_once_with("abc123")
+        assert connector._events_sent == 1
+
+    async def test_playlist_clear_success(self, mock_event_bus, mock_channel):
+        """Test clearing playlist"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        mock_channel.clearPlaylist = AsyncMock()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.clear",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.clear",
+                "params": {}
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        mock_channel.clearPlaylist.assert_called_once()
+        assert connector._events_sent == 1
+
+    async def test_playlist_shuffle_success(self, mock_event_bus, mock_channel):
+        """Test shuffling playlist"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        mock_channel.shufflePlaylist = AsyncMock()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.shuffle",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.shuffle",
+                "params": {}
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        mock_channel.shufflePlaylist.assert_called_once()
+        assert connector._events_sent == 1
+
+    async def test_playlist_command_not_connected(self, mock_event_bus, mock_channel):
+        """Test playlist command when not connected"""
+        connector = CytubeConnector(mock_event_bus, None)  # No channel
+        await connector.start()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.add",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.add",
+                "params": {"type": "yt", "id": "test"}
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        # Should publish error
+        error_event = None
+        for call in mock_event_bus.publish.call_args_list:
+            evt = call[0][0]
+            if evt.event_type == "error":
+                error_event = evt
+                break
+
+        assert error_event is not None
+        assert "Not connected" in error_event.data["error"]
+
+    async def test_playlist_command_unknown(self, mock_event_bus, mock_channel):
+        """Test unknown playlist command"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.invalid",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.invalid",
+                "params": {}
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        # Should publish error
+        error_event = None
+        for call in mock_event_bus.publish.call_args_list:
+            evt = call[0][0]
+            if evt.event_type == "error":
+                error_event = evt
+                break
+
+        assert error_event is not None
+        assert "Unknown" in error_event.data["error"]
+
+    async def test_playlist_command_channel_error(self, mock_event_bus, mock_channel):
+        """Test playlist command when channel method raises error"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        mock_channel.queue = AsyncMock(side_effect=Exception("Channel error"))
+
+        event = Event(
+            subject="rosey.platform.cytube.send.playlist.add",
+            event_type="command",
+            source="shell",
+            data={
+                "command": "playlist.add",
+                "params": {"type": "yt", "id": "test"}
+            }
+        )
+
+        await connector._handle_playlist_command(event)
+
+        # Should publish error
+        error_event = None
+        for call in mock_event_bus.publish.call_args_list:
+            evt = call[0][0]
+            if evt.event_type == "error":
+                error_event = evt
+                break
+
+        assert error_event is not None
+        assert "Channel error" in error_event.data["error"]
+        assert connector._errors == 1
 
 
 # ============================================================================

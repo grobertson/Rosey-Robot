@@ -47,22 +47,32 @@ Enhance the LLM plugin with sophisticated context management:
 
 ### 2.1 Extended File Structure
 
-```
+```text
 plugins/llm/
 ├── ...existing files...
 ├── memory.py             # Memory management
-├── storage.py            # Database operations
+├── storage.py            # Database operations (NATS-based)
 ├── summarizer.py         # Conversation summarization
+├── migrations/           # Database migrations (Sprint 15 pattern)
+│   ├── 001_create_messages.sql
+│   ├── 002_create_summaries.sql
+│   ├── 003_create_user_context.sql
+│   └── 004_create_memories.sql
 └── tests/
     ├── ...existing tests...
     ├── test_memory.py       # Memory tests
-    ├── test_storage.py      # Storage tests
+    ├── test_storage.py      # Storage tests (mock NATS)
     └── test_summarizer.py   # Summarizer tests
 ```
 
-### 2.2 Database Schema
+### 2.2 Database Schema (via Migrations)
+
+**Note:** Schema is managed via migrations (Sprint 15 pattern). Plugin code does NOT contain CREATE TABLE statements.
+
+**Migration File: `migrations/llm/001_create_messages.sql`**
 
 ```sql
+-- UP
 -- Conversation messages
 CREATE TABLE llm_messages (
     id INTEGER PRIMARY KEY,
@@ -81,6 +91,17 @@ CREATE INDEX idx_llm_messages_channel ON llm_messages(channel);
 CREATE INDEX idx_llm_messages_user ON llm_messages(user_id);
 CREATE INDEX idx_llm_messages_time ON llm_messages(channel, created_at DESC);
 
+-- DOWN
+DROP INDEX IF EXISTS idx_llm_messages_time;
+DROP INDEX IF EXISTS idx_llm_messages_user;
+DROP INDEX IF EXISTS idx_llm_messages_channel;
+DROP TABLE IF EXISTS llm_messages;
+```
+
+**Migration File: `migrations/llm/002_create_summaries.sql`**
+
+```sql
+-- UP
 -- Conversation summaries
 CREATE TABLE llm_summaries (
     id INTEGER PRIMARY KEY,
@@ -94,6 +115,15 @@ CREATE TABLE llm_summaries (
 
 CREATE INDEX idx_llm_summaries_channel ON llm_summaries(channel);
 
+-- DOWN
+DROP INDEX IF EXISTS idx_llm_summaries_channel;
+DROP TABLE IF EXISTS llm_summaries;
+```
+
+**Migration File: `migrations/llm/003_create_user_context.sql`**
+
+```sql
+-- UP
 -- User preferences and context
 CREATE TABLE llm_user_context (
     id INTEGER PRIMARY KEY,
@@ -106,6 +136,15 @@ CREATE TABLE llm_user_context (
 
 CREATE INDEX idx_llm_user_context_user ON llm_user_context(user_id);
 
+-- DOWN
+DROP INDEX IF EXISTS idx_llm_user_context_user;
+DROP TABLE IF EXISTS llm_user_context;
+```
+
+**Migration File: `migrations/llm/004_create_memories.sql`**
+
+```sql
+-- UP
 -- Memory entries (facts to remember)
 CREATE TABLE llm_memories (
     id INTEGER PRIMARY KEY,
@@ -120,6 +159,11 @@ CREATE TABLE llm_memories (
 
 CREATE INDEX idx_llm_memories_channel ON llm_memories(channel);
 CREATE INDEX idx_llm_memories_user ON llm_memories(user_id);
+
+-- DOWN
+DROP INDEX IF EXISTS idx_llm_memories_user;
+DROP INDEX IF EXISTS idx_llm_memories_channel;
+DROP TABLE IF EXISTS llm_memories;
 ```
 
 ### 2.3 Memory Management
@@ -484,25 +528,37 @@ Facts (JSON):"""
         return []
 ```
 
-### 2.5 Storage Class
+### 2.5 Storage Class (NATS-based)
 
 ```python
 # plugins/llm/storage.py
 
 from typing import List, Optional
 from datetime import datetime
-from common.database_service import DatabaseService
+import json
 
 
 class LLMStorage:
-    """Database operations for LLM memory."""
+    """
+    Database operations for LLM memory using NATS storage API.
     
-    def __init__(self, db_service: DatabaseService):
-        self.db = db_service
+    Architecture:
+    - Uses row operations for CRUD (Sprint 13)
+    - Uses advanced operators for atomic updates (Sprint 14)
+    - Schema via migrations (Sprint 15)
+    - All operations via NATS (Sprint 19)
+    """
     
-    async def create_tables(self) -> None:
-        """Create LLM tables if not exists."""
-        ...
+    def __init__(self, nats_client, plugin_name: str = "llm"):
+        """
+        Initialize storage adapter.
+        
+        Args:
+            nats_client: NATS client instance for storage API
+            plugin_name: Plugin identifier for NATS subjects
+        """
+        self.nc = nats_client
+        self.plugin = plugin_name
     
     # === Messages ===
     
@@ -514,14 +570,22 @@ class LLMStorage:
         content: str,
     ) -> int:
         """Save a message and return its ID."""
-        result = await self.db.execute(
-            """
-            INSERT INTO llm_messages (channel, user_id, role, content)
-            VALUES (?, ?, ?, ?)
-            """,
-            (channel, user_id, role, content)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.insert",
+            json.dumps({
+                "table": "messages",
+                "values": {
+                    "channel": channel,
+                    "user_id": user_id,
+                    "role": role,
+                    "content": content,
+                    "token_count": len(content.split()),  # Rough estimate
+                }
+            }).encode()
         )
-        return result.lastrowid
+        
+        result = json.loads(response.data.decode())
+        return result.get("inserted_id")
     
     async def get_recent_messages(
         self, 
@@ -529,64 +593,96 @@ class LLMStorage:
         limit: int
     ) -> List[dict]:
         """Get recent messages for a channel."""
-        rows = await self.db.fetch_all(
-            """
-            SELECT * FROM llm_messages
-            WHERE channel = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (channel, limit)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.select",
+            json.dumps({
+                "table": "messages",
+                "filter": {"channel": channel},
+                "order": {"created_at": -1},  # DESC
+                "limit": limit
+            }).encode()
         )
+        
+        result = json.loads(response.data.decode())
+        rows = result.get("rows", [])
         # Reverse to get chronological order
-        return list(reversed([dict(r) for r in rows]))
+        return list(reversed(rows))
     
     async def get_message_count(self, channel: str) -> int:
         """Get total message count for channel."""
-        row = await self.db.fetch_one(
-            "SELECT COUNT(*) as cnt FROM llm_messages WHERE channel = ?",
-            (channel,)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.select",
+            json.dumps({
+                "table": "messages",
+                "filter": {"channel": channel},
+                "count_only": True
+            }).encode()
         )
-        return row["cnt"]
+        
+        result = json.loads(response.data.decode())
+        return result.get("count", 0)
     
     async def get_unsummarized_count(self, channel: str) -> int:
         """Get count of unsummarized messages."""
-        row = await self.db.fetch_one(
-            """
-            SELECT COUNT(*) as cnt FROM llm_messages 
-            WHERE channel = ? AND summarized = FALSE
-            """,
-            (channel,)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.select",
+            json.dumps({
+                "table": "messages",
+                "filter": {
+                    "channel": channel,
+                    "summarized": False
+                },
+                "count_only": True
+            }).encode()
         )
-        return row["cnt"]
+        
+        result = json.loads(response.data.decode())
+        return result.get("count", 0)
     
     async def get_unsummarized_messages(self, channel: str) -> List[dict]:
         """Get all unsummarized messages."""
-        rows = await self.db.fetch_all(
-            """
-            SELECT * FROM llm_messages
-            WHERE channel = ? AND summarized = FALSE
-            ORDER BY created_at
-            """,
-            (channel,)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.select",
+            json.dumps({
+                "table": "messages",
+                "filter": {
+                    "channel": channel,
+                    "summarized": False
+                },
+                "order": {"created_at": 1}  # ASC
+            }).encode()
         )
-        return [dict(r) for r in rows]
+        
+        result = json.loads(response.data.decode())
+        return result.get("rows", [])
     
     async def mark_summarized(self, message_ids: List[int]) -> None:
-        """Mark messages as summarized."""
-        placeholders = ",".join("?" * len(message_ids))
-        await self.db.execute(
-            f"UPDATE llm_messages SET summarized = TRUE WHERE id IN ({placeholders})",
-            message_ids
+        """
+        Mark messages as summarized using MongoDB-style operators.
+        
+        SECURITY: Uses $in operator instead of string interpolation.
+        """
+        await self.nc.request(
+            f"db.row.{self.plugin}.update",
+            json.dumps({
+                "table": "messages",
+                "filter": {"id": {"$in": message_ids}},
+                "update": {"$set": {"summarized": True}}
+            }).encode()
         )
     
     async def clear_messages(self, channel: str) -> int:
         """Clear all messages for a channel."""
-        result = await self.db.execute(
-            "DELETE FROM llm_messages WHERE channel = ?",
-            (channel,)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.delete",
+            json.dumps({
+                "table": "messages",
+                "filter": {"channel": channel}
+            }).encode()
         )
-        return result.rowcount
+        
+        result = json.loads(response.data.decode())
+        return result.get("deleted_count", 0)
     
     # === Summaries ===
     
@@ -599,13 +695,18 @@ class LLMStorage:
         message_count: int,
     ) -> None:
         """Save a conversation summary."""
-        await self.db.execute(
-            """
-            INSERT INTO llm_summaries 
-            (channel, summary, messages_from, messages_to, message_count)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (channel, summary, messages_from, messages_to, message_count)
+        await self.nc.request(
+            f"db.row.{self.plugin}.insert",
+            json.dumps({
+                "table": "summaries",
+                "values": {
+                    "channel": channel,
+                    "summary": summary,
+                    "messages_from": messages_from,
+                    "messages_to": messages_to,
+                    "message_count": message_count
+                }
+            }).encode()
         )
     
     async def get_summaries(
@@ -614,16 +715,18 @@ class LLMStorage:
         limit: int = 3
     ) -> List[dict]:
         """Get recent summaries for a channel."""
-        rows = await self.db.fetch_all(
-            """
-            SELECT * FROM llm_summaries
-            WHERE channel = ?
-            ORDER BY created_at DESC
-            LIMIT ?
-            """,
-            (channel, limit)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.select",
+            json.dumps({
+                "table": "summaries",
+                "filter": {"channel": channel},
+                "order": {"created_at": -1},
+                "limit": limit
+            }).encode()
         )
-        return [dict(r) for r in rows]
+        
+        result = json.loads(response.data.decode())
+        return result.get("rows", [])
     
     # === Memories ===
     
@@ -636,14 +739,22 @@ class LLMStorage:
         importance: int,
     ) -> int:
         """Save a memory."""
-        result = await self.db.execute(
-            """
-            INSERT INTO llm_memories (channel, user_id, category, content, importance)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (channel, user_id, category, content, importance)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.insert",
+            json.dumps({
+                "table": "memories",
+                "values": {
+                    "channel": channel,
+                    "user_id": user_id,
+                    "category": category,
+                    "content": content,
+                    "importance": importance
+                }
+            }).encode()
         )
-        return result.lastrowid
+        
+        result = json.loads(response.data.decode())
+        return result.get("inserted_id")
     
     async def search_memories(
         self,
@@ -653,54 +764,74 @@ class LLMStorage:
         limit: int = 5,
     ) -> List[dict]:
         """
-        Search memories by keyword.
+        Search memories by keyword using MongoDB-style operators.
         
-        Simple LIKE matching. Could be enhanced with FTS or embeddings.
+        Uses $regex for pattern matching (safe, no SQL injection).
         """
-        # Split query into keywords
-        keywords = query.lower().split()
+        keywords = query.lower().split()[:5]  # Limit keywords
         
         if not keywords:
             return []
         
-        # Build LIKE conditions
-        conditions = ["channel = ?"]
-        params = [channel]
+        # Build filter with $and and $regex operators
+        filter_conditions = [
+            {"channel": channel}
+        ]
         
-        for keyword in keywords[:5]:  # Limit keywords
-            conditions.append("LOWER(content) LIKE ?")
-            params.append(f"%{keyword}%")
+        # Add regex conditions for each keyword
+        for keyword in keywords:
+            filter_conditions.append({
+                "content": {"$regex": keyword, "$options": "i"}  # case-insensitive
+            })
         
+        # Optionally filter by user
         if user_id:
-            conditions.append("(user_id IS NULL OR user_id = ?)")
-            params.append(user_id)
+            filter_conditions.append({
+                "$or": [
+                    {"user_id": None},
+                    {"user_id": user_id}
+                ]
+            })
         
-        params.append(limit)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.select",
+            json.dumps({
+                "table": "memories",
+                "filter": {"$and": filter_conditions},
+                "order": [
+                    {"importance": -1},
+                    {"last_accessed": -1}
+                ],
+                "limit": limit
+            }).encode()
+        )
         
-        query_sql = f"""
-            SELECT * FROM llm_memories
-            WHERE {" AND ".join(conditions)}
-            ORDER BY importance DESC, last_accessed DESC NULLS LAST
-            LIMIT ?
-        """
-        
-        rows = await self.db.fetch_all(query_sql, params)
-        return [dict(r) for r in rows]
+        result = json.loads(response.data.decode())
+        return result.get("rows", [])
     
     async def touch_memory(self, memory_id: int) -> None:
-        """Update last_accessed for a memory."""
-        await self.db.execute(
-            "UPDATE llm_memories SET last_accessed = CURRENT_TIMESTAMP WHERE id = ?",
-            (memory_id,)
+        """Update last_accessed for a memory using atomic operator."""
+        await self.nc.request(
+            f"db.row.{self.plugin}.update",
+            json.dumps({
+                "table": "memories",
+                "filter": {"id": memory_id},
+                "update": {"$set": {"last_accessed": datetime.now().isoformat()}}
+            }).encode()
         )
     
     async def delete_memory(self, memory_id: int) -> bool:
         """Delete a memory."""
-        result = await self.db.execute(
-            "DELETE FROM llm_memories WHERE id = ?",
-            (memory_id,)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.delete",
+            json.dumps({
+                "table": "memories",
+                "filter": {"id": memory_id}
+            }).encode()
         )
-        return result.rowcount > 0
+        
+        result = json.loads(response.data.decode())
+        return result.get("deleted_count", 0) > 0
     
     async def get_user_memories(
         self, 
@@ -708,16 +839,18 @@ class LLMStorage:
         limit: int = 10
     ) -> List[dict]:
         """Get memories associated with a user."""
-        rows = await self.db.fetch_all(
-            """
-            SELECT * FROM llm_memories
-            WHERE user_id = ?
-            ORDER BY importance DESC
-            LIMIT ?
-            """,
-            (user_id, limit)
+        response = await self.nc.request(
+            f"db.row.{self.plugin}.select",
+            json.dumps({
+                "table": "memories",
+                "filter": {"user_id": user_id},
+                "order": {"importance": -1},
+                "limit": limit
+            }).encode()
         )
-        return [dict(r) for r in rows]
+        
+        result = json.loads(response.data.decode())
+        return result.get("rows", [])
 ```
 
 ### 2.6 Extended Plugin
@@ -732,10 +865,12 @@ class LLMPlugin(PluginBase):
         """Setup with memory."""
         # ... existing setup ...
         
-        # Initialize storage
-        db_service = await get_database_service()
-        self.storage = LLMStorage(db_service)
-        await self.storage.create_tables()
+        # Initialize storage with NATS client
+        self.storage = LLMStorage(
+            nats_client=self._nc,
+            plugin_name="llm"
+        )
+        # Note: Migrations handle table creation, no create_tables() needed
         
         # Initialize memory
         self.memory = ConversationMemory(
@@ -865,40 +1000,84 @@ class LLMPlugin(PluginBase):
 
 ## 3. Implementation Steps
 
-### Step 1: Database Schema (30 minutes)
+### Step 1: Create Migration Files (45 minutes)
 
-1. Create Alembic migration
-2. Run migration
-3. Verify tables
+1. **Create 4 migration files** in `migrations/llm/`:
+   - `001_create_messages.sql`
+   - `002_create_summaries.sql`
+   - `003_create_user_context.sql`
+   - `004_create_memories.sql`
 
-### Step 2: Implement Storage (1.5 hours)
+2. **Each file must have UP and DOWN**:
+   ```sql
+   -- UP
+   CREATE TABLE ...;
+   CREATE INDEX ...;
+   
+   -- DOWN
+   DROP INDEX IF EXISTS ...;
+   DROP TABLE IF EXISTS ...;
+   ```
 
-1. Implement LLMStorage class
-2. Implement message operations
-3. Implement summary operations
-4. Implement memory operations
-5. Write tests
+3. **Verify migrations**:
+   ```bash
+   # Check migration syntax
+   cat migrations/llm/*.sql
+   
+   # Test UP
+   python -c "from common.database_service import DatabaseService; import asyncio; asyncio.run(DatabaseService().run_migrations('llm'))"
+   
+   # Test DOWN
+   python -c "from common.database_service import DatabaseService; import asyncio; asyncio.run(DatabaseService().rollback_migration('llm', '004'))"
+   ```
+
+### Step 2: Implement Storage Adapter (2 hours)
+
+1. **Create `plugins/llm/storage.py`**:
+   - Implement `LLMStorage` class with NATS client
+   - Use `db.row.llm.insert/select/update/delete` for all operations
+   - Use `{"$in": [...]}` for mark_summarized (NO string interpolation)
+   - Use `{"$regex": "...", "$options": "i"}` for search_memories
+   - Use `{"$set": {...}}` for atomic updates
+
+2. **Key patterns**:
+   ```python
+   # Insert
+   response = await self.nc.request("db.row.llm.insert", 
+       json.dumps({"table": "messages", "values": {...}}))
+   
+   # Select with filter
+   response = await self.nc.request("db.row.llm.select",
+       json.dumps({"table": "messages", "filter": {"channel": channel}}))
+   
+   # Update with operators
+   await self.nc.request("db.row.llm.update",
+       json.dumps({"filter": {"id": {"$in": ids}}, "update": {"$set": {"summarized": True}}}))
+   ```
+
+3. **Write unit tests** that mock NATS (not database)
 
 ### Step 3: Implement Memory Manager (2 hours)
 
-1. Implement ConversationMemory
-2. Implement context building
-3. Implement memory recall
+1. Implement `ConversationMemory` class
+2. Implement context building with storage API
+3. Implement memory recall using storage methods
 4. Implement cache management
-5. Write tests
+5. Write tests with NATS mocking
 
 ### Step 4: Implement Summarizer (1 hour)
 
-1. Implement ConversationSummarizer
+1. Implement `ConversationSummarizer`
 2. Implement memory extraction
 3. Write tests
 
 ### Step 5: Extend Plugin (1.5 hours)
 
-1. Wire up memory to chat handler
-2. Add memory commands
-3. Integrate summarization
-4. Test full flow
+1. Update `plugin.py` setup() to use NATS-based storage
+2. Wire up memory to chat handler
+3. Add memory commands (remember, recall, forget)
+4. Integrate summarization
+5. Test full flow
 
 ### Step 6: Testing (1 hour)
 
@@ -906,6 +1085,7 @@ class LLMPlugin(PluginBase):
 2. Test memory recall
 3. Test summarization
 4. Test persistence
+5. Verify 85%+ coverage
 
 ---
 
@@ -922,10 +1102,25 @@ class LLMPlugin(PluginBase):
 
 ### 4.2 Technical
 
+- [ ] Migration files created for all 4 tables (with UP/DOWN)
+- [ ] All database operations use storage API (no direct SQL in plugin code)
+- [ ] Tests use NATS mocking (no database mocking)
+- [ ] Schema DDL removed from plugin code
 - [ ] Memory persisted to database
 - [ ] Context window managed properly
 - [ ] Summarization works
 - [ ] Test coverage > 85%
+
+### 4.3 Storage Architecture Compliance
+
+- [ ] ✅ Uses migrations for schema (Sprint 15 pattern)
+- [ ] ✅ Uses row operations for CRUD (Sprint 13 pattern)
+- [ ] ✅ Uses advanced operators for updates (Sprint 14 pattern)
+- [ ] ✅ No direct SQL queries in plugin code
+- [ ] ✅ No CREATE TABLE statements in plugin code
+- [ ] ✅ No SQL string interpolation (uses $in, $regex operators)
+- [ ] ✅ Storage adapter uses NATS requests only
+- [ ] ✅ SQL injection vulnerability fixed (line 579 → $in operator)
 
 ---
 

@@ -807,6 +807,227 @@ async def emergency_rollback(plugin_name: str, to_version: int):
 
 ---
 
+## Playlist Command Subjects
+
+### Overview
+
+Playlist commands enable event-driven manipulation of the CyTube playlist via NATS EventBus. Commands are fire-and-forget; subscribers receive confirmation/errors via separate event subjects.
+
+**Pattern**: Fire-and-forget command pattern (no direct replies)  
+**Error Handling**: Errors published to `rosey.platform.cytube.error` with correlation IDs
+
+### Command-to-API Mapping
+
+| NATS Subject | CyTube API Method | Parameters | Purpose |
+|--------------|-------------------|------------|---------|
+| `rosey.platform.cytube.send.playlist.add` | `channel.queue(type, id)` | type, id | Add video to playlist |
+| `rosey.platform.cytube.send.playlist.remove` | `channel.delete(uid)` | uid | Remove video by UID |
+| `rosey.platform.cytube.send.playlist.move` | `channel.moveMedia(uid, after)` | uid, after | Reorder video position |
+| `rosey.platform.cytube.send.playlist.jump` | `channel.jumpTo(uid)` | uid | Jump to video |
+| `rosey.platform.cytube.send.playlist.clear` | `channel.clearPlaylist()` | _(none)_ | Remove all videos |
+| `rosey.platform.cytube.send.playlist.shuffle` | `channel.shufflePlaylist()` | _(none)_ | Randomize order |
+
+### Subject: rosey.platform.cytube.send.playlist.add
+
+**Pattern**: Fire-and-forget command  
+**Purpose**: Add video to end of playlist
+
+**Request Schema**:
+```json
+{
+  "event_type": "command",
+  "data": {
+    "command": "playlist.add",
+    "params": {
+      "type": "yt",
+      "id": "dQw4w9WgXcQ",
+      "position": "end",
+      "temporary": true
+    },
+    "correlation_id": "uuid-v4-string"
+  }
+}
+```
+
+**Parameters**:
+- `type` (required): Media type (yt, dm, vi, sc, etc.)
+- `id` (required): Video ID for the specified type
+- `position` (optional): Position hint (default: "end")
+- `temporary` (optional): Temporary flag (default: true)
+
+### Subject: rosey.platform.cytube.send.playlist.remove
+
+**Pattern**: Fire-and-forget command  
+**Purpose**: Remove video from playlist by UID
+
+**Request Schema**:
+```json
+{
+  "event_type": "command",
+  "data": {
+    "command": "playlist.remove",
+    "params": {
+      "uid": "12345"
+    },
+    "correlation_id": "uuid-v4-string"
+  }
+}
+```
+
+**Parameters**:
+- `uid` (required): Unique identifier of video to remove
+
+### Subject: rosey.platform.cytube.send.playlist.move
+
+**Pattern**: Fire-and-forget command  
+**Purpose**: Move video to new position in playlist
+
+**Request Schema**:
+```json
+{
+  "event_type": "command",
+  "data": {
+    "command": "playlist.move",
+    "params": {
+      "uid": "12345",
+      "after": "67890"
+    },
+    "correlation_id": "uuid-v4-string"
+  }
+}
+```
+
+**Parameters**:
+- `uid` (required): UID of video to move
+- `after` (required): UID of video to place after, or "prepend" for beginning
+
+**Note**: CyTube uses "after" positioning, not absolute indices:
+- To move to position 1: `after="prepend"`
+- To move after position N: `after=uid_of_item_at_position_N`
+
+### Subject: rosey.platform.cytube.send.playlist.jump
+
+**Pattern**: Fire-and-forget command  
+**Purpose**: Jump to specific video, immediately starting playback
+
+**Request Schema**:
+```json
+{
+  "event_type": "command",
+  "data": {
+    "command": "playlist.jump",
+    "params": {
+      "uid": "12345"
+    },
+    "correlation_id": "uuid-v4-string"
+  }
+}
+```
+
+**Parameters**:
+- `uid` (required): UID of video to jump to
+
+### Subject: rosey.platform.cytube.send.playlist.clear
+
+**Pattern**: Fire-and-forget command  
+**Purpose**: Remove all videos from playlist (cannot be undone)
+
+**Request Schema**:
+```json
+{
+  "event_type": "command",
+  "data": {
+    "command": "playlist.clear",
+    "params": {},
+    "correlation_id": "uuid-v4-string"
+  }
+}
+```
+
+**Parameters**: None
+
+### Subject: rosey.platform.cytube.send.playlist.shuffle
+
+**Pattern**: Fire-and-forget command  
+**Purpose**: Randomly reorder all videos in playlist
+
+**Request Schema**:
+```json
+{
+  "event_type": "command",
+  "data": {
+    "command": "playlist.shuffle",
+    "params": {},
+    "correlation_id": "uuid-v4-string"
+  }
+}
+```
+
+**Parameters**: None
+
+### Subject: rosey.platform.cytube.error
+
+**Pattern**: Publish  
+**Purpose**: Error notification for failed playlist commands
+
+**Event Schema**:
+```json
+{
+  "event_type": "error",
+  "data": {
+    "command": "playlist.add",
+    "error": "Missing required parameter: type",
+    "original_subject": "rosey.platform.cytube.send.playlist.add",
+    "correlation_id": "uuid-v4-string"
+  }
+}
+```
+
+**Fields**:
+- `command`: Original command name that failed
+- `error`: Human-readable error message
+- `original_subject`: Subject of the failed command
+- `correlation_id`: Matches correlation_id from original request
+
+### Subject: rosey.platform.cytube.delete
+
+**Pattern**: Publish  
+**Purpose**: Notification when video deleted from playlist via CyTube UI/API
+
+**Event Schema**:
+```json
+{
+  "event_type": "delete",
+  "data": {
+    "uid": "12345"
+  }
+}
+```
+
+### Subject: rosey.platform.cytube.move_video
+
+**Pattern**: Publish  
+**Purpose**: Notification when video moved in playlist via CyTube UI/API
+
+**Event Schema**:
+```json
+{
+  "event_type": "move_video",
+  "data": {
+    "from": 5,
+    "to": 2,
+    "uid": "12345"
+  }
+}
+```
+
+**Fields**:
+- `from`: Original position (0-indexed)
+- `to`: New position (0-indexed)
+- `uid`: Unique identifier of moved video
+
+---
+
 ## Related Documentation
 
 - **[Plugin Migration Guide](guides/PLUGIN_MIGRATIONS.md)** - Complete guide for plugin developers
@@ -816,6 +1037,6 @@ async def emergency_rollback(plugin_name: str, to_version: int):
 
 ---
 
-**Version**: 1.0  
-**Sprint**: 15 - Schema Migrations  
-**Last Updated**: November 24, 2025
+**Version**: 2.0  
+**Sprint**: 19 - Playlist NATS Commands  
+**Last Updated**: November 27, 2025

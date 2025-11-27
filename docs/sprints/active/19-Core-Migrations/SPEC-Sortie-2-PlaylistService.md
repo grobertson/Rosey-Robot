@@ -13,28 +13,42 @@
 
 ### 1.1 Purpose
 
-Implement the PlaylistService that other plugins can consume:
+Implement the playlist service that other plugins can consume via NATS:
 
-- Service interface for programmatic access
+- NATS request/reply subjects for programmatic access
 - CyTube connector integration
 - Metadata fetching (titles, durations)
 - Skip voting system
 - Comprehensive event emission
 
+**Architecture Note**: This sortie implements the NATS-based service pattern. Other plugins interact with playlist functionality by sending NATS requests to `service.playlist.*` subjects and receiving responses. NO Python object sharing or `get_service()` calls.
+
 ### 1.2 Scope
 
 **In Scope:**
-- `PlaylistService` class with full API
-- Service registration for other plugins
+- NATS service request/reply subjects for playlist operations
+- Service request handlers in playlist plugin
 - Metadata fetching via YouTube/Vimeo APIs
 - Skip voting system
 - CyTube state synchronization
 - Real-time event streaming
+- Complete request/response schemas
 
 **Out of Scope (Sortie 3):**
 - Database persistence
 - Play history
 - User quotas
+
+**Architecture Pattern:**
+Other plugins communicate with playlist via NATS request/reply:
+```python
+# Consumer sends request
+response = await nats_client.request(
+    "service.playlist.add_item",
+    json.dumps({"channel": "lobby", "url": "...", "user": "Alice"})
+)
+result = json.loads(response.data)
+```
 
 ### 1.3 Dependencies
 
@@ -67,327 +81,479 @@ plugins/playlist/
 
 ### 2.2 New NATS Subjects
 
+**Service Request/Reply Subjects (for other plugins):**
+
+| Subject | Type | Purpose | Request Schema | Response Schema |
+|---------|------|---------|----------------|-----------------|
+| `service.playlist.add_item` | Request/Reply | Add item to queue | `{channel, url, user}` | `{success, item?, position?, error?}` |
+| `service.playlist.remove_item` | Request/Reply | Remove item from queue | `{channel, item_id, user, is_admin}` | `{success, item?, error?}` |
+| `service.playlist.get_queue` | Request/Reply | Get all queue items | `{channel}` | `{success, items[], error?}` |
+| `service.playlist.get_current` | Request/Reply | Get current playing item | `{channel}` | `{success, item?, error?}` |
+| `service.playlist.get_stats` | Request/Reply | Get queue statistics | `{channel}` | `{success, stats{}, error?}` |
+| `service.playlist.vote_skip` | Request/Reply | Vote to skip current | `{channel, user}` | `{success, votes, needed, passed, error?}` |
+| `service.playlist.skip` | Request/Reply | Direct skip (admin) | `{channel, user}` | `{success, next_item?, error?}` |
+| `service.playlist.shuffle` | Request/Reply | Shuffle queue | `{channel}` | `{success, count, error?}` |
+| `service.playlist.clear` | Request/Reply | Clear queue | `{channel, user}` | `{success, count, error?}` |
+
+**Event Subjects (notifications):**
+
 | Subject | Direction | Purpose |
 |---------|-----------|---------|
 | `playlist.metadata.fetched` | Publish | Event when metadata retrieved |
 | `playlist.skip.vote` | Publish | Event when skip vote cast |
 | `playlist.skip.passed` | Publish | Event when skip vote passes |
+| `playlist.shuffled` | Publish | Event when queue shuffled |
+
+**CyTube Sync Subjects:**
+
+| Subject | Direction | Purpose |
+|---------|-----------|---------|
 | `playlist.sync.cytube` | Subscribe | Sync request from CyTube |
 | `cytube.playlist.update` | Publish | Push update to CyTube |
 
-### 2.3 PlaylistService Design
+### 2.3 Service Request Handlers
+
+Instead of a Python `PlaylistService` class, the plugin implements NATS request/reply handlers for each service operation.
 
 ```python
-# plugins/playlist/service.py
+# plugins/playlist/plugin.py (extensions for Sortie 2)
 
-from typing import List, Optional, Callable, Any
-from dataclasses import dataclass
-from datetime import datetime
-
-from .models import PlaylistItem, MediaType
-from .queue import PlaylistQueue, QueueStats
-from .metadata import MetadataFetcher
-from .voting import SkipVoteManager
-
-
-@dataclass
-class AddResult:
-    """Result of adding an item."""
-    success: bool
-    item: Optional[PlaylistItem] = None
-    position: Optional[int] = None
-    error: Optional[str] = None
-
-
-@dataclass
-class PlaybackState:
-    """Current playback state."""
-    current: Optional[PlaylistItem]
-    position_seconds: int  # Position in current item
-    is_playing: bool
-    queue_length: int
-
-
-class PlaylistService:
+class PlaylistPlugin(PluginBase):
     """
-    Service interface for playlist management.
+    Playlist plugin with NATS service request handlers.
     
-    Exposed to other plugins for programmatic access.
-    
-    Example usage from another plugin:
-        playlist = await get_service("playlist")
-        result = await playlist.add_item(channel, url, user)
-        if result.success:
-            print(f"Added at position {result.position}")
+    Other plugins interact via NATS request/reply, not Python imports.
     """
     
-    def __init__(
-        self,
-        queues: dict[str, PlaylistQueue],
-        metadata_fetcher: 'MetadataFetcher',
-        vote_manager: 'SkipVoteManager',
-        event_callback: Callable[[str, dict], Any],
-    ):
-        self._queues = queues
-        self._metadata = metadata_fetcher
-        self._votes = vote_manager
-        self._emit_event = event_callback
-        
-        # Subscribers for real-time updates
-        self._subscribers: dict[str, List[Callable]] = {}
-    
-    # === Queue Operations ===
-    
-    async def add_item(
-        self, 
-        channel: str, 
-        url: str, 
-        user: str,
-        fetch_metadata: bool = True,
-    ) -> AddResult:
-        """
-        Add an item to the playlist.
-        
-        Args:
-            channel: Channel to add to
-            url: Media URL
-            user: User adding the item
-            fetch_metadata: Whether to fetch title/duration
-            
-        Returns:
-            AddResult with success status and item details
-        """
-        from .models import MediaParser
-        
-        # Parse URL
-        try:
-            media_type, media_id = MediaParser.parse(url)
-        except ValueError as e:
-            return AddResult(success=False, error=str(e))
-        
-        # Create item
-        item = PlaylistItem(
-            id="",
-            media_type=media_type,
-            media_id=media_id,
-            title=f"Loading...",
-            duration=0,
-            added_by=user,
+    async def setup(self) -> None:
+        """Extended setup with service request handlers."""
+        # Initialize metadata fetcher
+        self.metadata_fetcher = MetadataFetcher(
+            youtube_api_key=self.config.get("youtube_api_key")
         )
         
-        # Add to queue
-        queue = self._get_queue(channel)
-        if not queue.add(item):
-            return AddResult(success=False, error="Queue is full")
+        # Initialize vote manager
+        self.vote_manager = SkipVoteManager(
+            threshold=self.config.get("skip_threshold", 0.5),
+            min_votes=self.config.get("min_skip_votes", 2),
+        )
         
-        position = queue.length
+        # Register service request/reply handlers
+        await self.subscribe("service.playlist.add_item", self._service_add_item)
+        await self.subscribe("service.playlist.remove_item", self._service_remove_item)
+        await self.subscribe("service.playlist.get_queue", self._service_get_queue)
+        await self.subscribe("service.playlist.get_current", self._service_get_current)
+        await self.subscribe("service.playlist.get_stats", self._service_get_stats)
+        await self.subscribe("service.playlist.vote_skip", self._service_vote_skip)
+        await self.subscribe("service.playlist.skip", self._service_skip)
+        await self.subscribe("service.playlist.shuffle", self._service_shuffle)
+        await self.subscribe("service.playlist.clear", self._service_clear)
         
-        # Fetch metadata asynchronously
-        if fetch_metadata:
+        # ... existing command subscriptions from Sortie 1 ...
+        
+        self.logger.info(f"{self.NAME} plugin loaded with service handlers")
+    
+    # === Service Request Handlers (NATS request/reply) ===
+    
+    async def _service_add_item(self, msg) -> None:
+        """
+        Service handler: Add item to playlist.
+        
+        Request: {channel, url, user}
+        Response: {success, item?, position?, error?}
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data["channel"]
+            url = data["url"]
+            user = data["user"]
+            
+            # Parse URL
+            try:
+                media_type, media_id = MediaParser.parse(url)
+            except ValueError as e:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": f"Invalid URL: {str(e)}"
+                }).encode())
+                return
+            
+            # Create item
+            item = PlaylistItem(
+                id="",
+                media_type=media_type,
+                media_id=media_id,
+                title=f"Loading...",
+                duration=0,
+                added_by=user,
+            )
+            
+            # Add to queue
+            queue = self._get_queue(channel)
+            if not queue.add(item):
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": "Queue is full"
+                }).encode())
+                return
+            
+            position = queue.length
+            
+            # Start metadata fetch (async, non-blocking)
             asyncio.create_task(
                 self._fetch_and_update_metadata(channel, item)
             )
-        
-        # Emit event
-        await self._emit_event("playlist.item.added", {
-            "channel": channel,
-            "item": item.to_dict(),
-            "position": position,
-        })
-        
-        return AddResult(success=True, item=item, position=position)
-    
-    async def remove_item(
-        self, 
-        channel: str, 
-        item_id: str, 
-        user: str,
-        is_admin: bool = False,
-    ) -> Optional[PlaylistItem]:
-        """
-        Remove an item from the playlist.
-        
-        Args:
-            channel: Channel
-            item_id: Item ID to remove
-            user: User requesting removal
-            is_admin: Whether user is admin
             
-        Returns:
-            Removed item, or None if not found/not allowed
-        """
-        queue = self._get_queue(channel)
-        
-        # Find item first
-        item = None
-        for i in queue.items:
-            if i.id == item_id:
-                item = i
-                break
-        
-        if not item:
-            return None
-        
-        # Check permission
-        if item.added_by != user and not is_admin:
-            return None
-        
-        removed = queue.remove(item_id)
-        
-        if removed:
-            await self._emit_event("playlist.item.removed", {
+            # Emit event
+            await self.publish("playlist.item.added", {
+                "event": "playlist.item.added",
                 "channel": channel,
-                "item": removed.to_dict(),
-                "reason": "removed",
-                "by": user,
+                "item": item.to_dict(),
+                "position": position,
+                "timestamp": datetime.utcnow().isoformat(),
             })
-        
-        return removed
+            
+            # Reply with success
+            await msg.respond(json.dumps({
+                "success": True,
+                "item": item.to_dict(),
+                "position": position,
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Service add_item error: {e}")
+            await msg.respond(json.dumps({
+                "success": False,
+                "error": f"Internal error: {str(e)}"
+            }).encode())
     
-    def get_queue(self, channel: str) -> List[PlaylistItem]:
-        """Get all items in a channel's queue."""
-        return self._get_queue(channel).items
-    
-    def get_current(self, channel: str) -> Optional[PlaylistItem]:
-        """Get currently playing item."""
-        return self._get_queue(channel).current
-    
-    def get_stats(self, channel: str) -> QueueStats:
-        """Get queue statistics."""
-        return self._get_queue(channel).get_stats()
-    
-    def get_playback_state(self, channel: str) -> PlaybackState:
-        """Get current playback state."""
-        queue = self._get_queue(channel)
-        return PlaybackState(
-            current=queue.current,
-            position_seconds=0,  # Would need CyTube integration
-            is_playing=queue.current is not None,
-            queue_length=queue.length,
-        )
-    
-    # === Playback Control ===
-    
-    async def skip(self, channel: str, user: str) -> Optional[PlaylistItem]:
+    async def _service_remove_item(self, msg) -> None:
         """
-        Skip current item (direct skip, no voting).
+        Service handler: Remove item from playlist.
         
-        Returns:
-            Next item, or None if queue empty
+        Request: {channel, item_id, user, is_admin}
+        Response: {success, item?, error?}
         """
-        queue = self._get_queue(channel)
-        skipped = queue.current
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data["channel"]
+            item_id = data["item_id"]
+            user = data["user"]
+            is_admin = data.get("is_admin", False)
+            
+            queue = self._get_queue(channel)
+            
+            # Find item first
+            item = None
+            for i in queue.items:
+                if i.id == item_id:
+                    item = i
+                    break
+            
+            if not item:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": "Item not found"
+                }).encode())
+                return
+            
+            # Check permission
+            if item.added_by != user and not is_admin:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": "Permission denied"
+                }).encode())
+                return
+            
+            removed = queue.remove(item_id)
+            
+            if removed:
+                await self.publish("playlist.item.removed", {
+                    "event": "playlist.item.removed",
+                    "channel": channel,
+                    "item": removed.to_dict(),
+                    "reason": "removed",
+                    "by": user,
+                    "timestamp": datetime.utcnow().isoformat(),
+                })
+            
+            await msg.respond(json.dumps({
+                "success": True,
+                "item": removed.to_dict() if removed else None,
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Service remove_item error: {e}")
+            await msg.respond(json.dumps({
+                "success": False,
+                "error": str(e)
+            }).encode())
+    
+    async def _service_get_queue(self, msg) -> None:
+        """
+        Service handler: Get queue items.
         
-        if not skipped:
-            return None
+        Request: {channel}
+        Response: {success, items[], error?}
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data["channel"]
+            
+            queue = self._get_queue(channel)
+            items = [item.to_dict() for item in queue.items]
+            
+            await msg.respond(json.dumps({
+                "success": True,
+                "items": items,
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Service get_queue error: {e}")
+            await msg.respond(json.dumps({
+                "success": False,
+                "error": str(e)
+            }).encode())
+    
+    async def _service_get_current(self, msg) -> None:
+        """
+        Service handler: Get current playing item.
         
-        next_item = queue.advance()
+        Request: {channel}
+        Response: {success, item?, error?}
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data["channel"]
+            
+            queue = self._get_queue(channel)
+            current = queue.current
+            
+            await msg.respond(json.dumps({
+                "success": True,
+                "item": current.to_dict() if current else None,
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Service get_current error: {e}")
+            await msg.respond(json.dumps({
+                "success": False,
+                "error": str(e)
+            }).encode())
+    
+    async def _service_get_stats(self, msg) -> None:
+        """
+        Service handler: Get queue statistics.
         
-        await self._emit_event("playlist.item.removed", {
-            "channel": channel,
-            "item": skipped.to_dict(),
-            "reason": "skipped",
-            "by": user,
-        })
+        Request: {channel}
+        Response: {success, stats{}, error?}
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data["channel"]
+            
+            queue = self._get_queue(channel)
+            stats = queue.get_stats()
+            
+            await msg.respond(json.dumps({
+                "success": True,
+                "stats": {
+                    "total_items": stats.total_items,
+                    "total_duration": stats.total_duration,
+                    "unique_users": stats.unique_users,
+                }
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Service get_stats error: {e}")
+            await msg.respond(json.dumps({
+                "success": False,
+                "error": str(e)
+            }).encode())
+    
+    async def _service_vote_skip(self, msg) -> None:
+        """
+        Service handler: Vote to skip current item.
         
-        if next_item:
-            await self._emit_event("playlist.item.playing", {
+        Request: {channel, user}
+        Response: {success, votes, needed, passed, error?}
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data["channel"]
+            user = data["user"]
+            
+            queue = self._get_queue(channel)
+            
+            if not queue.current:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": "Nothing playing"
+                }).encode())
+                return
+            
+            result = self.vote_manager.vote(channel, user)
+            
+            await self.publish("playlist.skip.vote", {
+                "event": "playlist.skip.vote",
                 "channel": channel,
-                "item": next_item.to_dict(),
-            })
-        
-        return next_item
-    
-    async def vote_skip(self, channel: str, user: str) -> dict:
-        """
-        Cast a skip vote.
-        
-        Returns:
-            Vote status with current/needed counts
-        """
-        queue = self._get_queue(channel)
-        
-        if not queue.current:
-            return {"success": False, "error": "Nothing playing"}
-        
-        result = self._votes.vote(channel, user)
-        
-        await self._emit_event("playlist.skip.vote", {
-            "channel": channel,
-            "user": user,
-            "votes": result["votes"],
-            "needed": result["needed"],
-        })
-        
-        if result["passed"]:
-            await self.skip(channel, "vote")
-            await self._emit_event("playlist.skip.passed", {
-                "channel": channel,
+                "user": user,
                 "votes": result["votes"],
+                "needed": result["needed"],
+                "timestamp": datetime.utcnow().isoformat(),
             })
-        
-        return result
+            
+            if result["passed"]:
+                # Skip to next
+                skipped = queue.current
+                next_item = queue.advance()
+                
+                await self.publish("playlist.skip.passed", {
+                    "event": "playlist.skip.passed",
+                    "channel": channel,
+                    "votes": result["votes"],
+                    "skipped_item": skipped.to_dict(),
+                    "next_item": next_item.to_dict() if next_item else None,
+                    "timestamp": datetime.utcnow().isoformat(),
+                })
+            
+            await msg.respond(json.dumps({
+                "success": True,
+                "votes": result["votes"],
+                "needed": result["needed"],
+                "passed": result["passed"],
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Service vote_skip error: {e}")
+            await msg.respond(json.dumps({
+                "success": False,
+                "error": str(e)
+            }).encode())
     
-    async def shuffle(self, channel: str) -> int:
+    async def _service_skip(self, msg) -> None:
         """
-        Shuffle the queue.
+        Service handler: Direct skip (admin action).
         
-        Returns:
-            Number of items shuffled
+        Request: {channel, user}
+        Response: {success, next_item?, error?}
         """
-        queue = self._get_queue(channel)
-        count = queue.length
-        queue.shuffle()
-        
-        await self._emit_event("playlist.shuffled", {
-            "channel": channel,
-            "count": count,
-        })
-        
-        return count
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data["channel"]
+            user = data["user"]
+            
+            queue = self._get_queue(channel)
+            skipped = queue.current
+            
+            if not skipped:
+                await msg.respond(json.dumps({
+                    "success": False,
+                    "error": "Nothing playing"
+                }).encode())
+                return
+            
+            next_item = queue.advance()
+            
+            await self.publish("playlist.item.removed", {
+                "event": "playlist.item.removed",
+                "channel": channel,
+                "item": skipped.to_dict(),
+                "reason": "skipped",
+                "by": user,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+            
+            if next_item:
+                await self.publish("playlist.item.playing", {
+                    "event": "playlist.item.playing",
+                    "channel": channel,
+                    "item": next_item.to_dict(),
+                    "timestamp": datetime.utcnow().isoformat(),
+                })
+            
+            await msg.respond(json.dumps({
+                "success": True,
+                "next_item": next_item.to_dict() if next_item else None,
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Service skip error: {e}")
+            await msg.respond(json.dumps({
+                "success": False,
+                "error": str(e)
+            }).encode())
     
-    async def clear(self, channel: str, user: str) -> int:
+    async def _service_shuffle(self, msg) -> None:
         """
-        Clear the queue.
+        Service handler: Shuffle queue.
         
-        Returns:
-            Number of items cleared
+        Request: {channel}
+        Response: {success, count, error?}
         """
-        queue = self._get_queue(channel)
-        count = queue.clear()
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data["channel"]
+            
+            queue = self._get_queue(channel)
+            count = queue.length
+            queue.shuffle()
+            
+            await self.publish("playlist.shuffled", {
+                "event": "playlist.shuffled",
+                "channel": channel,
+                "count": count,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+            
+            await msg.respond(json.dumps({
+                "success": True,
+                "count": count,
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Service shuffle error: {e}")
+            await msg.respond(json.dumps({
+                "success": False,
+                "error": str(e)
+            }).encode())
+    
+    async def _service_clear(self, msg) -> None:
+        """
+        Service handler: Clear queue.
         
-        await self._emit_event("playlist.cleared", {
-            "channel": channel,
-            "count": count,
-            "by": user,
-        })
-        
-        return count
+        Request: {channel, user}
+        Response: {success, count, error?}
+        """
+        try:
+            data = json.loads(msg.data.decode())
+            channel = data["channel"]
+            user = data["user"]
+            
+            queue = self._get_queue(channel)
+            count = queue.clear()
+            
+            await self.publish("playlist.cleared", {
+                "event": "playlist.cleared",
+                "channel": channel,
+                "count": count,
+                "by": user,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+            
+            await msg.respond(json.dumps({
+                "success": True,
+                "count": count,
+            }).encode())
+            
+        except Exception as e:
+            self.logger.error(f"Service clear error: {e}")
+            await msg.respond(json.dumps({
+                "success": False,
+                "error": str(e)
+            }).encode())
     
-    # === Subscriptions ===
-    
-    def subscribe(
-        self, 
-        channel: str, 
-        callback: Callable[[str, dict], None]
-    ) -> None:
-        """Subscribe to playlist events for a channel."""
-        if channel not in self._subscribers:
-            self._subscribers[channel] = []
-        self._subscribers[channel].append(callback)
-    
-    def unsubscribe(self, channel: str, callback: Callable) -> None:
-        """Unsubscribe from playlist events."""
-        if channel in self._subscribers:
-            self._subscribers[channel].remove(callback)
-    
-    # === Private Methods ===
-    
-    def _get_queue(self, channel: str) -> PlaylistQueue:
-        """Get or create queue for channel."""
-        if channel not in self._queues:
-            self._queues[channel] = PlaylistQueue()
-        return self._queues[channel]
+    # === Helper Methods ===
     
     async def _fetch_and_update_metadata(
         self, 
@@ -396,21 +562,25 @@ class PlaylistService:
     ) -> None:
         """Fetch metadata and update item."""
         try:
-            metadata = await self._metadata.fetch(item.media_type, item.media_id)
+            metadata = await self.metadata_fetcher.fetch(
+                item.media_type, 
+                item.media_id
+            )
             
             item.title = metadata.get("title", item.title)
             item.duration = metadata.get("duration", 0)
             item.thumbnail_url = metadata.get("thumbnail")
             item.channel_name = metadata.get("channel")
             
-            await self._emit_event("playlist.metadata.fetched", {
+            await self.publish("playlist.metadata.fetched", {
+                "event": "playlist.metadata.fetched",
                 "channel": channel,
                 "item": item.to_dict(),
+                "timestamp": datetime.utcnow().isoformat(),
             })
             
         except Exception as e:
-            # Keep placeholder title on error
-            pass
+            self.logger.warning(f"Metadata fetch failed for {item.media_id}: {e}")
 ```
 
 ### 2.4 Metadata Fetching
@@ -730,51 +900,18 @@ class CyTubeSynchronizer:
         return self._cytube.get_position(channel)
 ```
 
-### 2.7 Extended Plugin
+### 2.7 Command Handler Updates
+
+Update command handlers to use internal queue methods (same as Sortie 1 but with metadata fetching):
 
 ```python
-# plugins/playlist/plugin.py (extensions)
+# plugins/playlist/plugin.py (command handler updates)
 
 class PlaylistPlugin(PluginBase):
-    """Extended with service and metadata."""
-    
-    async def setup(self) -> None:
-        """Extended setup with service."""
-        # Initialize metadata fetcher
-        self.metadata_fetcher = MetadataFetcher(
-            youtube_api_key=self.config.get("youtube_api_key")
-        )
-        
-        # Initialize vote manager
-        self.vote_manager = SkipVoteManager(
-            threshold=self.config.get("skip_threshold", 0.5),
-            min_votes=self.config.get("min_skip_votes", 2),
-        )
-        
-        # Initialize service
-        self.service = PlaylistService(
-            queues=self.queues,
-            metadata_fetcher=self.metadata_fetcher,
-            vote_manager=self.vote_manager,
-            event_callback=self._emit_event,
-        )
-        
-        # Register service
-        await self.register_service("playlist", self.service)
-        
-        # ... existing subscriptions ...
-        
-        # Subscribe to vote skip
-        await self.subscribe("rosey.command.playlist.voteskip", self._handle_voteskip)
-    
-    async def _emit_event(self, event_type: str, data: dict) -> None:
-        """Emit event via NATS."""
-        data["event"] = event_type
-        data["timestamp"] = datetime.utcnow().isoformat()
-        await self.publish(event_type, data)
+    """Command handlers use internal methods, not service."""
     
     async def _handle_add(self, msg) -> None:
-        """Handle !add with metadata fetching."""
+        """Handle !add command with metadata fetching."""
         data = json.loads(msg.data.decode())
         channel = data["channel"]
         user = data["user"]
@@ -783,16 +920,44 @@ class PlaylistPlugin(PluginBase):
         if not url:
             return await self._reply_usage(msg, "add <url>")
         
-        # Use service for add
-        result = await self.service.add_item(channel, url, user)
+        # Parse URL
+        try:
+            media_type, media_id = MediaParser.parse(url)
+        except ValueError:
+            return await self._reply_error(msg, "Unrecognized media URL")
         
-        if not result.success:
-            return await self._reply_error(msg, result.error)
-        
-        await self._reply(
-            msg, 
-            f"📺 Added to queue (#{result.position}): {result.item.title}"
+        # Create item
+        item = PlaylistItem(
+            id="",
+            media_type=media_type,
+            media_id=media_id,
+            title=f"Loading...",
+            duration=0,
+            added_by=user,
         )
+        
+        # Add to queue
+        queue = self._get_queue(channel)
+        if not queue.add(item):
+            return await self._reply_error(msg, "Queue is full!")
+        
+        position = queue.length
+        
+        # Fetch metadata asynchronously
+        asyncio.create_task(
+            self._fetch_and_update_metadata(channel, item)
+        )
+        
+        await self._reply(msg, f"📺 Added to queue (#{position}): {item.title}")
+        
+        # Emit event
+        await self.publish("playlist.item.added", {
+            "event": "playlist.item.added",
+            "channel": channel,
+            "item": item.to_dict(),
+            "position": position,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
     
     async def _handle_voteskip(self, msg) -> None:
         """Handle !voteskip command."""
@@ -800,7 +965,11 @@ class PlaylistPlugin(PluginBase):
         channel = data["channel"]
         user = data["user"]
         
-        result = await self.service.vote_skip(channel, user)
+        queue = self._get_queue(channel)
+        if not queue.current:
+            return await self._reply_error(msg, "Nothing is playing!")
+        
+        result = self.vote_manager.vote(channel, user)
         
         if not result["success"]:
             return await self._reply_error(msg, result.get("error", "Vote failed"))
@@ -808,7 +977,29 @@ class PlaylistPlugin(PluginBase):
         if result["already_voted"]:
             return await self._reply(msg, "You already voted to skip!")
         
+        await self.publish("playlist.skip.vote", {
+            "event": "playlist.skip.vote",
+            "channel": channel,
+            "user": user,
+            "votes": result["votes"],
+            "needed": result["needed"],
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+        
         if result["passed"]:
+            # Skip to next
+            skipped = queue.current
+            next_item = queue.advance()
+            
+            await self.publish("playlist.skip.passed", {
+                "event": "playlist.skip.passed",
+                "channel": channel,
+                "votes": result["votes"],
+                "skipped_item": skipped.to_dict(),
+                "next_item": next_item.to_dict() if next_item else None,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+            
             await self._reply(msg, f"⏭️ Skip vote passed! ({result['votes']} votes)")
         else:
             await self._reply(
@@ -835,19 +1026,20 @@ class PlaylistPlugin(PluginBase):
 3. Implement session management
 4. Write tests
 
-### Step 3: Implement PlaylistService (2.5 hours)
+### Step 3: Implement Service Request Handlers (2.5 hours)
 
-1. Implement all service methods
-2. Implement event emission
-3. Implement subscription system
-4. Write comprehensive tests
+1. Add all service request/reply subscriptions in setup()
+2. Implement each handler method (_service_add_item, etc.)
+3. Ensure proper request/response JSON format
+4. Add comprehensive error handling
+5. Write tests for each handler
 
-### Step 4: Integrate with Plugin (1.5 hours)
+### Step 4: Update Command Handlers (1.5 hours)
 
-1. Update plugin setup
-2. Register service
-3. Update command handlers to use service
-4. Wire up metadata fetching
+1. Update plugin setup to initialize metadata and voting
+2. Update _handle_add to include metadata fetching
+3. Add _handle_voteskip command
+4. Wire up vote manager
 
 ### Step 5: Add CyTube Sync (1 hour)
 
@@ -857,10 +1049,11 @@ class PlaylistPlugin(PluginBase):
 
 ### Step 6: Integration Testing (1 hour)
 
-1. Test service API
+1. Test service request/reply from mock plugin
 2. Test metadata fetching
 3. Test vote system
 4. Test event emission
+5. Test timeout scenarios
 
 ---
 
@@ -868,57 +1061,172 @@ class PlaylistPlugin(PluginBase):
 
 ### 4.1 Functional
 
-- [ ] PlaylistService exposed to other plugins
+- [ ] Service request/reply handlers implemented for all operations
 - [ ] Metadata fetched automatically on add
 - [ ] Skip voting works with configurable threshold
 - [ ] Events emitted for all state changes
 - [ ] CyTube sync bidirectional
+- [ ] Other plugins can call playlist via NATS subjects
 
 ### 4.2 Technical
 
-- [ ] Service API matches design
+- [ ] All service operations via NATS request/reply
 - [ ] Async metadata fetching (non-blocking)
-- [ ] Proper error handling
+- [ ] Proper error handling in all handlers
+- [ ] Request/response schemas documented
 - [ ] Test coverage > 85%
+- [ ] No get_service() or Python object sharing
 
 ---
 
-## 5. Sample Service Usage
+## 5. Sample Service Usage via NATS
 
 ```python
-# From another plugin
-playlist = await get_service("playlist")
+# From another plugin - using NATS request/reply
 
-# Add an item
-result = await playlist.add_item("lobby", "https://youtube.com/...", "user1")
-if result.success:
-    print(f"Added at #{result.position}")
+import json
+import asyncio
 
-# Get queue
-items = playlist.get_queue("lobby")
 
-# Vote to skip
-vote = await playlist.vote_skip("lobby", "user2")
-print(f"Votes: {vote['votes']}/{vote['needed']}")
-
-# Subscribe to events
-def on_playlist_event(event_type, data):
-    print(f"Playlist event: {event_type}")
-
-playlist.subscribe("lobby", on_playlist_event)
+class SomeOtherPlugin(PluginBase):
+    """Example plugin using playlist service via NATS."""
+    
+    async def example_add_item(self):
+        """Add item to playlist via NATS request."""
+        try:
+            # Prepare request
+            request = {
+                "channel": "lobby",
+                "url": "https://youtube.com/watch?v=dQw4w9WgXcQ",
+                "user": "Alice",
+            }
+            
+            # Send request via NATS (with timeout)
+            response = await self.nats_client.request(
+                "service.playlist.add_item",
+                json.dumps(request).encode(),
+                timeout=5.0,  # 5 second timeout
+            )
+            
+            # Parse response
+            result = json.loads(response.data.decode())
+            
+            if result["success"]:
+                item = result["item"]
+                position = result["position"]
+                self.logger.info(f"Added to playlist at #{position}: {item['title']}")
+                return True
+            else:
+                self.logger.error(f"Failed to add: {result['error']}")
+                return False
+                
+        except asyncio.TimeoutError:
+            self.logger.error("Playlist service timeout")
+            return False
+        except Exception as e:
+            self.logger.error(f"Playlist service error: {e}")
+            return False
+    
+    async def example_get_queue(self):
+        """Get queue items via NATS request."""
+        try:
+            request = {"channel": "lobby"}
+            
+            response = await self.nats_client.request(
+                "service.playlist.get_queue",
+                json.dumps(request).encode(),
+                timeout=5.0,
+            )
+            
+            result = json.loads(response.data.decode())
+            
+            if result["success"]:
+                items = result["items"]
+                self.logger.info(f"Queue has {len(items)} items")
+                return items
+            else:
+                self.logger.error(f"Failed to get queue: {result.get('error')}")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Get queue error: {e}")
+            return []
+    
+    async def example_vote_skip(self, user: str):
+        """Vote to skip via NATS request."""
+        try:
+            request = {"channel": "lobby", "user": user}
+            
+            response = await self.nats_client.request(
+                "service.playlist.vote_skip",
+                json.dumps(request).encode(),
+                timeout=5.0,
+            )
+            
+            result = json.loads(response.data.decode())
+            
+            if result["success"]:
+                votes = result["votes"]
+                needed = result["needed"]
+                passed = result["passed"]
+                
+                if passed:
+                    self.logger.info(f"Skip vote passed! ({votes} votes)")
+                else:
+                    self.logger.info(f"Vote recorded: {votes}/{needed}")
+                
+                return passed
+            else:
+                self.logger.error(f"Vote failed: {result.get('error')}")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Vote skip error: {e}")
+            return False
+    
+    async def example_listen_to_events(self):
+        """Subscribe to playlist events."""
+        async def handle_item_added(msg):
+            data = json.loads(msg.data.decode())
+            item = data["item"]
+            position = data["position"]
+            self.logger.info(f"New item added: {item['title']} at #{position}")
+        
+        async def handle_skip_passed(msg):
+            data = json.loads(msg.data.decode())
+            votes = data["votes"]
+            self.logger.info(f"Skip vote passed with {votes} votes")
+        
+        # Subscribe to events
+        await self.subscribe("playlist.item.added", handle_item_added)
+        await self.subscribe("playlist.skip.passed", handle_skip_passed)
 ```
+
+### Benefits of NATS Request/Reply Pattern
+
+✅ **Process Isolation**: Plugins can run as separate processes  
+✅ **No Shared Memory**: No direct Python object references  
+✅ **Independent Deployment**: Restart one plugin without affecting others  
+✅ **Timeout Control**: Each request has configurable timeout  
+✅ **Error Handling**: Clear success/error responses  
+✅ **Observable**: All service calls visible in NATS monitoring  
+✅ **Testable**: Easy to mock service responses in tests  
+✅ **Language Agnostic**: Could rewrite plugin in different language
 
 ---
 
 **Commit Message Template:**
 ```
-feat(plugins): Add playlist service and events
+feat(plugins): Add playlist service via NATS request/reply
 
-- Implement PlaylistService for other plugins
+- Implement service request/reply handlers for playlist operations
 - Add metadata fetching (YouTube, Vimeo, SoundCloud)
 - Add skip voting system
 - Add CyTube synchronization
-- Emit comprehensive events
+- Emit comprehensive events via NATS
+
+Architecture: Uses NATS request/reply pattern for inter-plugin communication.
+Other plugins call playlist via service.playlist.* subjects, not Python imports.
 
 Implements: SPEC-Sortie-2-PlaylistService.md
 Related: PRD-Core-Migrations.md
