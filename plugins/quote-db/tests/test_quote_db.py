@@ -34,9 +34,12 @@ class TestPluginInitialization:
         await plugin.initialize()
 
         assert plugin._initialized is True
-        mock_nats.request.assert_called_once()
-        call_args = mock_nats.request.call_args
-        assert "db.migrate.quote-db.status" in call_args[0][0]
+        # Should make 2 calls: migration status + schema registration
+        assert mock_nats.request.call_count == 2
+        first_call = mock_nats.request.call_args_list[0]
+        assert "db.migrate.quote-db.status" in first_call[0][0]
+        second_call = mock_nats.request.call_args_list[1]
+        assert "db.row.quote-db.schema.register" in second_call[0][0]
 
     @pytest.mark.asyncio
     async def test_initialize_missing_migrations(self, plugin, mock_nats):
@@ -130,7 +133,8 @@ class TestAddQuote:
         assert payload["data"]["author"] == "Alice"
         assert payload["data"]["added_by"] == "bob"
         assert payload["data"]["score"] == 0
-        assert "timestamp" in payload["data"]
+        assert "added_at" in payload["data"]
+        assert "tags" in payload["data"]
 
     @pytest.mark.asyncio
     async def test_add_quote_author_defaults_to_unknown(self, initialized_plugin, mock_nats):
