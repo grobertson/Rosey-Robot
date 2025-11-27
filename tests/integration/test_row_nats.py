@@ -225,7 +225,16 @@ class TestRowInsertNATS:
         )
         
         reg_result = json.loads(reg_response.data.decode())
+        print(f"DEBUG: Schema registration response: {reg_result}")
+        print(f"DEBUG: db_service.db id: {id(db_service.db)}")
+        print(f"DEBUG: schema_registry id: {id(db_service.db.schema_registry)}")
+        print(f"DEBUG: cache contents: {db_service.db.schema_registry._cache}")
         assert reg_result['success'] is True, f"Schema registration failed: {reg_result}"
+        
+        # DEBUG: Check if schema is actually in cache
+        schema = db_service.db.schema_registry.get_schema("test", "items")
+        print(f"DEBUG: Schema from cache: {schema}")
+        assert schema is not None, "Schema not found in cache after registration!"
 
         # Insert row
         response = await nats_client.request(

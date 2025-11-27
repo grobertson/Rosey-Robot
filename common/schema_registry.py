@@ -217,6 +217,7 @@ class SchemaRegistry:
             return False
 
         # Store in database
+        self.logger.info(f"DEBUG: Storing schema in database: {plugin_name}.{table_name}")
         now = int(time.time())
         async with self.db.session_factory() as session:
             schema_model = PluginTableSchema(
@@ -230,12 +231,16 @@ class SchemaRegistry:
 
             session.add(schema_model)
             await session.commit()
+            self.logger.info(f"DEBUG: Schema stored in database successfully")
 
         # Create table
+        self.logger.info(f"DEBUG: Creating table: {plugin_name}_{table_name}")
         await self._create_table(plugin_name, table_name, schema)
+        self.logger.info(f"DEBUG: Table created successfully")
 
         # Update cache
         self._cache[key] = schema
+        self.logger.info(f"DEBUG: Cache updated, key={key}")
 
         self.logger.info(f"Registered schema: {plugin_name}.{table_name}")
         return True
