@@ -339,6 +339,13 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row select failed for quote {quote_id}: {error}")
+                raise RuntimeError(f"Failed to get quote: {error}")
+            
             rows = result.get("rows", [])
 
             if rows:
@@ -385,6 +392,13 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row delete failed for quote {quote_id}: {error}")
+                raise RuntimeError(f"Failed to delete quote: {error}")
+            
             deleted = result.get("deleted", 0) > 0
 
             if deleted:
@@ -515,6 +529,13 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row search failed for '{query}': {error}")
+                raise RuntimeError(f"Failed to search quotes: {error}")
+            
             quotes = result.get("rows", [])
 
             self.logger.info(f"Search '{query}' returned {len(quotes)} results")
@@ -558,6 +579,12 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row update failed for quote {quote_id}: {error}")
+                raise RuntimeError(f"Failed to upvote quote: {error}")
 
             if result.get("updated", 0) == 0:
                 raise ValueError(f"Quote {quote_id} not found")
@@ -606,6 +633,12 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row update failed for quote {quote_id}: {error}")
+                raise RuntimeError(f"Failed to downvote quote: {error}")
 
             if result.get("updated", 0) == 0:
                 raise ValueError(f"Quote {quote_id} not found")
