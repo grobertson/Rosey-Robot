@@ -432,10 +432,19 @@ class CytubeConnector:
             self._errors += 1
 
     async def _on_move_video(self, data: Dict[str, Any]) -> None:
-        """Handle video move event
+        """Handle video move event from CyTube.
+        
+        Called when a video's position changes in the playlist via CyTube UI or API.
+        Publishes normalized event to EventBus for subscribers.
         
         Args:
-            data: Move event data from CyTube containing from/to positions and optional uid
+            data: Move event data from CyTube server
+                - from (int): Original position in playlist (0-indexed)
+                - to (int): New position in playlist (0-indexed)
+                - uid (str, optional): Unique identifier of the moved video
+        
+        Raises:
+            Exception: Logged and tracked in error count if event handling fails
         """
         try:
             event = CytubeEvent(
@@ -514,13 +523,29 @@ class CytubeConnector:
     # ========================================================================
 
     async def _handle_playlist_command(self, event: Event) -> None:
-        """Handle playlist commands from EventBus
+        """Handle playlist commands from EventBus.
         
-        Routes playlist manipulation commands to appropriate handlers.
-        Supported commands: add, remove, move, jump, clear, shuffle.
+        Central dispatcher for all playlist manipulation commands. Routes incoming
+        commands to specialized handlers based on command type. Commands are
+        fire-and-forget; errors are published as separate events.
+        
+        Supported Commands:
+            - playlist.add: Add video to playlist
+            - playlist.remove: Remove video by UID
+            - playlist.move: Reorder video position
+            - playlist.jump: Jump to specific video
+            - playlist.clear: Remove all videos
+            - playlist.shuffle: Randomize playlist order
         
         Args:
-            event: Event containing playlist command and parameters
+            event: Event from NATS with structure:
+                - subject: rosey.platform.cytube.send.playlist.*
+                - data.command (str): Command name (e.g., "playlist.add")
+                - data.params (dict): Command-specific parameters
+                - correlation_id (str): For tracing and error correlation
+        
+        Raises:
+            Exception: Logged and error event published if handling fails
         """
         try:
             # Check if connected
@@ -563,11 +588,25 @@ class CytubeConnector:
             self._errors += 1
 
     async def _publish_playlist_error(self, event: Event, error_message: str) -> None:
-        """Publish error event for failed playlist command
+        """Publish error event for failed playlist command.
+        
+        Creates and publishes an error event to the error subject with full context
+        from the original command, including correlation ID for tracing.
         
         Args:
-            event: Original command event
-            error_message: Description of the error
+            event: Original command event that failed
+            error_message: Human-readable error description
+        
+        Published Event Structure:
+            - subject: rosey.platform.cytube.error
+            - event_type: "error"
+            - data.command: Original command name
+            - data.error: Error message
+            - data.original_subject: Subject of failed command
+            - data.correlation_id: Matches original event
+        
+        Raises:
+            Exception: Logged if error event publication fails (non-fatal)
         """
         try:
             error_event = Event(
@@ -588,10 +627,22 @@ class CytubeConnector:
             logger.error(f"Failed to publish error event: {e}")
 
     async def _playlist_add(self, event: Event) -> None:
-        """Add video to playlist
+        """Add video to playlist via CyTube queue API.
+        
+        Validates required parameters and calls channel.queue() to add video.
+        Video is appended to end of playlist by default.
         
         Args:
-            event: Event with params containing type and id
+            event: Command event with data structure:
+                - params.type (str): Media type (yt, dm, vi, etc.)
+                - params.id (str): Video ID for the specified type
+                - params.position (str, optional): Position hint (default: "end")
+                - params.temporary (bool, optional): Temp flag (default: true)
+        
+        CyTube API: channel.queue(type, id)
+        
+        Raises:
+            Error event published if parameters missing or queue operation fails
         """
         try:
             params = event.data.get("params", {})
@@ -614,10 +665,18 @@ class CytubeConnector:
             self._errors += 1
 
     async def _playlist_remove(self, event: Event) -> None:
-        """Remove video from playlist
+        """Remove video from playlist via CyTube delete API.
+        
+        Validates required UID parameter and calls channel.delete() to remove video.
         
         Args:
-            event: Event with params containing uid
+            event: Command event with data structure:
+                - params.uid (str): Unique identifier of video to remove
+        
+        CyTube API: channel.delete(uid)
+        
+        Raises:
+            Error event published if UID missing or delete operation fails
         """
         try:
             params = event.data.get("params", {})
@@ -639,10 +698,25 @@ class CytubeConnector:
             self._errors += 1
 
     async def _playlist_move(self, event: Event) -> None:
-        """Move video in playlist
+        """Move video to new position in playlist via CyTube moveMedia API.
+        
+        Validates required parameters and calls channel.moveMedia(). The "after"
+        parameter specifies the UID of the video to place this video after.
+        Special value "prepend" moves video to the beginning of the playlist.
         
         Args:
-            event: Event with params containing uid and after
+            event: Command event with data structure:
+                - params.uid (str): UID of video to move
+                - params.after (str): UID of video to place after, or "prepend"
+        
+        CyTube API: channel.moveMedia(uid, after)
+        
+        Note: CyTube moveMedia uses "after" positioning, not absolute indices.
+              To move to position 1: after="prepend"
+              To move after position N: after=uid_of_item_at_position_N
+        
+        Raises:
+            Error event published if parameters missing or move operation fails
         """
         try:
             params = event.data.get("params", {})
@@ -665,10 +739,19 @@ class CytubeConnector:
             self._errors += 1
 
     async def _playlist_jump(self, event: Event) -> None:
-        """Jump to specific video in playlist
+        """Jump to specific video in playlist via CyTube jumpTo API.
+        
+        Immediately starts playback of the specified video, skipping any currently
+        playing content.
         
         Args:
-            event: Event with params containing uid
+            event: Command event with data structure:
+                - params.uid (str): UID of video to jump to
+        
+        CyTube API: channel.jumpTo(uid)
+        
+        Raises:
+            Error event published if UID missing or jump operation fails
         """
         try:
             params = event.data.get("params", {})
@@ -690,10 +773,18 @@ class CytubeConnector:
             self._errors += 1
 
     async def _playlist_clear(self, event: Event) -> None:
-        """Clear entire playlist
+        """Clear entire playlist via CyTube clearPlaylist API.
+        
+        Removes all videos from the playlist. No parameters required.
+        This operation cannot be undone.
         
         Args:
             event: Command event (no params required)
+        
+        CyTube API: channel.clearPlaylist()
+        
+        Raises:
+            Error event published if clear operation fails
         """
         try:
             await self.channel.clearPlaylist()
@@ -705,10 +796,18 @@ class CytubeConnector:
             self._errors += 1
 
     async def _playlist_shuffle(self, event: Event) -> None:
-        """Shuffle playlist order
+        """Shuffle playlist order via CyTube shufflePlaylist API.
+        
+        Randomly reorders all videos in the playlist. Currently playing video
+        position may change. No parameters required.
         
         Args:
             event: Command event (no params required)
+        
+        CyTube API: channel.shufflePlaylist()
+        
+        Raises:
+            Error event published if shuffle operation fails
         """
         try:
             await self.channel.shufflePlaylist()
