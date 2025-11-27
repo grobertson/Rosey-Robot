@@ -9,14 +9,13 @@ against SQL injection while supporting timeout and row limit enforcement.
 import asyncio
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 from .sql_errors import (
     ExecutionError,
     PermissionDeniedError,
     TimeoutError,
 )
-
 
 logger = logging.getLogger(__name__)
 

@@ -112,6 +112,11 @@ def integration_bot(integration_db):
         restart_delay=5
     )
 
+    # Add mock EventBus for shell command testing (Sprint 19+)
+    from unittest.mock import Mock
+    bot.event_bus = Mock()
+    bot.event_bus.publish = AsyncMock()
+
     # Connect bot to integration database for backward compatibility
     # (Bot will use NATS for new operations, but old tests may check db)
     bot.db = integration_db

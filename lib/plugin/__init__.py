@@ -61,8 +61,9 @@ warnings.warn(
     stacklevel=2,
 )
 
-from .base import Plugin
-from .errors import (
+# Imports after version check
+from .base import Plugin  # noqa: E402
+from .errors import (  # noqa: E402
     PluginAlreadyLoadedError,
     PluginConfigError,
     PluginDependencyError,
@@ -72,12 +73,12 @@ from .errors import (
     PluginSetupError,
     PluginTeardownError,
 )
-from .event import Event, EventPriority
-from .event_bus import EventBus
-from .manager import PluginInfo, PluginManager, PluginState
-from .metadata import PluginMetadata
-from .service import Service, ServiceRegistration
-from .service_registry import ServiceRegistry
+from .event import Event, EventPriority  # noqa: E402
+from .event_bus import EventBus  # noqa: E402
+from .manager import PluginInfo, PluginManager, PluginState  # noqa: E402
+from .metadata import PluginMetadata  # noqa: E402
+from .service import Service, ServiceRegistration  # noqa: E402
+from .service_registry import ServiceRegistry  # noqa: E402
 
 # Hot reload (optional - requires watchdog)
 try:

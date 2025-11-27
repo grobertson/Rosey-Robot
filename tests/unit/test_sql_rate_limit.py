@@ -6,12 +6,10 @@ per-plugin quotas, and RateLimitError handling.
 """
 
 import asyncio
-import time
-from unittest.mock import patch
 
 import pytest
 
-from lib.storage.sql_rate_limit import RateLimitError, RateLimitStatus, SQLRateLimiter
+from lib.storage.sql_rate_limit import RateLimitError, SQLRateLimiter
 
 
 class TestRateLimitError:

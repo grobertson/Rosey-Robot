@@ -14,7 +14,6 @@ Tests cover:
 import random
 from collections import Counter
 
-import pytest
 
 import sys
 from pathlib import Path

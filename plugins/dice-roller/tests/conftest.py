@@ -8,11 +8,12 @@ PLUGIN_DIR = Path(__file__).parent.parent
 if str(PLUGIN_DIR) not in sys.path:
     sys.path.insert(0, str(PLUGIN_DIR))
 
-import pytest
-import random
-from unittest.mock import AsyncMock, MagicMock
+# Imports after sys.path modification
+import pytest  # noqa: E402
+import random  # noqa: E402
+from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
-from dice import DiceParser, DiceRoller
+from dice import DiceParser, DiceRoller  # noqa: E402
 
 
 @pytest.fixture

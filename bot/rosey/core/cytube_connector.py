@@ -128,7 +128,7 @@ class CytubeConnector:
 
         # Connection state
         self._running = False
-        self._subscriptions: List[int] = []
+        self._subscriptions: List[str] = []
         self._event_handlers: Dict[str, Callable] = {}
 
         # Statistics
@@ -159,27 +159,27 @@ class CytubeConnector:
 
             # Subscribe to EventBus commands for this platform
             pattern = f"{Subjects.PLATFORM}.{self.platform_name}.{EventTypes.COMMAND}"
-            sub_id = await self.event_bus.subscribe(
+            await self.event_bus.subscribe(
                 pattern,
                 self._handle_eventbus_command
             )
-            self._subscriptions.append(sub_id)
+            self._subscriptions.append(pattern)
 
             # Subscribe to send requests
             pattern = f"{Subjects.PLATFORM}.{self.platform_name}.{EventTypes.MESSAGE}"
-            sub_id = await self.event_bus.subscribe(
+            await self.event_bus.subscribe(
                 pattern,
                 self._handle_eventbus_message
             )
-            self._subscriptions.append(sub_id)
+            self._subscriptions.append(pattern)
 
             # Subscribe to playlist commands
             pattern = f"{Subjects.PLATFORM}.{self.platform_name}.send.playlist.*"
-            sub_id = await self.event_bus.subscribe(
+            await self.event_bus.subscribe(
                 pattern,
                 self._handle_playlist_command
             )
-            self._subscriptions.append(sub_id)
+            self._subscriptions.append(pattern)
 
             self._running = True
             logger.info(f"Cytube connector started for channel: {self.channel.name}")
@@ -206,8 +206,8 @@ class CytubeConnector:
             self._unregister_cytube_handlers()
 
             # Unsubscribe from EventBus
-            for sub_id in self._subscriptions:
-                await self.event_bus.unsubscribe(sub_id)
+            for subject in self._subscriptions:
+                await self.event_bus.unsubscribe(subject)
 
             self._subscriptions.clear()
             self._running = False

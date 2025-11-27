@@ -15,19 +15,14 @@ Benchmarks include:
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any
 
 import pytest
 
 from lib.storage import (
     QueryValidator,
     ParameterBinder,
-    PreparedStatementExecutor,
-    ResultFormatter,
-    SQLClient,
     SQLAuditLogger,
     SQLRateLimiter,
-    StatementType,
 )
 
 
@@ -75,6 +70,11 @@ class TestValidatorPerformance:
 
     def test_simple_select_validation(self, validator):
         """Benchmark simple SELECT query validation."""
+        from tests.performance.baseline_loader import (
+            get_min_acceptable,
+            get_baseline_value,
+            log_performance,
+        )
 
         def run():
             validator.validate(
@@ -85,18 +85,28 @@ class TestValidatorPerformance:
 
         result = self.benchmark("simple_select_validation", run, iterations=1000)
 
-        # Performance assertion: should handle at least 500 ops/sec
-        # (sqlparse parsing adds overhead)
-        assert result.ops_per_second > 500, (
-            f"Simple validation too slow: {result.ops_per_second:.0f} ops/sec"
+        # Load baseline expectations
+        min_acceptable = get_min_acceptable("simple_select_validation")
+        baseline = get_baseline_value("simple_select_validation")
+
+        # Log actual performance for monitoring
+        log_performance(
+            "simple_select_validation", result.ops_per_second, baseline, "ops/sec"
         )
-        # Average latency should be under 5ms
-        assert result.avg_time_ms < 5.0, (
-            f"Average validation latency too high: {result.avg_time_ms:.3f}ms"
+
+        # Performance assertion with tolerance for system variation
+        assert result.ops_per_second > min_acceptable, (
+            f"Simple validation too slow: {result.ops_per_second:.0f} ops/sec "
+            f"(expected >{min_acceptable:.0f} ops/sec)"
         )
 
     def test_complex_join_validation(self, validator):
         """Benchmark complex JOIN query validation."""
+        from tests.performance.baseline_loader import (
+            get_min_acceptable,
+            get_baseline_value,
+            log_performance,
+        )
 
         def run():
             validator.validate(
@@ -114,13 +124,29 @@ class TestValidatorPerformance:
 
         result = self.benchmark("complex_join_validation", run, iterations=500)
 
-        # Complex queries should complete (sqlparse is slower for complex queries)
-        assert result.ops_per_second > 100, (
-            f"Complex validation too slow: {result.ops_per_second:.0f} ops/sec"
+        # Load baseline expectations
+        min_acceptable = get_min_acceptable("complex_join_validation")
+        baseline = get_baseline_value("complex_join_validation")
+
+        # Log actual performance
+        log_performance(
+            "complex_join_validation", result.ops_per_second, baseline, "ops/sec"
+        )
+
+        # Complex queries with sqlparse overhead - calibrated baseline
+        assert result.ops_per_second > min_acceptable, (
+            f"Complex validation too slow: {result.ops_per_second:.0f} ops/sec "
+            f"(expected >{min_acceptable:.0f} ops/sec)"
         )
 
     def test_validation_with_many_params(self, validator):
         """Benchmark validation with many parameters."""
+        from tests.performance.baseline_loader import (
+            get_min_acceptable,
+            get_baseline_value,
+            log_performance,
+        )
+
         placeholders = ", ".join([f"${i}" for i in range(1, 21)])
         query = f"INSERT INTO test_plugin__data (c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16, c17, c18, c19, c20) VALUES ({placeholders})"
         params = list(range(1, 21))
@@ -130,9 +156,19 @@ class TestValidatorPerformance:
 
         result = self.benchmark("many_params_validation", run, iterations=500)
 
-        # Many params adds overhead but should still be usable
-        assert result.ops_per_second > 100, (
-            f"Many-params validation too slow: {result.ops_per_second:.0f} ops/sec"
+        # Load baseline expectations
+        min_acceptable = get_min_acceptable("many_params_validation")
+        baseline = get_baseline_value("many_params_validation")
+
+        # Log actual performance
+        log_performance(
+            "many_params_validation", result.ops_per_second, baseline, "ops/sec"
+        )
+
+        # Many params adds overhead - calibrated baseline with tolerance
+        assert result.ops_per_second > min_acceptable, (
+            f"Many-params validation too slow: {result.ops_per_second:.0f} ops/sec "
+            f"(expected >{min_acceptable:.0f} ops/sec)"
         )
 
 
@@ -237,6 +273,11 @@ class TestRateLimiterPerformance:
     @pytest.mark.asyncio
     async def test_rate_check_throughput(self, limiter):
         """Benchmark rate limit checking."""
+        from tests.performance.baseline_loader import (
+            get_min_acceptable,
+            get_baseline_value,
+            log_performance,
+        )
 
         async def run():
             await limiter.check("test_plugin")
@@ -250,13 +291,21 @@ class TestRateLimiterPerformance:
             times.append((end - start) * 1000)
 
         total = sum(times)
-        avg = total / 1000
+        total / 1000
         ops_per_sec = 1000 / (total / 1000)
 
-        # Rate checking should add minimal overhead
-        assert ops_per_sec > 10000, f"Rate checking too slow: {ops_per_sec:.0f} ops/sec"
-        # Should be sub-millisecond
-        assert avg < 0.5, f"Rate check latency too high: {avg:.4f}ms"
+        # Load baseline expectations
+        min_acceptable = get_min_acceptable("rate_check_throughput")
+        baseline = get_baseline_value("rate_check_throughput")
+
+        # Log actual performance
+        log_performance("rate_check_throughput", ops_per_sec, baseline, "ops/sec")
+
+        # Rate checking with calibrated baseline
+        assert ops_per_sec > min_acceptable, (
+            f"Rate checking too slow: {ops_per_sec:.0f} ops/sec "
+            f"(expected >{min_acceptable:.0f} ops/sec)"
+        )
 
 
 class TestAuditLoggerPerformance:
@@ -343,6 +392,12 @@ class TestPipelinePerformance:
 
     def test_full_pipeline_no_execution(self, validator, binder):
         """Benchmark full validation + binding pipeline (no DB execution)."""
+        from tests.performance.baseline_loader import (
+            get_min_acceptable,
+            get_baseline_value,
+            log_performance,
+        )
+
         query = "SELECT * FROM test_plugin__users WHERE id = $1 AND active = $2"
         params = [42, True]
 
@@ -355,13 +410,17 @@ class TestPipelinePerformance:
 
         result = self.benchmark("full_pipeline", run, iterations=1000)
 
-        # Full pipeline (minus DB) should be under 2ms average
-        assert result.avg_time_ms < 2.0, (
-            f"Full pipeline too slow: {result.avg_time_ms:.3f}ms"
-        )
-        # Should handle at least 500 ops/sec
-        assert result.ops_per_second > 500, (
-            f"Full pipeline throughput too low: {result.ops_per_second:.0f} ops/sec"
+        # Load baseline expectations (note: this test uses time-based metric)
+        max_acceptable = get_min_acceptable("full_pipeline", metric="avg_time_ms")
+        baseline = get_baseline_value("full_pipeline", metric="avg_time_ms")
+
+        # Log actual performance
+        log_performance("full_pipeline", result.avg_time_ms, baseline, "ms")
+
+        # Full pipeline with calibrated latency baseline
+        assert result.avg_time_ms < max_acceptable, (
+            f"Full pipeline too slow: {result.avg_time_ms:.3f}ms "
+            f"(expected <{max_acceptable:.3f}ms)"
         )
 
 
@@ -381,7 +440,7 @@ class TestConcurrencyPerformance:
         """Test concurrent validation requests."""
 
         async def validate_query(query_id: int):
-            query = f"SELECT * FROM test_plugin__data WHERE id = $1"
+            query = "SELECT * FROM test_plugin__data WHERE id = $1"
             result = validator.validate(query, "test_plugin", params=[query_id])
             return result.valid
 

@@ -73,7 +73,7 @@ class AlertConfig:
             parts = [p.strip() for p in config_str.split(",")]
             minutes = [int(p) for p in parts if p]
         except (ValueError, TypeError) as e:
-            raise ValueError(f"Invalid alert format. Use: 5,1 or 10,5,1") from e
+            raise ValueError("Invalid alert format. Use: 5,1 or 10,5,1") from e
         
         if not minutes:
             raise ValueError("At least one alert time required")

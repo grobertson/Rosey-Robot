@@ -27,6 +27,67 @@ class DryRunRollbackError(Exception):
     pass
 
 
+def _split_sql_statements(sql: str) -> list[str]:
+    """Split SQL string into individual statements.
+
+    Handles semicolon-separated statements while preserving
+    string literals and comments. Required for SQLite which
+    can only execute one statement at a time.
+
+    Args:
+        sql: SQL string with one or more statements
+
+    Returns:
+        List of individual SQL statements (without trailing semicolons)
+    """
+    statements = []
+    current = []
+    in_string = False
+    string_char = None
+
+    lines = sql.split('\n')
+    for line in lines:
+        # Skip SQL comments
+        stripped = line.strip()
+        if stripped.startswith('--'):
+            continue
+
+        # Track string literals to avoid splitting on semicolons inside strings
+        for i, char in enumerate(line):
+            if char in ('"', "'") and (i == 0 or line[i-1] != '\\'):
+                if not in_string:
+                    in_string = True
+                    string_char = char
+                elif char == string_char:
+                    in_string = False
+                    string_char = None
+
+            if char == ';' and not in_string:
+                # End of statement
+                current.append(line[:i])
+                stmt = '\n'.join(current).strip()
+                if stmt:
+                    statements.append(stmt)
+                current = []
+                # Keep remainder of line for next statement
+                if i + 1 < len(line):
+                    remainder = line[i+1:].strip()
+                    if remainder and not remainder.startswith('--'):
+                        current.append(remainder)
+                break
+        else:
+            # No semicolon found, add whole line
+            current.append(line)
+
+    # Add final statement if any
+    if current:
+        stmt = '\n'.join(current).strip()
+        if stmt:
+            statements.append(stmt)
+
+    return statements
+
+
 @dataclass
 class MigrationResult:
     """
@@ -140,8 +201,11 @@ class MigrationExecutor:
                 ' (DRY RUN)' if dry_run else ''
             )
 
-            # Execute UP section
-            await session.execute(text(migration.up_sql))
+            # Execute UP section (split into individual statements for SQLite)
+            statements = _split_sql_statements(migration.up_sql)
+            for stmt in statements:
+                if stmt.strip():  # Skip empty statements
+                    await session.execute(text(stmt))
 
             execution_time_ms = int((time.time() - start_time) * 1000)
 
@@ -280,8 +344,11 @@ class MigrationExecutor:
                 ' (DRY RUN)' if dry_run else ''
             )
 
-            # Execute DOWN section
-            await session.execute(text(migration.down_sql))
+            # Execute DOWN section (split into individual statements for SQLite)
+            statements = _split_sql_statements(migration.down_sql)
+            for stmt in statements:
+                if stmt.strip():  # Skip empty statements
+                    await session.execute(text(stmt))
 
             execution_time_ms = int((time.time() - start_time) * 1000)
 
@@ -422,3 +489,44 @@ class MigrationExecutor:
                 'execution_time_ms': execution_time_ms
             }
         )
+
+    async def ensure_migrations_table(self, session: AsyncSession) -> None:
+        """Ensure plugin_schema_migrations table exists.
+
+        Creates the migrations tracking table if it doesn't exist.
+        Safe to call multiple times (uses CREATE TABLE IF NOT EXISTS).
+
+        Args:
+            session: Active database session
+
+        Raises:
+            Exception: On table creation failure
+        """
+        create_table_sql = text("""
+            CREATE TABLE IF NOT EXISTS plugin_schema_migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plugin_name TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                checksum TEXT NOT NULL,
+                applied_at TIMESTAMP NOT NULL,
+                applied_by TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                execution_time_ms INTEGER,
+                UNIQUE(plugin_name, version)
+            )
+        """)
+
+        await session.execute(create_table_sql)
+
+        # Create index for faster queries
+        create_index_sql = text("""
+            CREATE INDEX IF NOT EXISTS idx_plugin_migrations_status
+            ON plugin_schema_migrations(plugin_name, status)
+        """)
+
+        await session.execute(create_index_sql)
+        await session.commit()
+
+        self.logger.debug("Ensured plugin_schema_migrations table exists")

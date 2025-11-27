@@ -149,7 +149,7 @@ class DiceRollerPlugin:
 
         self._subscriptions.clear()
         self._initialized = False
-        self.logger.info(f"Plugin shutdown complete")
+        self.logger.info("Plugin shutdown complete")
 
     def _ensure_initialized(self) -> None:
         """Raise error if plugin not initialized."""

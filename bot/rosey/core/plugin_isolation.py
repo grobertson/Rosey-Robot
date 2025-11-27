@@ -404,9 +404,9 @@ class PluginIPC:
 
     async def cleanup(self) -> None:
         """Cleanup IPC resources"""
-        for subject, sid in self._command_subscriptions.items():
+        for subject in self._command_subscriptions.keys():
             try:
-                await self.event_bus.unsubscribe(sid)
+                await self.event_bus.unsubscribe(subject)
             except Exception as e:
                 logger.error(f"Error unsubscribing from {subject}: {e}")
         self._command_subscriptions.clear()

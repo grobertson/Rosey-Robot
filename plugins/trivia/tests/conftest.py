@@ -83,7 +83,8 @@ def game_config():
     )
 
 
-import json
+# Import json here for specific test utilities
+import json  # noqa: E402
 
 @pytest.fixture
 def mock_nats():

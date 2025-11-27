@@ -11,9 +11,9 @@ Serves as canonical example for migrating plugins from direct SQLite access.
 """
 import logging
 import json
-import time
 import asyncio
 import random
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 try:
@@ -82,6 +82,11 @@ class QuoteDBPlugin:
         """
         self.logger.info(f"Initializing {self.NAMESPACE} plugin v{self.VERSION}")
 
+        # Skip if already initialized (idempotent)
+        if self._initialized:
+            self.logger.debug("Plugin already initialized, skipping")
+            return
+
         # Check migration status
         status = await self._check_migration_status()
 
@@ -100,11 +105,56 @@ class QuoteDBPlugin:
                 f"Run: db.migrate.{self.NAMESPACE}.apply"
             )
 
+        # Register table schema (required for row operations)
+        await self._register_schema()
+
         self._initialized = True
         self.logger.info(
             f"Plugin initialized successfully. "
             f"Schema version: {current_version}"
         )
+
+    async def _register_schema(self) -> None:
+        """
+        Register quotes table schema with database service.
+        
+        This is required before any row operations can be performed.
+        Defines the table structure after all migrations are applied.
+        
+        Raises:
+            RuntimeError: If schema registration fails
+        """
+        schema = {
+            "table": "quotes",
+            "schema": {
+                "fields": [
+                    {"name": "text", "type": "string", "required": True, "max_length": 1000},
+                    {"name": "author", "type": "string", "max_length": 100},
+                    {"name": "added_by", "type": "string", "max_length": 50},
+                    {"name": "added_at", "type": "datetime", "required": True},
+                    {"name": "score", "type": "integer", "required": True, "default": 0},
+                    {"name": "tags", "type": "string", "required": True, "default": "[]"}
+                ]
+            }
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.schema.register",
+                json.dumps(schema).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            
+            if not result.get("success"):
+                raise RuntimeError(f"Schema registration failed: {result.get('error')}")
+                
+            self.logger.info("Schema registered successfully")
+            
+        except asyncio.TimeoutError:
+            raise RuntimeError("Schema registration timeout - database service not responding")
+        except Exception as e:
+            raise RuntimeError(f"Schema registration failed: {e}")
 
     async def _check_migration_status(self) -> Dict[str, Any]:
         """
@@ -223,8 +273,9 @@ class QuoteDBPlugin:
                 "text": text,
                 "author": author,
                 "added_by": added_by,
-                "timestamp": int(time.time()),
-                "score": 0
+                "added_at": datetime.now(timezone.utc).isoformat(),
+                "score": 0,
+                "tags": "[]"
             }
         }
 
@@ -236,6 +287,13 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for errors
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row insert failed: {error}")
+                raise RuntimeError(f"Failed to add quote: {error}")
+            
             quote_id = result["id"]
 
             self.logger.info(f"Added quote {quote_id}: '{text[:50]}...' by {author}")
@@ -266,11 +324,10 @@ class QuoteDBPlugin:
         """
         self._ensure_initialized()
 
-        # Query via NATS
+        # Query via NATS - select uses direct ID, not filters
         query = {
             "table": "quotes",
-            "filters": {"id": {"$eq": quote_id}},
-            "limit": 1
+            "id": quote_id
         }
 
         try:
@@ -280,11 +337,17 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
-            rows = result.get("rows", [])
-
-            if rows:
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row select failed for quote {quote_id}: {error}")
+                raise RuntimeError(f"Failed to get quote: {error}")
+            
+            # Select returns exists + data, not rows
+            if result.get("exists"):
                 self.logger.info(f"Retrieved quote {quote_id}")
-                return rows[0]
+                return result.get("data")
             else:
                 self.logger.info(f"Quote {quote_id} not found")
                 return None
@@ -313,10 +376,10 @@ class QuoteDBPlugin:
         """
         self._ensure_initialized()
 
-        # Delete via NATS
+        # Delete via NATS - uses direct ID, not filters
         query = {
             "table": "quotes",
-            "filters": {"id": {"$eq": quote_id}}
+            "id": quote_id
         }
 
         try:
@@ -326,7 +389,14 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
-            deleted = result.get("deleted", 0) > 0
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row delete failed for quote {quote_id}: {error}")
+                raise RuntimeError(f"Failed to delete quote: {error}")
+            
+            deleted = result.get("deleted", False)
 
             if deleted:
                 self.logger.info(f"Deleted quote {quote_id}")
@@ -445,7 +515,7 @@ class QuoteDBPlugin:
                     {"text": {"$like": f"%{query}%"}}
                 ]
             },
-            "sort": {"field": "timestamp", "order": "desc"},
+            "sort": {"field": "added_at", "order": "desc"},
             "limit": limit
         }
 
@@ -456,6 +526,13 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row search failed for '{query}': {error}")
+                raise RuntimeError(f"Failed to search quotes: {error}")
+            
             quotes = result.get("rows", [])
 
             self.logger.info(f"Search '{query}' returned {len(quotes)} results")
@@ -471,6 +548,9 @@ class QuoteDBPlugin:
     async def upvote_quote(self, quote_id: int) -> int:
         """
         Atomically increment quote score by 1.
+
+        Uses atomic $inc operator to prevent race conditions in concurrent
+        upvotes. See DATABASE_SERVICE.md for atomic operations documentation.
 
         Args:
             quote_id: The ID of the quote to upvote
@@ -488,7 +568,7 @@ class QuoteDBPlugin:
         # Atomic increment via $inc
         payload = {
             "table": "quotes",
-            "filters": {"id": {"$eq": quote_id}},
+            "id": quote_id,
             "operations": {"score": {"$inc": 1}}
         }
 
@@ -499,8 +579,14 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row update failed for quote {quote_id}: {error}")
+                raise RuntimeError(f"Failed to upvote quote: {error}")
 
-            if result.get("updated", 0) == 0:
+            if not result.get("updated"):
                 raise ValueError(f"Quote {quote_id} not found")
 
             # Retrieve updated score
@@ -521,6 +607,9 @@ class QuoteDBPlugin:
         """
         Atomically decrement quote score by 1.
 
+        Uses atomic $inc operator with negative value to prevent race conditions
+        in concurrent downvotes. See DATABASE_SERVICE.md for atomic operations.
+
         Args:
             quote_id: The ID of the quote to downvote
 
@@ -534,9 +623,10 @@ class QuoteDBPlugin:
         """
         self._ensure_initialized()
 
+        # Atomic decrement via $inc with negative value
         payload = {
             "table": "quotes",
-            "filters": {"id": {"$eq": quote_id}},
+            "id": quote_id,
             "operations": {"score": {"$inc": -1}}
         }
 
@@ -547,10 +637,17 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for error
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row update failed for quote {quote_id}: {error}")
+                raise RuntimeError(f"Failed to downvote quote: {error}")
 
-            if result.get("updated", 0) == 0:
+            if not result.get("updated"):
                 raise ValueError(f"Quote {quote_id} not found")
 
+            # Retrieve updated score
             quote = await self.get_quote(quote_id)
             score = quote["score"]
 

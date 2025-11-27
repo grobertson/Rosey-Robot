@@ -15,8 +15,6 @@ import pytest
 from lib.storage import (
     QueryValidator,
     ParameterBinder,
-    SQLValidationError,
-    SQLSyntaxError,
     ForbiddenStatementError,
     NamespaceViolationError,
     StackedQueryError,

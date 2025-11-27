@@ -1550,7 +1550,6 @@ class CountdownPlugin:
         Returns:
             True if valid, False otherwise.
         """
-        import re
         return bool(re.match(r'^[a-z0-9_]{1,50}$', name))
     
     async def _send_reply(self, reply_to: Optional[str], response: dict) -> None:

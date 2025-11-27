@@ -3,11 +3,10 @@
 Tests cross-plugin interactions, help system integration, and performance.
 """
 
-import asyncio
 import json
 import time
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

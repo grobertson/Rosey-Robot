@@ -26,8 +26,7 @@ async def test_shell_say_command_sends_chat(integration_bot, integration_shell):
 
 
 async def test_shell_add_command_updates_playlist(integration_bot, integration_shell):
-    """Shell 'add' command updates bot playlist."""
-    integration_bot.add_media = AsyncMock()
+    """Shell 'add' command publishes playlist.add event."""
     integration_bot.channel.playlist.queue = []
 
     result = await integration_shell.handle_command(
@@ -35,7 +34,20 @@ async def test_shell_add_command_updates_playlist(integration_bot, integration_s
         integration_bot
     )
 
-    integration_bot.add_media.assert_called_once()
+    # Verify event was published
+    integration_bot.event_bus.publish.assert_called_once()
+    
+    # Get the published event
+    call_args = integration_bot.event_bus.publish.call_args
+    event = call_args[0][0]  # First positional argument
+    
+    # Verify event structure
+    assert event.subject == "rosey.platform.cytube.send.playlist.add", f"Expected playlist.add event, got {event.subject}"
+    assert event.event_type == "command"
+    assert event.data["command"] == "playlist.add"
+    assert event.data["params"]["type"] == "yt"
+    assert event.data["params"]["id"] == "dQw4w9WgXcQ"
+    assert "correlation_id" in event.data or hasattr(event, "correlation_id")
     assert "Added" in result or "added" in result.lower()
 
 

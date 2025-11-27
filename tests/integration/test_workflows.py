@@ -66,12 +66,7 @@ async def test_complete_user_session_workflow(integration_bot, integration_db):
 
 
 async def test_playlist_manipulation_workflow(integration_bot, integration_shell):
-    """Complete workflow: add → query → move → jump → remove."""
-    integration_bot.add_media = AsyncMock()
-    integration_bot.move_media = AsyncMock()
-    integration_bot.set_current_media = AsyncMock()
-    integration_bot.remove_media = AsyncMock()
-
+    """Complete workflow: add → query → move → jump → remove via NATS events."""
     # Setup playlist
     item1 = MagicMock(title="Video 1", duration=120, temp=False)
     item2 = MagicMock(title="Video 2", duration=180, temp=False)
@@ -79,10 +74,13 @@ async def test_playlist_manipulation_workflow(integration_bot, integration_shell
     integration_bot.channel.playlist.queue = [item1, item2, item3]
     integration_bot.channel.playlist.current = item1
 
+    # Reset mock to track all calls
+    integration_bot.event_bus.publish.reset_mock()
+
     # 1. Add new item
     await integration_shell.handle_command("add https://youtu.be/xyz", integration_bot)
 
-    # 2. Query playlist
+    # 2. Query playlist (no event - direct query)
     result = await integration_shell.handle_command("playlist", integration_bot)
     assert "Video 1" in result
 
@@ -95,9 +93,31 @@ async def test_playlist_manipulation_workflow(integration_bot, integration_shell
     # 5. Remove item
     await integration_shell.handle_command("remove 3", integration_bot)
 
-    # Verify all commands executed
-    integration_bot.add_media.assert_called_once()
-    integration_bot.set_current_media.assert_called_once()
+    # Verify all playlist manipulation events were published (add, move, jump, remove = 4 events)
+    assert integration_bot.event_bus.publish.call_count == 4, f"Expected 4 events, got {integration_bot.event_bus.publish.call_count}"
+    
+    # Verify event sequence
+    calls = integration_bot.event_bus.publish.call_args_list
+    
+    # Event 1: playlist.add
+    event1 = calls[0][0][0]
+    assert event1.subject == "rosey.platform.cytube.send.playlist.add"
+    assert event1.data["command"] == "playlist.add"
+    
+    # Event 2: playlist.move
+    event2 = calls[1][0][0]
+    assert event2.subject == "rosey.platform.cytube.send.playlist.move"
+    assert event2.data["command"] == "playlist.move"
+    
+    # Event 3: playlist.jump
+    event3 = calls[2][0][0]
+    assert event3.subject == "rosey.platform.cytube.send.playlist.jump"
+    assert event3.data["command"] == "playlist.jump"
+    
+    # Event 4: playlist.remove
+    event4 = calls[3][0][0]
+    assert event4.subject == "rosey.platform.cytube.send.playlist.remove"
+    assert event4.data["command"] == "playlist.remove"
 
 
 @pytest.mark.xfail(reason="PM command database logging needs refactor - see issue #XX")

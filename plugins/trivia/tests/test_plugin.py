@@ -4,11 +4,9 @@ Tests for trivia plugin integration.
 
 import json
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from trivia.plugin import TriviaPlugin
-from trivia.game import GameState
-from trivia.question import Difficulty, Question, QuestionType
 
 
 class TestTriviaPluginInit:

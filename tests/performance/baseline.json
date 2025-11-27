@@ -1,0 +1,34 @@
+{
+  "version": "1.0",
+  "environment": "ci",
+  "calibration_date": "2025-11-27",
+  "tolerance_percent": 20,
+  "description": "Performance baselines calibrated for CI environment with 20% tolerance for system variation",
+  "baselines": {
+    "simple_select_validation": {
+      "ops_per_sec": 300,
+      "description": "Simple SELECT statement validation with sqlparse overhead",
+      "min_acceptable": 240
+    },
+    "complex_join_validation": {
+      "ops_per_sec": 40,
+      "description": "Complex JOIN with multiple tables - sqlparse is slower for complex queries",
+      "min_acceptable": 32
+    },
+    "many_params_validation": {
+      "ops_per_sec": 35,
+      "description": "Query with many parameters (20 placeholders)",
+      "min_acceptable": 28
+    },
+    "rate_check_throughput": {
+      "ops_per_sec": 5000,
+      "description": "Rate limiter throughput checking",
+      "min_acceptable": 4000
+    },
+    "full_pipeline": {
+      "avg_time_ms": 5.0,
+      "description": "Full SQL pipeline (validation + binding) without database execution",
+      "max_acceptable": 6.0
+    }
+  }
+}

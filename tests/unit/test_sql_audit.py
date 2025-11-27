@@ -6,15 +6,13 @@ detection, and metrics collection.
 """
 
 import logging
-import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from lib.storage.sql_audit import (
     AuditLogEntry,
     QueryMetrics,
-    SlowQueryLogEntry,
     SQLAuditLogger,
 )
 
@@ -197,7 +195,7 @@ class TestSQLAuditLogger:
 
     def test_log_query_slow(self, logger):
         """Test slow query is logged separately."""
-        entry = logger.log_query(
+        logger.log_query(
             plugin="test-plugin",
             query="SELECT * FROM test_plugin__events",
             params=[],

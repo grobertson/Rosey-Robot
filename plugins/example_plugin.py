@@ -37,7 +37,8 @@ warnings.warn(
     stacklevel=2,
 )
 
-from lib.plugin import Plugin, PluginMetadata
+# Import after deprecation warning
+from lib.plugin import Plugin, PluginMetadata  # noqa: E402
 
 
 class ExamplePlugin(Plugin):

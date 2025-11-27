@@ -75,6 +75,201 @@ The `DatabaseService` is a NATS-enabled wrapper around `BotDatabase` that enable
 | `rosey.db.messages.outbound.get` | `{limit: int, max_retries: int}` | `[{id, message, ...}]` | Get unsent messages |
 | `rosey.db.stats.recent_chat.get` | `{limit: int}` | `[{timestamp, username, message}]` | Get recent chat |
 
+### Plugin Row Operations (Request/Reply)
+
+**Sprint 14+**: Generic CRUD operations for plugin-managed tables. All subjects follow pattern: `rosey.db.row.{plugin}.{operation}`
+
+#### Schema Registration
+
+| Subject | Request | Response | Description |
+|---------|---------|----------|-------------|
+| `rosey.db.row.{plugin}.schema.register` | See below | `{"success": true}` or error | Register table schema |
+
+**Request Format**:
+```json
+{
+  "table": "quotes",
+  "schema": {
+    "fields": [
+      {"name": "text", "type": "string", "required": true, "max_length": 1000},
+      {"name": "author", "type": "string", "max_length": 100},
+      {"name": "score", "type": "integer", "required": true, "default": 0}
+    ]
+  }
+}
+```
+
+**Note**: Reserved fields (`id`, `created_at`, `updated_at`) are added automatically.
+
+#### Row Insert
+
+| Subject | Request | Response | Description |
+|---------|---------|----------|-------------|
+| `rosey.db.row.{plugin}.insert` | `{"table": str, "data": dict}` | `{"success": true, "id": int}` | Insert new row |
+
+**Example**:
+```json
+// Request
+{"table": "quotes", "data": {"text": "Hello", "author": "Alice", "score": 0}}
+
+// Response
+{"success": true, "id": 42}
+```
+
+#### Row Select (Get by ID)
+
+| Subject | Request | Response | Description |
+|---------|---------|----------|-------------|
+| `rosey.db.row.{plugin}.select` | `{"table": str, "id": int}` | `{"success": true, "exists": bool, "data": dict}` | Get single row by ID |
+
+**Example**:
+```json
+// Request
+{"table": "quotes", "id": 42}
+
+// Response
+{"success": true, "exists": true, "data": {"id": 42, "text": "Hello", "author": "Alice", ...}}
+
+// Not found
+{"success": true, "exists": false}
+```
+
+#### Row Update
+
+| Subject | Request | Response | Description |
+|---------|---------|----------|-------------|
+| `rosey.db.row.{plugin}.update` | See below | `{"success": true, "updated": bool}` | Update row (two modes) |
+
+**Mode 1: Simple Update** (partial field updates):
+```json
+// Request
+{"table": "quotes", "id": 42, "data": {"author": "Bob"}}
+
+// Response
+{"success": true, "id": 42, "updated": true}
+```
+
+**Mode 2: Atomic Operations** (Sprint 14 - race-condition-free):
+```json
+// Request - Atomic increment
+{"table": "quotes", "id": 42, "operations": {"score": {"$inc": 1}}}
+
+// Request - Multiple operations
+{
+  "table": "quotes",
+  "id": 42,
+  "operations": {
+    "score": {"$inc": 10},
+    "high_score": {"$max": 95}
+  }
+}
+
+// Response
+{"success": true, "id": 42, "updated": true}
+```
+
+**Supported Atomic Operators**:
+- `$inc`: Increment by value (can be negative for decrement)
+- `$dec`: Decrement by value
+- `$mul`: Multiply by value
+- `$max`: Set to maximum of current and new value
+- `$min`: Set to minimum of current and new value
+- `$set`: Set to value
+
+**Usage Notes**:
+- Must provide either `data` **or** `operations`, not both
+- Atomic operations prevent race conditions in concurrent updates
+- `updated_at` timestamp automatically updated
+- Cannot modify immutable fields (`id`, `created_at`)
+
+#### Row Delete
+
+| Subject | Request | Response | Description |
+|---------|---------|----------|-------------|
+| `rosey.db.row.{plugin}.delete` | `{"table": str, "id": int}` | `{"success": true, "deleted": bool}` | Delete row by ID |
+
+**Example**:
+```json
+// Request
+{"table": "quotes", "id": 42}
+
+// Response - deleted
+{"success": true, "deleted": true}
+
+// Response - not found
+{"success": true, "deleted": false}
+```
+
+#### Row Search
+
+| Subject | Request | Response | Description |
+|---------|---------|----------|-------------|
+| `rosey.db.row.{plugin}.search` | See below | `{"success": true, "rows": list}` | Search with filters |
+
+**Example**:
+```json
+// Request - Simple search
+{
+  "table": "quotes",
+  "filters": {"author": {"$eq": "Alice"}},
+  "limit": 10
+}
+
+// Request - Complex search with OR and LIKE
+{
+  "table": "quotes",
+  "filters": {
+    "$or": [
+      {"author": {"$like": "%Einstein%"}},
+      {"text": {"$like": "%relativity%"}}
+    ]
+  },
+  "sort": {"field": "score", "order": "desc"},
+  "limit": 20
+}
+
+// Response
+{
+  "success": true,
+  "rows": [
+    {"id": 1, "text": "...", "author": "Einstein", ...},
+    {"id": 5, "text": "...", "author": "Einstein", ...}
+  ]
+}
+```
+
+**Filter Operators**:
+- `$eq`: Equal
+- `$ne`: Not equal
+- `$gt`: Greater than
+- `$gte`: Greater than or equal
+- `$lt`: Less than
+- `$lte`: Less than or equal
+- `$like`: SQL LIKE pattern match
+- `$in`: Value in list
+- `$or`: Logical OR of filters
+
+#### Error Responses
+
+All operations return errors in consistent format:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable description"
+  }
+}
+```
+
+**Common Error Codes**:
+- `INVALID_JSON`: Malformed request
+- `MISSING_FIELD`: Required field missing
+- `VALIDATION_ERROR`: Schema validation failed
+- `DATABASE_ERROR`: Database operation failed
+- `INTERNAL_ERROR`: Unexpected error
+
 ---
 
 ## Usage

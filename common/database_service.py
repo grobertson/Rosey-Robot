@@ -1383,11 +1383,22 @@ class DatabaseService:
         """
         Handle rosey.db.row.{plugin}.update requests.
 
-        Request:
+        Supports two modes:
+        1. Simple update with "data" parameter (partial field updates)
+        2. Atomic operations with "operations" parameter (Sprint 14 atomic operators)
+
+        Request (Simple update):
             {
                 "table": str,
                 "id": int,
                 "data": dict
+            }
+
+        Request (Atomic operations):
+            {
+                "table": str,
+                "id": int,
+                "operations": dict
             }
 
         Response:
@@ -1419,6 +1430,7 @@ class DatabaseService:
             table_name = request.get('table')
             row_id = request.get('id')
             data = request.get('data')
+            operations = request.get('operations')
 
             if not table_name:
                 await msg.respond(json.dumps({
@@ -1440,19 +1452,23 @@ class DatabaseService:
                 }).encode())
                 return
 
-            if data is None:
+            # Must provide either data or operations
+            if data is None and operations is None:
                 await msg.respond(json.dumps({
                     "success": False,
                     "error": {
                         "code": "MISSING_FIELD",
-                        "message": "Required field 'data' missing"
+                        "message": "Must provide either 'data' or 'operations' field"
                     }
                 }).encode())
                 return
 
             # Update
             try:
-                result = await self.db.row_update(plugin_name, table_name, row_id, data)
+                result = await self.db.row_update(
+                    plugin_name, table_name, row_id,
+                    data=data, operations=operations
+                )
             except ValueError as e:
                 await msg.respond(json.dumps({
                     "success": False,
@@ -1822,7 +1838,14 @@ class DatabaseService:
             plugin_name = parts[3]
 
             # Extract request fields
-            target_version = request.get('version')
+            target_version_raw = request.get('target_version')
+            if target_version_raw is None or target_version_raw == 'latest':
+                # Default to latest: discover all migrations and use max version
+                all_migrations = self.migration_manager.discover_migrations(plugin_name)
+                target_version = max(m.version for m in all_migrations) if all_migrations else 0
+            else:
+                target_version = int(target_version_raw)
+
             applied_by = request.get('applied_by', 'system')
             dry_run = request.get('dry_run', False)
 
@@ -1844,9 +1867,13 @@ class DatabaseService:
                 return
 
             try:
+                # Ensure migrations table exists (initialize if needed)
+                async with self.db._get_session() as session:
+                    await self.migration_executor.ensure_migrations_table(session)
+
                 # Get pending migrations
                 current_version = await self._get_current_version(plugin_name)
-                migrations = await self.migration_manager.get_pending_migrations(
+                migrations = self.migration_manager.get_pending_migrations(
                     plugin_name=plugin_name,
                     current_version=current_version,
                     target_version=target_version

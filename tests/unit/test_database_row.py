@@ -20,6 +20,7 @@ from common.models import Base
 @pytest.fixture
 async def db():
     """Create in-memory database for testing."""
+    import asyncio
     database = BotDatabase(':memory:')
 
     # Create all tables directly (bypass connect() which expects tables from Alembic)
@@ -33,6 +34,8 @@ async def db():
 
     yield database
 
+    # Wait for any pending background tasks to complete
+    await asyncio.sleep(0.1)
     await database.close()
 
 

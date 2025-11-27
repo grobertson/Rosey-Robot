@@ -142,7 +142,7 @@ class CommandRouter:
         self._fallback_plugins: List[str] = []
 
         # Subscription tracking
-        self._subscriptions: List[int] = []
+        self._subscriptions: List[str] = []
         self._running = False
 
     # ========================================================================
@@ -162,25 +162,28 @@ class CommandRouter:
 
         try:
             # Subscribe to platform messages (cytube.message, etc.)
-            sub_id = await self.event_bus.subscribe(
-                f"{Subjects.PLATFORM}.*.{EventTypes.MESSAGE}",
+            subject = f"{Subjects.PLATFORM}.*.{EventTypes.MESSAGE}"
+            await self.event_bus.subscribe(
+                subject,
                 self._handle_platform_message
             )
-            self._subscriptions.append(sub_id)
+            self._subscriptions.append(subject)
 
             # Subscribe to platform commands
-            sub_id = await self.event_bus.subscribe(
-                f"{Subjects.PLATFORM}.*.{EventTypes.COMMAND}",
+            subject = f"{Subjects.PLATFORM}.*.{EventTypes.COMMAND}"
+            await self.event_bus.subscribe(
+                subject,
                 self._handle_platform_command
             )
-            self._subscriptions.append(sub_id)
+            self._subscriptions.append(subject)
 
             # Subscribe to plugin responses
-            sub_id = await self.event_bus.subscribe(
-                f"{Subjects.PLUGINS}.*.{EventTypes.MESSAGE}",
+            subject = f"{Subjects.PLUGINS}.*.{EventTypes.MESSAGE}"
+            await self.event_bus.subscribe(
+                subject,
                 self._handle_plugin_response
             )
-            self._subscriptions.append(sub_id)
+            self._subscriptions.append(subject)
 
             self._running = True
             logger.info("Command router started")
@@ -202,8 +205,8 @@ class CommandRouter:
 
         try:
             # Unsubscribe from all events
-            for sub_id in self._subscriptions:
-                await self.event_bus.unsubscribe(sub_id)
+            for subject in self._subscriptions:
+                await self.event_bus.unsubscribe(subject)
 
             self._subscriptions.clear()
             self._running = False

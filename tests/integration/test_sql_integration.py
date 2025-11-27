@@ -16,7 +16,6 @@ from lib.storage import (
     PermissionDeniedError,
     PreparedStatementExecutor,
     ResultFormatter,
-    TimeoutError,
 )
 
 

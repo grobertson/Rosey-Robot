@@ -7,7 +7,7 @@ results into JSON-serializable format with proper metadata and error handling.
 
 import base64
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from .sql_errors import (
     ExecutionError,
@@ -16,7 +16,6 @@ from .sql_errors import (
     SQLValidationError,
     TimeoutError,
 )
-
 
 logger = logging.getLogger(__name__)
 

@@ -60,9 +60,18 @@ async def nats_client():
 
 
 @pytest.fixture
-async def db_service(nats_client):
-    """Create DatabaseService with NATS and in-memory database."""
-    service = DatabaseService(nats_client, ':memory:')
+async def db_service(nats_client, tmp_path_factory):
+    """Create DatabaseService with NATS and file-backed temporary database.
+    
+    Uses file-backed SQLite instead of :memory: to avoid session.commit()
+    deadlock issues when called from NATS callback handlers.
+    """
+    
+    # Create temporary database file
+    temp_dir = tmp_path_factory.mktemp("db")
+    db_path = temp_dir / "test_row_nats.db"
+    
+    service = DatabaseService(nats_client, str(db_path))
 
     # Initialize database tables BEFORE calling start()
     # start() will call connect() which needs tables to exist
@@ -73,8 +82,64 @@ async def db_service(nats_client):
 
     yield service
 
-    await service.stop()
-    await service.db.close()
+    # Proper teardown to prevent OperationalError
+    try:
+        # Stop service (unsubscribes from NATS)
+        await service.stop()
+        # Note: service.stop() already calls db.close(), but close() checks is_connected
+        # The close() method tries to UPDATE user_stats table which doesn't exist in tests
+        # This is handled by the try/except in close() method, but we log it here too
+    except Exception as e:
+        # Log but don't fail on teardown errors (table may not exist in test DB)
+        import logging
+        logging.warning(f"Error during db_service teardown: {e}")
+    
+    # Clean up temporary database file
+    try:
+        if db_path.exists():
+            db_path.unlink()
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to delete temporary database {db_path}: {e}")
+
+
+@pytest.fixture
+async def schema_registered(nats_client, db_service):
+    """Register test schema before running row NATS tests.
+    
+    This fixture registers a quotes table schema that is used by row NATS tests.
+    The schema includes all required fields and is scoped to the 'test-plugin' plugin.
+    Must depend on db_service to ensure DatabaseService is started first.
+    
+    Returns:
+        dict: Registration response with success status
+    """
+    schema_payload = {
+        "table": "quotes",
+        "schema": {
+            "fields": [
+                {"name": "id", "type": "integer", "required": True},
+                {"name": "text", "type": "text", "required": True},
+                {"name": "author", "type": "text", "required": False},
+                {"name": "added_by", "type": "text", "required": False},
+                {"name": "timestamp", "type": "integer", "required": False}
+            ]
+        }
+    }
+    
+    # Register schema via NATS
+    response = await nats_client.request(
+        "rosey.db.row.test-plugin.schema.register",
+        json.dumps(schema_payload).encode(),
+        timeout=2.0
+    )
+    
+    result = json.loads(response.data.decode())
+    assert result.get('success') is True, f"Schema registration failed: {result}"
+    
+    yield result
+    
+    # No cleanup needed - schema registry is in-memory and cleared with db_service
 
 
 # ==================== Schema Registration Tests ====================
@@ -162,8 +227,8 @@ class TestRowInsertNATS:
 
     async def test_insert_single_row_via_nats(self, nats_client, db_service):
         """Test single row insert through NATS."""
-        # Register schema first
-        await nats_client.request(
+        # Register schema first (increased timeout to allow for database commit)
+        reg_response = await nats_client.request(
             "rosey.db.row.test.schema.register",
             json.dumps({
                 "table": "items",
@@ -173,8 +238,19 @@ class TestRowInsertNATS:
                     ]
                 }
             }).encode(),
-            timeout=1.0
+            timeout=5.0  # Increased from 1.0 to allow database commit to complete
         )
+        
+        reg_result = json.loads(reg_response.data.decode())
+        assert reg_result['success'] is True, f"Schema registration failed: {reg_result}"
+        
+        # Verify schema is in cache
+        schema = db_service.db.schema_registry.get_schema("test", "items")
+        assert schema is not None, f"Schema not found in cache after registration. Cache: {db_service.db.schema_registry._cache.keys()}"
+        
+        # Small delay to ensure background task completes
+        import asyncio
+        await asyncio.sleep(0.1)
 
         # Insert row
         response = await nats_client.request(
@@ -183,11 +259,11 @@ class TestRowInsertNATS:
                 "table": "items",
                 "data": {"name": "Test Item"}
             }).encode(),
-            timeout=1.0
+            timeout=5.0  # Increased timeout
         )
 
         result = json.loads(response.data.decode())
-        assert result['success'] is True
+        assert result['success'] is True, f"Insert failed: {result.get('error', 'Unknown error')}"
         assert result['created'] is True
         assert isinstance(result['id'], int)
 

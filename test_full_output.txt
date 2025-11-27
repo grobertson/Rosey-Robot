@@ -1,0 +1,24 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.11, pytest-7.4.4, pluggy-1.6.0 -- C:\Users\me\miniforge3\python.exe
+cachedir: .pytest_cache
+rootdir: D:\Devel\Rosey-Robot
+configfile: pytest.ini
+plugins: anyio-4.11.0, asyncio-0.23.8, cov-7.0.0, mock-3.15.1
+asyncio: mode=Mode.AUTO
+collecting ... collected 51 items / 50 deselected / 1 selected
+
+tests/integration/test_row_nats.py::TestRowInsertNATS::test_insert_single_row_via_nats Test - db_service.db id: 1975570507504
+Test - schema_registry id: 1975570507408
+Test - Cache keys: [('test', 'items')]
+FAILED
+
+================================== FAILURES ===================================
+______________ TestRowInsertNATS.test_insert_single_row_via_nats ______________
+tests\integration\test_row_nats.py:274: in test_insert_single_row_via_nats
+    assert result['success'] is True, f"Insert failed: {result.get('error', 'Unknown error')}"
+E   AssertionError: Insert failed: {'code': 'VALIDATION_ERROR', 'message': "Table 'items' not registered for plugin 'test'. Register schema first using schema_register."}
+E   assert False is True
+=========================== short test summary info ===========================
+FAILED tests/integration/test_row_nats.py::TestRowInsertNATS::test_insert_single_row_via_nats
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+================= 1 failed, 50 deselected, 1 warning in 0.74s =================

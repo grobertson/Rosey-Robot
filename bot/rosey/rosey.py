@@ -20,9 +20,9 @@ from time import localtime, strftime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from common import Shell, get_config, configure_logger
-from common.database_service import DatabaseService
-from lib import Bot
+from common import Shell, get_config, configure_logger  # noqa: E402
+from common.database_service import DatabaseService  # noqa: E402
+from lib import Bot  # noqa: E402
 
 # NATS import
 try:

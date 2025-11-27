@@ -24,11 +24,10 @@ Note: Tests use fixtures from conftest.py which properly initialize
 import pytest
 import time
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from common.database import BotDatabase
 from common.models import (
-    Base, UserStats, ChannelStats, CurrentStatus, RecentChat,
-    OutboundMessage, UserAction, UserCountHistory, ApiToken
+    Base
 )
 
 

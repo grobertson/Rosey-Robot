@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures for quote-db plugin tests."""
 import pytest
+import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock
 import json
 
@@ -9,12 +10,40 @@ def mock_nats():
     """
     Create mock NATS client for testing.
 
-    The mock client returns successful responses by default.
-    Individual tests can override response behavior.
+    Returns AsyncMock with no default configuration.
+    Tests should set return_value or side_effect as needed.
     """
     nats = AsyncMock()
+    nats.request = AsyncMock()
+    return nats
 
-    # Default response for migration status
+
+@pytest.fixture
+def plugin(mock_nats):
+    """
+    Create QuoteDBPlugin instance with mock NATS client.
+
+    Plugin is not initialized by default - tests that need initialization
+    should set up mock responses and call plugin.initialize().
+    Or use initialized_plugin fixture instead.
+    """
+    from quote_db import QuoteDBPlugin
+    return QuoteDBPlugin(mock_nats)
+
+
+@pytest_asyncio.fixture(scope="function")
+async def initialized_plugin(mock_nats):
+    """
+    Create and initialize QuoteDBPlugin instance.
+
+    Use this fixture when tests need an initialized plugin.
+    Creates plugin with the mock_nats fixture and initializes it.
+    Tests can then override mock_nats.request.return_value for their needs.
+    """
+    from quote_db import QuoteDBPlugin
+    plugin = QuoteDBPlugin(mock_nats)
+    
+    # Temporarily configure mock for initialization (2 calls)
     status_response = MagicMock()
     status_response.data = json.dumps({
         "success": True,
@@ -26,32 +55,25 @@ def mock_nats():
             {"version": 3, "name": "add_tags_column"}
         ]
     }).encode()
-
-    nats.request = AsyncMock(return_value=status_response)
-
-    return nats
-
-
-@pytest.fixture
-def plugin(mock_nats):
-    """
-    Create QuoteDBPlugin instance with mock NATS client.
-
-    Plugin is not initialized by default - tests should call
-    plugin.initialize() as needed.
-    """
-    from quote_db import QuoteDBPlugin
-    return QuoteDBPlugin(mock_nats)
-
-
-@pytest.fixture
-async def initialized_plugin(plugin):
-    """
-    Create and initialize QuoteDBPlugin instance.
-
-    Use this fixture when tests need an initialized plugin.
-    """
+    
+    schema_response = MagicMock()
+    schema_response.data = json.dumps({"success": True}).encode()
+    
+    # Save any existing side_effect the test may have set
+    original_side_effect = mock_nats.request.side_effect
+    original_return_value = mock_nats.request.return_value
+    
+    # Set up for initialization
+    mock_nats.request.side_effect = [status_response, schema_response]
+    mock_nats.request.return_value = None
+    
+    # Initialize
     await plugin.initialize()
+    
+    # Restore original mock configuration
+    mock_nats.request.side_effect = original_side_effect
+    mock_nats.request.return_value = original_return_value
+    
     return plugin
 
 

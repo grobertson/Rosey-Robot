@@ -8,9 +8,9 @@ import time
 import uuid
 from datetime import datetime
 
-from lib import MediaLink
 from bot.rosey.core.event_bus import Event
 from bot.rosey.core.subjects import Subjects
+from lib import MediaLink
 
 
 class Shell:
@@ -642,7 +642,7 @@ Examples:
         try:
             # Parse media link to extract type and id
             link = MediaLink.from_url(url)
-            
+
             # Create NATS event for playlist add
             event = Event(
                 subject=f"{Subjects.PLATFORM}.cytube.send.playlist.add",
@@ -659,7 +659,7 @@ Examples:
                 },
                 correlation_id=str(uuid.uuid4())
             )
-            
+
             # Publish event to EventBus (fire-and-forget)
             await bot.event_bus.publish(event)
             return f"Added: {url} ({'temporary' if temp else 'permanent'})"
@@ -686,7 +686,7 @@ Examples:
             return f"Position must be between 1 and {len(queue)}"
 
         item = queue[pos - 1]
-        
+
         try:
             # Create NATS event for playlist remove
             event = Event(
@@ -701,7 +701,7 @@ Examples:
                 },
                 correlation_id=str(uuid.uuid4())
             )
-            
+
             # Publish event to EventBus (fire-and-forget)
             await bot.event_bus.publish(event)
             return f"Removed: {item.title}"
@@ -734,7 +734,7 @@ Examples:
         from_item = queue[from_pos - 1]
         # After position in CyTube is the item before the target position
         after_uid = queue[to_pos - 2].uid if to_pos > 1 else "prepend"
-        
+
         try:
             # Create NATS event for playlist move
             event = Event(
@@ -750,7 +750,7 @@ Examples:
                 },
                 correlation_id=str(uuid.uuid4())
             )
-            
+
             # Publish event to EventBus (fire-and-forget)
             await bot.event_bus.publish(event)
             return f"Moved {from_item.title} from position {from_pos} to {to_pos}"
@@ -777,7 +777,7 @@ Examples:
             return f"Position must be between 1 and {len(queue)}"
 
         item = queue[pos - 1]
-        
+
         try:
             # Create NATS event for playlist jump
             event = Event(
@@ -792,7 +792,7 @@ Examples:
                 },
                 correlation_id=str(uuid.uuid4())
             )
-            
+
             # Publish event to EventBus (fire-and-forget)
             await bot.event_bus.publish(event)
             return f"Jumped to: {item.title}"
@@ -815,7 +815,7 @@ Examples:
             current_idx = queue.index(current)
             if current_idx + 1 < len(queue):
                 next_item = queue[current_idx + 1]
-                
+
                 try:
                     # Create NATS event for playlist jump (next uses jump command)
                     event = Event(
@@ -830,7 +830,7 @@ Examples:
                         },
                         correlation_id=str(uuid.uuid4())
                     )
-                    
+
                     # Publish event to EventBus (fire-and-forget)
                     await bot.event_bus.publish(event)
                     return f"Skipped to: {next_item.title}"

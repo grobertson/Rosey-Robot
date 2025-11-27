@@ -1684,12 +1684,19 @@ class BotDatabase:
             # result = {"ids": [2, 3], "created": 2}
         """
         # Get schema
+        self.logger.info(f"TEMP: row_insert - plugin={plugin_name}, table={table_name}")
+        self.logger.info(f"TEMP: schema_registry id: {id(self.schema_registry)}")
+        self.logger.info(f"TEMP: cache keys: {list(self.schema_registry._cache.keys())}")
         schema = self.schema_registry.get_schema(plugin_name, table_name)
+        self.logger.info(f"TEMP: schema retrieved: {schema is not None}, value: {schema}")
+        self.logger.info(f"TEMP: About to check: if not schema (bool={not schema})")
         if not schema:
+            self.logger.error("TEMP: RAISING ValueError - schema is falsy!")
             raise ValueError(
                 f"Table '{table_name}' not registered for plugin '{plugin_name}'. "
                 f"Register schema first using schema_register."
             )
+        self.logger.info("TEMP: Schema check passed, continuing...")
 
         # Handle bulk vs single
         is_bulk = isinstance(data, list)
@@ -1717,14 +1724,33 @@ class BotDatabase:
         full_table_name = f"{plugin_name}_{table_name}"
         table = await self.get_table(full_table_name)
 
-        # Insert with transaction
-        async with self._get_session() as session:
-            if is_bulk:
-                # Bulk insert with RETURNING
-                stmt = insert(table).returning(table.c.id)
-                result = await session.execute(stmt, validated_rows)
-                ids = [row[0] for row in result.fetchall()]
+        # CRITICAL: In NATS handlers, async database operations get cancelled.
+        # Must use synchronous execution for actual insert.
+        # Use run_sync() to execute on same engine connection (fixes in-memory DB isolation)
+        return await self._row_insert_sync(plugin_name, table_name, validated_rows, is_bulk, table)
 
+    async def _row_insert_sync(
+        self,
+        plugin_name: str,
+        table_name: str,
+        validated_rows: List[Dict[str, Any]],
+        is_bulk: bool,
+        table: Table
+    ) -> Dict[str, Any]:
+        """Execute insert synchronously to avoid NATS handler cancellation.
+
+        Uses run_sync() to execute sync SQLAlchemy operations on the async engine's
+        connection, ensuring we use the same database (critical for in-memory SQLite).
+        """
+
+        def do_insert(sync_conn):
+            """Synchronous insert executed on async engine's connection."""
+            if is_bulk:
+                # Bulk insert
+                stmt = insert(table).returning(table.c.id)
+                result = sync_conn.execute(stmt, validated_rows)
+                ids = [row[0] for row in result.fetchall()]
+                # Don't commit - transaction managed by begin() context
                 return {
                     "ids": ids,
                     "created": len(ids)
@@ -1732,13 +1758,17 @@ class BotDatabase:
             else:
                 # Single insert
                 stmt = insert(table).values(**validated_rows[0]).returning(table.c.id)
-                result = await session.execute(stmt)
+                result = sync_conn.execute(stmt)
                 row_id = result.scalar()
-
+                # Don't commit - transaction managed by begin() context
                 return {
                     "id": row_id,
                     "created": True
                 }
+
+        # Execute sync operation on async engine's connection
+        async with self.engine.begin() as conn:
+            return await conn.run_sync(do_insert)
 
     async def row_select(
         self,
