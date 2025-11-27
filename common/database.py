@@ -1726,9 +1726,10 @@ class BotDatabase:
 
         # CRITICAL: In NATS handlers, async database operations get cancelled.
         # Must use synchronous execution for actual insert.
-        return self._row_insert_sync(plugin_name, table_name, validated_rows, is_bulk, table)
+        # Use run_sync() to execute on same engine connection (fixes in-memory DB isolation)
+        return await self._row_insert_sync(plugin_name, table_name, validated_rows, is_bulk, table)
 
-    def _row_insert_sync(
+    async def _row_insert_sync(
         self,
         plugin_name: str,
         table_name: str,
@@ -1736,48 +1737,39 @@ class BotDatabase:
         is_bulk: bool,
         table: Table
     ) -> Dict[str, Any]:
-        """Execute insert synchronously to avoid NATS handler cancellation."""
-        from sqlalchemy import create_engine, insert
-        from sqlalchemy.pool import StaticPool
+        """Execute insert synchronously to avoid NATS handler cancellation.
         
-        # Extract database URL and convert to sync
-        db_url = str(self.engine.url)
-        if db_url.startswith('sqlite+aiosqlite:'):
-            sync_url = db_url.replace('sqlite+aiosqlite:', 'sqlite:')
-        else:
-            sync_url = db_url
+        Uses run_sync() to execute sync SQLAlchemy operations on the async engine's
+        connection, ensuring we use the same database (critical for in-memory SQLite).
+        """
+        from sqlalchemy import insert
         
-        # Create synchronous engine
-        sync_engine = create_engine(
-            sync_url,
-            connect_args={"check_same_thread": False} if 'sqlite' in sync_url else {},
-            poolclass=StaticPool if 'sqlite' in sync_url else None
-        )
+        def do_insert(sync_conn):
+            """Synchronous insert executed on async engine's connection."""
+            if is_bulk:
+                # Bulk insert
+                stmt = insert(table).returning(table.c.id)
+                result = sync_conn.execute(stmt, validated_rows)
+                ids = [row[0] for row in result.fetchall()]
+                # Don't commit - transaction managed by begin() context
+                return {
+                    "ids": ids,
+                    "created": len(ids)
+                }
+            else:
+                # Single insert
+                stmt = insert(table).values(**validated_rows[0]).returning(table.c.id)
+                result = sync_conn.execute(stmt)
+                row_id = result.scalar()
+                # Don't commit - transaction managed by begin() context
+                return {
+                    "id": row_id,
+                    "created": True
+                }
         
-        try:
-            with sync_engine.connect() as conn:
-                if is_bulk:
-                    # Bulk insert
-                    stmt = insert(table).returning(table.c.id)
-                    result = conn.execute(stmt, validated_rows)
-                    ids = [row[0] for row in result.fetchall()]
-                    conn.commit()
-                    return {
-                        "ids": ids,
-                        "created": len(ids)
-                    }
-                else:
-                    # Single insert
-                    stmt = insert(table).values(**validated_rows[0]).returning(table.c.id)
-                    result = conn.execute(stmt)
-                    row_id = result.scalar()
-                    conn.commit()
-                    return {
-                        "id": row_id,
-                        "created": True
-                    }
-        finally:
-            sync_engine.dispose()
+        # Execute sync operation on async engine's connection
+        async with self.engine.begin() as conn:
+            return await conn.run_sync(do_insert)
 
     async def row_select(
         self,
