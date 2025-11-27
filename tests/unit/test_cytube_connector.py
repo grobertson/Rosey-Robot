@@ -194,6 +194,30 @@ class TestCytubeConnector:
         assert event.data["username"] == "testuser"
         assert event.data["message"] == "Hello world!"
 
+    async def test_handle_pm(self, mock_event_bus, mock_channel):
+        """Test handling incoming private message"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        pm_data = {
+            "username": "moduser",
+            "msg": "status",
+            "time": 123456789,
+            "to": "botname"
+        }
+
+        await connector._on_pm(pm_data)
+
+        # Should publish to EventBus with PM subject
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.pm"
+        assert event.event_type == "message"
+        assert event.metadata["cytube_event"] == "pm"
+        assert event.data["username"] == "moduser"
+        assert event.data["message"] == "status"
+        assert event.data["recipient"] == "botname"
+
     async def test_handle_user_join(self, mock_event_bus, mock_channel):
         """Test handling user join event"""
         connector = CytubeConnector(mock_event_bus, mock_channel)
@@ -303,6 +327,98 @@ class TestCytubeConnector:
         mock_event_bus.publish.assert_called_once()
         event = mock_event_bus.publish.call_args[0][0]
         assert event.data["item"]["title"] == "Queued Video"
+
+    async def test_handle_delete(self, mock_event_bus, mock_channel):
+        """Test handling video delete event"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        delete_data = {"uid": "video-abc123"}
+
+        await connector._on_delete(delete_data)
+
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.delete"
+        assert event.data["uid"] == "video-abc123"
+        assert connector._events_received == 1
+
+    async def test_handle_delete_missing_uid(self, mock_event_bus, mock_channel):
+        """Test handling delete event with missing uid"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        delete_data = {}
+
+        await connector._on_delete(delete_data)
+
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.data["uid"] == ""
+
+    async def test_handle_move_video(self, mock_event_bus, mock_channel):
+        """Test handling video move event"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        move_data = {
+            "from": 3,
+            "to": 1,
+            "uid": "video-xyz789"
+        }
+
+        await connector._on_move_video(move_data)
+
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.moveVideo"
+        assert event.data["from"] == 3
+        assert event.data["to"] == 1
+        assert event.data["uid"] == "video-xyz789"
+        assert connector._events_received == 1
+
+    async def test_handle_move_video_without_uid(self, mock_event_bus, mock_channel):
+        """Test handling move event without uid (older CyTube versions)"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        move_data = {"from": 5, "to": 2}
+
+        await connector._on_move_video(move_data)
+
+        mock_event_bus.publish.assert_called_once()
+        event = mock_event_bus.publish.call_args[0][0]
+        assert event.data["from"] == 5
+        assert event.data["to"] == 2
+        assert event.data["uid"] == ""
+
+    async def test_handle_delete_error(self, mock_event_bus, mock_channel):
+        """Test error handling in delete handler"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        # Make publish raise an exception
+        mock_event_bus.publish.side_effect = Exception("Publish failed")
+
+        delete_data = {"uid": "test-uid"}
+
+        await connector._on_delete(delete_data)
+
+        assert connector._errors == 1
+
+    async def test_handle_move_video_error(self, mock_event_bus, mock_channel):
+        """Test error handling in moveVideo handler"""
+        connector = CytubeConnector(mock_event_bus, mock_channel)
+        await connector.start()
+
+        # Make publish raise an exception
+        mock_event_bus.publish.side_effect = Exception("Publish failed")
+
+        move_data = {"from": 1, "to": 3, "uid": "test-uid"}
+
+        await connector._on_move_video(move_data)
+
+        assert connector._errors == 1
 
     async def test_send_chat_message(self, mock_event_bus, mock_channel):
         """Test sending chat message to Cytube"""

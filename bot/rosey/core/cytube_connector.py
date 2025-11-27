@@ -33,6 +33,7 @@ class CytubeEventType(Enum):
     """Cytube WebSocket event types"""
     # Chat events
     CHAT_MSG = "chatMsg"
+    PM = "pm"
     USER_JOIN = "addUser"
     USER_LEAVE = "userLeave"
     USER_COUNT = "usercount"
@@ -217,6 +218,7 @@ class CytubeConnector:
         """Register handlers for Cytube events"""
         # Chat events
         self.channel.on("chatMsg", self._on_chat_message)
+        self.channel.on("pm", self._on_pm)
         self.channel.on("addUser", self._on_user_join)
         self.channel.on("userLeave", self._on_user_leave)
         self.channel.on("usercount", self._on_user_count)
@@ -226,10 +228,13 @@ class CytubeConnector:
         self.channel.on("mediaUpdate", self._on_media_update)
         self.channel.on("playlist", self._on_playlist)
         self.channel.on("queue", self._on_queue)
+        self.channel.on("delete", self._on_delete)
+        self.channel.on("moveVideo", self._on_move_video)
 
         # Store handlers for cleanup
         self._event_handlers = {
             "chatMsg": self._on_chat_message,
+            "pm": self._on_pm,
             "addUser": self._on_user_join,
             "userLeave": self._on_user_leave,
             "usercount": self._on_user_count,
@@ -237,6 +242,8 @@ class CytubeConnector:
             "mediaUpdate": self._on_media_update,
             "playlist": self._on_playlist,
             "queue": self._on_queue,
+            "delete": self._on_delete,
+            "moveVideo": self._on_move_video,
         }
 
     def _unregister_cytube_handlers(self) -> None:
@@ -262,6 +269,25 @@ class CytubeConnector:
 
         except Exception as e:
             logger.error(f"Error handling chat message: {e}")
+            self._errors += 1
+
+    async def _on_pm(self, data: Dict[str, Any]) -> None:
+        """Handle incoming private message"""
+        try:
+            event = CytubeEvent(
+                event_type=CytubeEventType.PM,
+                data={
+                    "username": data.get("username", ""),
+                    "message": data.get("msg", ""),
+                    "time": data.get("time", 0),
+                    "recipient": data.get("to", ""),
+                }
+            )
+            await self._publish_to_eventbus(event)
+            self._events_received += 1
+
+        except Exception as e:
+            logger.error(f"Error handling private message: {e}")
             self._errors += 1
 
     async def _on_user_join(self, data: Dict[str, Any]) -> None:
@@ -375,6 +401,48 @@ class CytubeConnector:
 
         except Exception as e:
             logger.error(f"Error handling queue: {e}")
+            self._errors += 1
+
+    async def _on_delete(self, data: Dict[str, Any]) -> None:
+        """Handle video delete event
+        
+        Args:
+            data: Delete event data from CyTube containing uid of deleted item
+        """
+        try:
+            event = CytubeEvent(
+                event_type=CytubeEventType.DELETE,
+                data={
+                    "uid": data.get("uid", ""),
+                }
+            )
+            await self._publish_to_eventbus(event)
+            self._events_received += 1
+
+        except Exception as e:
+            logger.error(f"Error handling delete: {e}")
+            self._errors += 1
+
+    async def _on_move_video(self, data: Dict[str, Any]) -> None:
+        """Handle video move event
+        
+        Args:
+            data: Move event data from CyTube containing from/to positions and optional uid
+        """
+        try:
+            event = CytubeEvent(
+                event_type=CytubeEventType.MOVE_VIDEO,
+                data={
+                    "from": data.get("from", 0),
+                    "to": data.get("to", 0),
+                    "uid": data.get("uid", ""),
+                }
+            )
+            await self._publish_to_eventbus(event)
+            self._events_received += 1
+
+        except Exception as e:
+            logger.error(f"Error handling moveVideo: {e}")
             self._errors += 1
 
     async def _publish_to_eventbus(self, cytube_event: CytubeEvent) -> None:
