@@ -127,15 +127,15 @@ class QuoteDBPlugin:
         schema = {
             "table": "quotes",
             "schema": {
-                "columns": {
-                    "id": {"type": "integer", "nullable": False, "primary_key": True},
-                    "text": {"type": "string", "nullable": False, "max_length": 1000},
-                    "author": {"type": "string", "nullable": True, "max_length": 100},
-                    "added_by": {"type": "string", "nullable": True, "max_length": 50},
-                    "added_at": {"type": "datetime", "nullable": False},
-                    "score": {"type": "integer", "nullable": False, "default": 0},
-                    "tags": {"type": "string", "nullable": False, "default": "[]"}
-                }
+                "fields": [
+                    {"name": "id", "type": "integer", "primary_key": True},
+                    {"name": "text", "type": "string", "required": True, "max_length": 1000},
+                    {"name": "author", "type": "string", "max_length": 100},
+                    {"name": "added_by", "type": "string", "max_length": 50},
+                    {"name": "added_at", "type": "datetime", "required": True},
+                    {"name": "score", "type": "integer", "required": True, "default": 0},
+                    {"name": "tags", "type": "string", "required": True, "default": "[]"}
+                ]
             }
         }
         
