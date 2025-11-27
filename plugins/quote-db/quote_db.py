@@ -128,7 +128,6 @@ class QuoteDBPlugin:
             "table": "quotes",
             "schema": {
                 "fields": [
-                    {"name": "id", "type": "integer", "primary_key": True},
                     {"name": "text", "type": "string", "required": True, "max_length": 1000},
                     {"name": "author", "type": "string", "max_length": 100},
                     {"name": "added_by", "type": "string", "max_length": 50},
