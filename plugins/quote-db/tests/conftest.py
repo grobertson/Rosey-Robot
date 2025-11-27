@@ -1,5 +1,6 @@
 """Pytest configuration and fixtures for quote-db plugin tests."""
 import pytest
+import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock
 import json
 
@@ -44,7 +45,7 @@ def plugin(mock_nats):
     return QuoteDBPlugin(mock_nats)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture(scope="function")
 async def initialized_plugin(plugin):
     """
     Create and initialize QuoteDBPlugin instance.
