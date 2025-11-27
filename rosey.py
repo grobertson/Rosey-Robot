@@ -23,8 +23,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from core.event_bus import EventBus
 from core.plugin_manager import PluginManager
 from core.cytube_connector import CytubeConnector
-from core.router import Router
-from common.config import load_config
+from core.cytube_channel import CytubeChannel
+from core.router import CommandRouter
+from common.config import get_config
 from common.database_service import DatabaseService
 
 
@@ -44,12 +45,25 @@ class Rosey:
     """
     
     def __init__(self, config_path: str = "config.json"):
-        self.config = load_config(config_path)
+        # Load config dict and bot params
+        self.config_dict, self.bot_params = get_config(config_path)
+        
+        # Convert dict to object with attribute access for convenience
+        from types import SimpleNamespace
+        def dict_to_obj(d):
+            if isinstance(d, dict):
+                return SimpleNamespace(**{k: dict_to_obj(v) for k, v in d.items()})
+            elif isinstance(d, list):
+                return [dict_to_obj(item) for item in d]
+            else:
+                return d
+        
+        self.config = dict_to_obj(self.config_dict)
         self.event_bus: Optional[EventBus] = None
         self.database: Optional[DatabaseService] = None
         self.plugin_manager: Optional[PluginManager] = None
         self.cytube: Optional[CytubeConnector] = None
-        self.router: Optional[Router] = None
+        self.router: Optional[CommandRouter] = None
         
     async def start(self):
         """Start all components in correct order"""
@@ -61,27 +75,45 @@ class Rosey:
             
             # 2. Database Service (NATS-based)
             logger.info("Starting Database Service...")
-            self.database = DatabaseService(self.event_bus, self.config.database)
+            db_path = self.config_dict["database"].get("path", "rosey.db")
+            self.database = DatabaseService(self.event_bus, db_path)
             await self.database.start()
             
             # 3. Plugin Manager (loads and runs plugins)
             logger.info("Starting Plugin Manager...")
-            plugin_dir = Path(self.config.get("plugin_dir", "plugins"))
-            self.plugin_manager = PluginManager(self.event_bus, plugin_dir)
-            await self.plugin_manager.start()
+            self.plugin_manager = PluginManager(self.event_bus)
+            # TODO: Plugin manager lifecycle - Sprint 22 integration pending
+            logger.info("Plugin Manager initialized (lifecycle methods not yet implemented)")
             
             # 4. Router (routes commands to plugins)
             logger.info("Starting Router...")
-            self.router = Router(self.event_bus, self.plugin_manager)
+            self.router = CommandRouter(self.event_bus, self.plugin_manager)
             await self.router.start()
             
             # 5. CyTube Connector (platform bridge)
             logger.info("Starting CyTube Connector...")
-            self.cytube = CytubeConnector(self.event_bus, self.config.cytube)
-            await self.cytube.connect()
+            try:
+                # Create CyTube channel from config
+                cytube_channel = CytubeChannel(
+                    domain=self.config_dict["domain"],
+                    channel=self.config_dict["channel"],
+                    username=self.config_dict.get("user", "RoseyBot"),
+                    secure=self.config_dict.get("secure", True)
+                )
+                connected = await cytube_channel.connect()
+                
+                if connected:
+                    # Create connector with channel instance
+                    self.cytube = CytubeConnector(self.event_bus, cytube_channel)
+                    await self.cytube.start()
+                    logger.info(f"✅ Connected to CyTube channel: {self.config_dict['channel']}")
+                else:
+                    logger.warning("⚠️ CyTube connection failed - bot will run in offline mode")
+            except Exception as e:
+                logger.warning(f"⚠️ CyTube connection error: {e} - bot will run in offline mode")
+                self.cytube = None
             
             logger.info("✅ Rosey v1.0 started successfully!")
-            logger.info(f"Connected to: {self.config.cytube.channel}")
             logger.info(f"Plugins loaded: {len(self.plugin_manager.list_plugins())}")
             
         except Exception as e:
@@ -94,11 +126,10 @@ class Rosey:
         logger.info("Shutting down Rosey...")
         
         if self.cytube:
-            await self.cytube.disconnect()
+            await self.cytube.stop()
         if self.router:
             await self.router.stop()
-        if self.plugin_manager:
-            await self.plugin_manager.stop()
+        # Plugin manager doesn't have stop() method yet
         if self.database:
             await self.database.stop()
         if self.event_bus:

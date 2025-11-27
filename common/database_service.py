@@ -120,73 +120,73 @@ class DatabaseService:
         try:
             self._subscriptions.extend([
                 await self.nats.subscribe('rosey.db.user.joined',
-                                        cb=self._handle_user_joined),
+                                        callback=self._handle_user_joined),
                 await self.nats.subscribe('rosey.db.user.left',
-                                        cb=self._handle_user_left),
+                                        callback=self._handle_user_left),
                 await self.nats.subscribe('rosey.db.message.log',
-                                        cb=self._handle_message_log),
+                                        callback=self._handle_message_log),
                 await self.nats.subscribe('rosey.db.stats.user_count',
-                                        cb=self._handle_user_count),
+                                        callback=self._handle_user_count),
                 await self.nats.subscribe('rosey.db.stats.high_water',
-                                        cb=self._handle_high_water),
+                                        callback=self._handle_high_water),
                 await self.nats.subscribe('rosey.db.status.update',
-                                        cb=self._handle_status_update),
+                                        callback=self._handle_status_update),
                 await self.nats.subscribe('rosey.db.messages.outbound.mark_sent',
-                                        cb=self._handle_mark_sent),
+                                        callback=self._handle_mark_sent),
                 await self.nats.subscribe('rosey.db.action.pm_command',
-                                        cb=self._handle_pm_action),
+                                        callback=self._handle_pm_action),
             ])
 
             # Request/Reply subscriptions (queries)
             self._subscriptions.extend([
                 await self.nats.subscribe('rosey.db.messages.outbound.get',
-                                        cb=self._handle_outbound_query),
+                                        callback=self._handle_outbound_query),
                 await self.nats.subscribe('rosey.db.stats.recent_chat.get',
-                                        cb=self._handle_recent_chat_query),
+                                        callback=self._handle_recent_chat_query),
                 await self.nats.subscribe('rosey.db.query.channel_stats',
-                                        cb=self._handle_channel_stats_query),
+                                        callback=self._handle_channel_stats_query),
                 await self.nats.subscribe('rosey.db.query.user_stats',
-                                        cb=self._handle_user_stats_query),
+                                        callback=self._handle_user_stats_query),
             ])
 
             # KV Storage handlers (request/reply)
             self._subscriptions.extend([
                 await self.nats.subscribe('rosey.db.kv.set',
-                                        cb=self._handle_kv_set),
+                                        callback=self._handle_kv_set),
                 await self.nats.subscribe('rosey.db.kv.get',
-                                        cb=self._handle_kv_get),
+                                        callback=self._handle_kv_get),
                 await self.nats.subscribe('rosey.db.kv.delete',
-                                        cb=self._handle_kv_delete),
+                                        callback=self._handle_kv_delete),
                 await self.nats.subscribe('rosey.db.kv.list',
-                                        cb=self._handle_kv_list),
+                                        callback=self._handle_kv_list),
             ])
 
             # Row Storage handlers (request/reply) - Sprint 13
             # Wildcard subscriptions for plugin-specific operations
             self._subscriptions.extend([
                 await self.nats.subscribe('rosey.db.row.*.schema.register',
-                                        cb=self._handle_schema_register),
+                                        callback=self._handle_schema_register),
                 await self.nats.subscribe('rosey.db.row.*.insert',
-                                        cb=self._handle_row_insert),
+                                        callback=self._handle_row_insert),
                 await self.nats.subscribe('rosey.db.row.*.select',
-                                        cb=self._handle_row_select),
+                                        callback=self._handle_row_select),
                 await self.nats.subscribe('rosey.db.row.*.update',
-                                        cb=self._handle_row_update),
+                                        callback=self._handle_row_update),
                 await self.nats.subscribe('rosey.db.row.*.delete',
-                                        cb=self._handle_row_delete),
+                                        callback=self._handle_row_delete),
                 await self.nats.subscribe('rosey.db.row.*.search',
-                                        cb=self._handle_row_search),
+                                        callback=self._handle_row_search),
             ])
 
             # Migration handlers (request/reply) - Sprint 15 Sortie 2
             # Wildcard subscriptions for plugin-specific migrations
             self._subscriptions.extend([
                 await self.nats.subscribe('rosey.db.migrate.*.apply',
-                                        cb=self._handle_migrate_apply),
+                                        callback=self._handle_migrate_apply),
                 await self.nats.subscribe('rosey.db.migrate.*.rollback',
-                                        cb=self._handle_migrate_rollback),
+                                        callback=self._handle_migrate_rollback),
                 await self.nats.subscribe('rosey.db.migrate.*.status',
-                                        cb=self._handle_migrate_status),
+                                        callback=self._handle_migrate_status),
             ])
 
             self._running = True

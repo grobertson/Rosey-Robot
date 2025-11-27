@@ -5,7 +5,8 @@ import logging
 import os
 import sys
 
-from lib import SocketIO, set_proxy
+# Legacy imports - commented out during Sprint 22 migration to NATS/EventBus
+# from lib import SocketIO, set_proxy
 
 try:
     import yaml  # type: ignore[import-untyped]
@@ -101,8 +102,9 @@ def configure_proxy(conf):
         # Port was specified
         addr, port = proxy[0], int(proxy[1])
 
-    # Set the global proxy configuration
-    set_proxy(addr, port)
+    # Legacy proxy configuration - disabled during Sprint 22 NATS migration
+    # set_proxy(addr, port)
+    logging.info(f"Note: Proxy configuration ({addr}:{port}) is disabled in NATS-based architecture")
 
 
 def get_database_url(config: dict) -> str:
@@ -159,8 +161,11 @@ def get_database_url(config: dict) -> str:
     return 'sqlite+aiosqlite:///bot_data.db'
 
 
-def get_config():
-    """Load and parse configuration from JSON or YAML file specified in command line
+def get_config(config_path=None):
+    """Load and parse configuration from JSON or YAML file
+
+    Args:
+        config_path: Path to config file. If None, reads from sys.argv[1]
 
     Returns:
         Tuple of (conf, kwargs) where:
@@ -168,14 +173,16 @@ def get_config():
             kwargs: Bot initialization parameters extracted from config
 
     Exits:
-        Exits with status 1 if incorrect number of arguments
+        Exits with status 1 if incorrect number of arguments (when config_path=None)
     """
-    # Validate command line arguments
-    if len(sys.argv) != 2:
-        print('usage: %s <config file>' % sys.argv[0], file=sys.stderr)
-        sys.exit(1)
-
-    config_file = sys.argv[1]
+    # Get config file path from parameter or command line
+    if config_path is None:
+        if len(sys.argv) != 2:
+            print('usage: %s <config file>' % sys.argv[0], file=sys.stderr)
+            sys.exit(1)
+        config_file = sys.argv[1]
+    else:
+        config_file = config_path
 
     # Determine file format from extension
     if config_file.endswith(('.yaml', '.yml')):
@@ -236,12 +243,7 @@ def get_config():
         'domain': platform['domain'],  # CyTube server domain (required)
         'user': platform.get('user', None),  # Bot username/credentials (optional)
         'channel': platform.get('channel', None),  # Channel name/password (optional)
-        'response_timeout': platform.get('response_timeout', 0.1),  # Socket.IO response timeout
+        'response_timeout': platform.get('response_timeout', 0.1),  # Response timeout
         'restart_delay': platform.get('restart_delay', None),  # Delay before reconnect on error
-        'socket_io': lambda url, loop: SocketIO.connect(
-            url,
-            retry=retry,
-            retry_delay=retry_delay,
-            loop=loop
-        )
+        # Legacy socket_io config removed - using NATS/EventBus architecture (Sprint 22)
     }

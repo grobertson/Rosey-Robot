@@ -735,6 +735,54 @@ class PluginManager:
             "failed": len(self.registry.list_by_state(PluginState.FAILED)),
         }
 
+    def get_plugin_status(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get current status of a plugin.
+        
+        Args:
+            name: Plugin name
+            
+        Returns:
+            dict: Status information or None if not running
+        """
+        entry = self.registry.get(name)
+        if entry is None or entry.process is None:
+            return None
+        
+        process = entry.process
+        
+        status = {
+            "name": name,
+            "state": process.state.value,
+            "pid": process.pid,
+            "uptime": time.time() - process.start_time if process.start_time else 0,
+            "restart_attempts": len(process.restart_attempts),
+        }
+        
+        # Add resource stats if available
+        if process.resource_stats:
+            status["resources"] = {
+                "cpu_percent": process.resource_stats.current_cpu_percent,
+                "memory_mb": process.resource_stats.current_memory_mb,
+                "peak_cpu_percent": process.resource_stats.peak_cpu_percent,
+                "peak_memory_mb": process.resource_stats.peak_memory_mb,
+            }
+        
+        return status
+
+    def get_all_plugin_status(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Get status of all running plugins.
+        
+        Returns:
+            dict: Plugin name → status dict
+        """
+        return {
+            name: self.get_plugin_status(name)
+            for name in self.registry.list_running()
+            if self.get_plugin_status(name) is not None
+        }
+
     # ========================================================================
     # Callbacks
     # ========================================================================
