@@ -14,6 +14,7 @@ import json
 import time
 import asyncio
 import random
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 try:
@@ -273,7 +274,7 @@ class QuoteDBPlugin:
                 "text": text,
                 "author": author,
                 "added_by": added_by,
-                "added_at": int(time.time()),
+                "added_at": datetime.now(timezone.utc).isoformat(),
                 "score": 0,
                 "tags": "[]"
             }
