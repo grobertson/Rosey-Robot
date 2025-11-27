@@ -8,17 +8,18 @@ Used in CI to ensure database schema is up-to-date before running tests.
 import asyncio
 import json
 import sys
+
 import nats
 
 
 async def apply_migrations(namespace: str, nats_url: str = "nats://localhost:4222") -> bool:
     """
     Apply migrations for a plugin namespace.
-    
+
     Args:
         namespace: Plugin namespace (e.g., "quote-db")
         nats_url: NATS server URL
-        
+
     Returns:
         True if migrations applied successfully, False otherwise
     """
@@ -26,20 +27,20 @@ async def apply_migrations(namespace: str, nats_url: str = "nats://localhost:422
         # Connect to NATS
         nc = await nats.connect(nats_url, connect_timeout=10.0)
         print(f"✓ Connected to NATS at {nats_url}")
-        
+
         # Apply migrations
         subject = f"rosey.db.migrate.{namespace}.apply"
         request_data = json.dumps({"target_version": "latest"}).encode()
-        
+
         print(f"Requesting migration apply for '{namespace}'...")
         print(f"  Subject: {subject}")
         print(f"  Request: {request_data.decode()}")
-        
+
         response = await nc.request(subject, request_data, timeout=30.0)
         result = json.loads(response.data.decode())
-        
+
         print(f"✓ Migration response: {json.dumps(result, indent=2)}")
-        
+
         if result.get("success"):
             applied = result.get("applied_migrations", [])
             if applied:
@@ -48,7 +49,7 @@ async def apply_migrations(namespace: str, nats_url: str = "nats://localhost:422
                     print(f"  - v{migration['version']}: {migration['name']}")
             else:
                 print("✓ No new migrations to apply (already up-to-date)")
-            
+
             current = result.get("current_version", 0)
             print(f"✓ Current schema version: {current}")
             await nc.close()
@@ -62,7 +63,7 @@ async def apply_migrations(namespace: str, nats_url: str = "nats://localhost:422
             print(f"  Full error response: {json.dumps(result, indent=2)}", file=sys.stderr)
             await nc.close()
             return False
-            
+
     except asyncio.TimeoutError:
         print("✗ Timeout waiting for response from database service", file=sys.stderr)
         print(f"  Make sure the database service is running and responding to {subject}", file=sys.stderr)
@@ -78,13 +79,13 @@ async def main():
         print("Usage: python apply_plugin_migrations.py <namespace> [nats_url]")
         print("Example: python apply_plugin_migrations.py quote-db nats://localhost:4222")
         sys.exit(1)
-    
+
     namespace = sys.argv[1]
     nats_url = sys.argv[2] if len(sys.argv) > 2 else "nats://localhost:4222"
-    
+
     print(f"Applying migrations for plugin: {namespace}")
     success = await apply_migrations(namespace, nats_url)
-    
+
     if success:
         print(f"\n✓ Migrations applied successfully for '{namespace}'")
         sys.exit(0)

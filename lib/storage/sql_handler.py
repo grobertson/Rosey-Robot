@@ -20,7 +20,6 @@ from .sql_formatter import ResultFormatter
 from .sql_parameter import ParameterBinder
 from .sql_validator import QueryValidator
 
-
 logger = logging.getLogger(__name__)
 
 

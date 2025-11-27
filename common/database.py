@@ -1738,11 +1738,11 @@ class BotDatabase:
         table: Table
     ) -> Dict[str, Any]:
         """Execute insert synchronously to avoid NATS handler cancellation.
-        
+
         Uses run_sync() to execute sync SQLAlchemy operations on the async engine's
         connection, ensuring we use the same database (critical for in-memory SQLite).
         """
-        
+
         def do_insert(sync_conn):
             """Synchronous insert executed on async engine's connection."""
             if is_bulk:
@@ -1765,7 +1765,7 @@ class BotDatabase:
                     "id": row_id,
                     "created": True
                 }
-        
+
         # Execute sync operation on async engine's connection
         async with self.engine.begin() as conn:
             return await conn.run_sync(do_insert)

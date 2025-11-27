@@ -37,7 +37,6 @@ from .sql_errors import (
 )
 from .sql_rate_limit import SQLRateLimiter
 
-
 # Error code to exception class mapping
 _ERROR_MAP: dict[str, type[SQLValidationError]] = {
     "SYNTAX_ERROR": SQLSyntaxError,

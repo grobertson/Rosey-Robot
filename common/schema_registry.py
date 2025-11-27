@@ -30,10 +30,10 @@ Usage:
     schema = registry.get_schema("quote-db", "quotes")
 """
 
+import asyncio
 import logging
 import re
 import time
-import asyncio
 from typing import Optional
 
 from sqlalchemy import (
@@ -219,7 +219,7 @@ class SchemaRegistry:
 
         # Update cache FIRST (cache-first pattern for NATS handlers)
         self._cache[key] = schema
-        
+
         # Create table (must complete before returning)
         await self._create_table(plugin_name, table_name, schema)
 
@@ -237,7 +237,7 @@ class SchemaRegistry:
     ) -> None:
         """
         Create database table from schema (async version).
-        
+
         Uses async engine to properly handle in-memory databases.
         """
         full_table_name = f"{plugin_name}_{table_name}"
@@ -276,14 +276,14 @@ class SchemaRegistry:
         # Create table using async engine (works correctly with in-memory databases)
         metadata = MetaData()
         table_obj = Table(full_table_name, metadata, *columns)
-        
+
         # Create table in database
         async with self.db.engine.begin() as conn:
             await conn.run_sync(lambda sync_conn: metadata.create_all(sync_conn, tables=[table_obj]))
-        
+
         # Cache the Table object to avoid needing async reflection later
         self.db._table_cache[full_table_name] = table_obj
-        
+
         self.logger.info(f"Created table: {full_table_name}")
 
     async def _store_schema_in_db(
@@ -294,7 +294,7 @@ class SchemaRegistry:
     ) -> None:
         """
         Store schema in database (background task).
-        
+
         This runs as a fire-and-forget background task to avoid blocking
         NATS handlers which may be cancelled before commit completes.
         """
@@ -310,7 +310,7 @@ class SchemaRegistry:
             )
             schema_model.set_schema(schema)
             session.add(schema_model)
-            
+
             await session.commit()
             await session.close()
         except Exception as e:

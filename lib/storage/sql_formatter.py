@@ -17,7 +17,6 @@ from .sql_errors import (
     TimeoutError,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

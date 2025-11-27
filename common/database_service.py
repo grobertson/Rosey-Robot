@@ -1466,7 +1466,7 @@ class DatabaseService:
             # Update
             try:
                 result = await self.db.row_update(
-                    plugin_name, table_name, row_id, 
+                    plugin_name, table_name, row_id,
                     data=data, operations=operations
                 )
             except ValueError as e:
@@ -1845,7 +1845,7 @@ class DatabaseService:
                 target_version = max(m.version for m in all_migrations) if all_migrations else 0
             else:
                 target_version = int(target_version_raw)
-            
+
             applied_by = request.get('applied_by', 'system')
             dry_run = request.get('dry_run', False)
 
@@ -1870,7 +1870,7 @@ class DatabaseService:
                 # Ensure migrations table exists (initialize if needed)
                 async with self.db._get_session() as session:
                     await self.migration_executor.ensure_migrations_table(session)
-                
+
                 # Get pending migrations
                 current_version = await self._get_current_version(plugin_name)
                 migrations = self.migration_manager.get_pending_migrations(
