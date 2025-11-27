@@ -320,62 +320,6 @@ class SchemaRegistry:
             except Exception:
                 pass
 
-    async def _create_table(
-        self,
-        plugin_name: str,
-        table_name: str,
-        schema: dict
-    ) -> None:
-        """
-        Create database table from schema.
-
-        Args:
-            plugin_name: Plugin identifier
-            table_name: Table name
-            schema: Schema definition
-        """
-        full_table_name = f"{plugin_name}_{table_name}"
-
-        # Build column list
-        columns = [
-            Column('id', Integer, primary_key=True, autoincrement=True),
-        ]
-
-        # Map schema types to SQLAlchemy types
-        type_map = {
-            'string': String(255),
-            'text': Text,
-            'integer': Integer,
-            'float': Float,
-            'boolean': Boolean,
-            'datetime': DateTime(timezone=True),
-        }
-
-        for field in schema['fields']:
-            col_type = type_map[field['type']]
-            nullable = not field.get('required', False)
-
-            columns.append(
-                Column(field['name'], col_type, nullable=nullable)  # type: ignore[arg-type]
-            )
-
-        # Add timestamps
-        columns.append(
-            Column('created_at', DateTime(timezone=True), nullable=False, server_default='CURRENT_TIMESTAMP')  # type: ignore[arg-type]
-        )
-        columns.append(
-            Column('updated_at', DateTime(timezone=True), nullable=False, server_default='CURRENT_TIMESTAMP')  # type: ignore[arg-type]
-        )
-
-        # Create table
-        metadata = MetaData()
-        table = Table(full_table_name, metadata, *columns)
-
-        async with self.db.engine.begin() as conn:
-            await conn.run_sync(metadata.create_all, tables=[table])
-
-        self.logger.info(f"Created table: {full_table_name}")
-
     def get_schema(self, plugin_name: str, table_name: str) -> Optional[dict]:
         """
         Get schema from cache.
