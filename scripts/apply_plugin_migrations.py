@@ -47,7 +47,7 @@ async def apply_migrations(namespace: str, nats_url: str = "nats://localhost:422
                 for migration in applied:
                     print(f"  - v{migration['version']}: {migration['name']}")
             else:
-                print(f"✓ No new migrations to apply (already up-to-date)")
+                print("✓ No new migrations to apply (already up-to-date)")
             
             current = result.get("current_version", 0)
             print(f"✓ Current schema version: {current}")
@@ -64,7 +64,7 @@ async def apply_migrations(namespace: str, nats_url: str = "nats://localhost:422
             return False
             
     except asyncio.TimeoutError:
-        print(f"✗ Timeout waiting for response from database service", file=sys.stderr)
+        print("✗ Timeout waiting for response from database service", file=sys.stderr)
         print(f"  Make sure the database service is running and responding to {subject}", file=sys.stderr)
         return False
     except Exception as e:

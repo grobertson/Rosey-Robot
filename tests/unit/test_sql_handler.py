@@ -7,7 +7,6 @@ Tests the SQLExecutionHandler class that exposes SQL execution via NATS messagin
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from typing import Any
 
 from lib.storage.sql_handler import (
     SQLExecutionHandler,

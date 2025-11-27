@@ -7,7 +7,7 @@ retry logic, and convenience methods.
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -455,7 +455,7 @@ class TestSQLClient:
             {"rows": [{"id": 1}], "row_count": 1}
         )
 
-        rows = await client.select(
+        await client.select(
             "SELECT * FROM test_plugin__events WHERE user_id = $1", ["alice"]
         )
 

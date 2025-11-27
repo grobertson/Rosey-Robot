@@ -118,14 +118,12 @@ async def test_bot_shutdown_finalizes_database(integration_bot, integration_db, 
 
     # Finalize all sessions (simulates shutdown)
     # Extract path from database URL
-    db_url = integration_db.database_url
     # URL format: sqlite+aiosqlite:///path/to/db
     db_path = str(tmp_path / "integration_test.db")
     await integration_db.close()
 
     # Reopen and check sessions finalized
     from common.database import BotDatabase
-    from common.models import Base
     db2 = BotDatabase(db_path)
     await db2.connect()
     alice_stats = await db2.get_user_stats('alice')

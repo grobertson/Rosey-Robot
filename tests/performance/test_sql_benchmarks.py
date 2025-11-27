@@ -15,19 +15,14 @@ Benchmarks include:
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any
 
 import pytest
 
 from lib.storage import (
     QueryValidator,
     ParameterBinder,
-    PreparedStatementExecutor,
-    ResultFormatter,
-    SQLClient,
     SQLAuditLogger,
     SQLRateLimiter,
-    StatementType,
 )
 
 
@@ -296,7 +291,7 @@ class TestRateLimiterPerformance:
             times.append((end - start) * 1000)
 
         total = sum(times)
-        avg = total / 1000
+        total / 1000
         ops_per_sec = 1000 / (total / 1000)
 
         # Load baseline expectations
@@ -445,7 +440,7 @@ class TestConcurrencyPerformance:
         """Test concurrent validation requests."""
 
         async def validate_query(query_id: int):
-            query = f"SELECT * FROM test_plugin__data WHERE id = $1"
+            query = "SELECT * FROM test_plugin__data WHERE id = $1"
             result = validator.validate(query, "test_plugin", params=[query_id])
             return result.valid
 

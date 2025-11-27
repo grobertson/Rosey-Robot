@@ -17,13 +17,8 @@ import pytest
 from lib.storage import (
     QueryValidator,
     ParameterBinder,
-    PreparedStatementExecutor,
-    ResultFormatter,
-    SQLValidationError,
     ForbiddenStatementError,
     NamespaceViolationError,
-    PermissionDeniedError,
-    ExecutionError,
     StatementType,
 )
 
@@ -103,7 +98,7 @@ class TestNamespaceIsolation:
     def test_namespace_case_sensitive(self, validator):
         """Namespace comparison should handle case correctly."""
         # Uppercase plugin name should not access lowercase
-        result = validator.validate(
+        validator.validate(
             "SELECT * FROM my_plugin__data",
             "MY_PLUGIN",
         )
@@ -298,7 +293,7 @@ class TestInputValidation:
     def test_null_bytes_in_query(self, validator):
         """Null bytes in query should be handled safely."""
         # Some databases are vulnerable to null byte attacks
-        result = validator.validate(
+        validator.validate(
             "SELECT * FROM test_plugin__data\x00; DROP TABLE test_plugin__data",
             "test_plugin",
         )

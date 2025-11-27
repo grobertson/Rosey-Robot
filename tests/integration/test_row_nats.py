@@ -66,13 +66,10 @@ async def db_service(nats_client, tmp_path_factory):
     Uses file-backed SQLite instead of :memory: to avoid session.commit()
     deadlock issues when called from NATS callback handlers.
     """
-    import tempfile
-    import os
     
     # Create temporary database file
     temp_dir = tmp_path_factory.mktemp("db")
     db_path = temp_dir / "test_row_nats.db"
-    db_url = f"sqlite+aiosqlite:///{db_path}"
     
     service = DatabaseService(nats_client, str(db_path))
 
