@@ -546,7 +546,9 @@ class TestRandomQuote:
         # Mock get_quote response
         get_response = MagicMock()
         get_response.data = json.dumps({
-            "rows": [{"id": 3, "text": "Random quote", "author": "Alice", "score": 2}]
+            "success": True,
+            "exists": True,
+            "data": {"id": 3, "text": "Random quote", "author": "Alice", "score": 2}
         }).encode()
 
         mock_nats.request.side_effect = [kv_response, get_response]
@@ -576,11 +578,12 @@ class TestRandomQuote:
 
         # Mock get_quote returning None (ID gap)
         get_none = MagicMock()
-        get_none.data = json.dumps({"rows": []}).encode()
+        get_none.data = json.dumps({"success": True, "exists": False}).encode()
 
         # Mock fallback search
         fallback_response = MagicMock()
         fallback_response.data = json.dumps({
+            "success": True,
             "rows": [{"id": 1, "text": "First quote", "author": "Alice", "score": 0}]
         }).encode()
 

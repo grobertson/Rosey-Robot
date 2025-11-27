@@ -516,7 +516,7 @@ class QuoteDBPlugin:
                     {"text": {"$like": f"%{query}%"}}
                 ]
             },
-            "sort": {"field": "timestamp", "order": "desc"},
+            "sort": {"field": "added_at", "order": "desc"},
             "limit": limit
         }
 
