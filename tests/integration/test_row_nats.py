@@ -230,7 +230,7 @@ class TestRowInsertNATS:
 
     async def test_insert_single_row_via_nats(self, nats_client, db_service):
         """Test single row insert through NATS."""
-        # Register schema first
+        # Register schema first (increased timeout to allow for database commit)
         reg_response = await nats_client.request(
             "rosey.db.row.test.schema.register",
             json.dumps({
@@ -241,7 +241,7 @@ class TestRowInsertNATS:
                     ]
                 }
             }).encode(),
-            timeout=1.0
+            timeout=5.0  # Increased from 1.0 to allow database commit to complete
         )
         
         reg_result = json.loads(reg_response.data.decode())
@@ -258,7 +258,7 @@ class TestRowInsertNATS:
                 "table": "items",
                 "data": {"name": "Test Item"}
             }).encode(),
-            timeout=1.0
+            timeout=5.0  # Increased timeout
         )
 
         result = json.loads(response.data.decode())

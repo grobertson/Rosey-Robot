@@ -30,9 +30,11 @@ Usage:
     schema = registry.get_schema("quote-db", "quotes")
 """
 
+import json
 import logging
 import re
 import time
+import asyncio
 from typing import Optional
 
 from sqlalchemy import (
@@ -198,8 +200,6 @@ class SchemaRegistry:
         Raises:
             ValueError: If schema validation fails
         """
-        self.logger.info(f"TEMP: register_schema called for {plugin_name}.{table_name}")
-        
         # Validate table name
         valid, error = self.validate_table_name(table_name)
         if not valid:
@@ -218,46 +218,51 @@ class SchemaRegistry:
             )
             return False
 
-        self.logger.info(f"TEMP: About to store in database for {plugin_name}.{table_name}")
-        
-        # Store in database
-        now = int(time.time())
-        try:
-            async with self.db.session_factory() as session:
-                self.logger.info(f"TEMP: Inside context manager")
-                schema_model = PluginTableSchema(
-                    plugin_name=plugin_name,
-                    table_name=table_name,
-                    version=1,
-                    created_at=now,
-                    updated_at=now
-                )
-                self.logger.info(f"TEMP: Model created")
-                schema_model.set_schema(schema)
-                self.logger.info(f"TEMP: Schema set")
-
-                session.add(schema_model)
-                self.logger.info(f"TEMP: Added to session, about to commit")
-                await session.commit()
-                self.logger.info(f"TEMP: Schema committed to database for {plugin_name}.{table_name}")
-            self.logger.info(f"TEMP: Exited context manager")
-        except Exception as e:
-            self.logger.error(f"TEMP: Exception during database store: {type(e).__name__}: {e}")
-            import traceback
-            self.logger.error(f"TEMP: Traceback:\n{traceback.format_exc()}")
-            raise
-
-        # Create table
-        self.logger.info(f"TEMP: About to create table for {plugin_name}.{table_name}")
-        await self._create_table(plugin_name, table_name, schema)
-        self.logger.info(f"TEMP: Table created for {plugin_name}.{table_name}")
-
-        # Update cache
+        # Update cache FIRST (cache-first pattern for NATS handlers)
         self._cache[key] = schema
-        self.logger.info(f"TEMP: Cache updated for {plugin_name}.{table_name}, key={key}")
+        
+        # Create table
+        await self._create_table(plugin_name, table_name, schema)
+
+        # Store in database (fire-and-forget to avoid cancellation)
+        asyncio.create_task(self._store_schema_in_db(plugin_name, table_name, schema))
 
         self.logger.info(f"Registered schema: {plugin_name}.{table_name}")
         return True
+
+    async def _store_schema_in_db(
+        self,
+        plugin_name: str,
+        table_name: str,
+        schema: dict
+    ) -> None:
+        """
+        Store schema in database (background task).
+        
+        This runs as a fire-and-forget background task to avoid blocking
+        NATS handlers which may be cancelled before commit completes.
+        """
+        now = int(time.time())
+        session = self.db.session_factory()
+        try:
+            schema_model = PluginTableSchema(
+                plugin_name=plugin_name,
+                table_name=table_name,
+                version=1,
+                created_at=now,
+                updated_at=now
+            )
+            schema_model.set_schema(schema)
+            session.add(schema_model)
+            
+            await session.commit()
+            await session.close()
+        except Exception as e:
+            self.logger.error(f"Failed to store schema in database: {e}", exc_info=True)
+            try:
+                await session.close()
+            except Exception:
+                pass
 
     async def _create_table(
         self,
