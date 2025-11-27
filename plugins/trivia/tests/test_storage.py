@@ -1,9 +1,8 @@
 import pytest
 import json
-from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime
+from unittest.mock import AsyncMock
 
-from plugins.trivia.storage import TriviaStorage, UserStats
+from plugins.trivia.storage import TriviaStorage
 
 class MockNatsResponse:
     def __init__(self, data):

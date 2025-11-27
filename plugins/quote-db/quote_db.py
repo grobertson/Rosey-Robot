@@ -11,7 +11,6 @@ Serves as canonical example for migrating plugins from direct SQLite access.
 """
 import logging
 import json
-import time
 import asyncio
 import random
 from datetime import datetime, timezone

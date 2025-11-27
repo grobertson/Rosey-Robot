@@ -14,8 +14,6 @@ Tests cover:
 
 import json
 import pytest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import sys
 from pathlib import Path
@@ -24,7 +22,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from plugin import CountdownPlugin
-from countdown import Countdown
 
 
 # =============================================================================

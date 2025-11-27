@@ -7,7 +7,6 @@ Shared fixtures for countdown plugin tests.
 import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime, timezone
 
 
 @pytest.fixture

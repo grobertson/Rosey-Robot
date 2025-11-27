@@ -39,7 +39,7 @@ except ImportError:
 from .game import GameConfig, GameState, TriviaGame
 from .question import Answer, Question
 from .providers.opentdb import OpenTDBProvider
-from .storage import TriviaStorage, GameRecord
+from .storage import TriviaStorage
 from .achievements import AchievementChecker, Achievement, GameResult
 
 logger = logging.getLogger(__name__)
@@ -224,7 +224,7 @@ class TriviaPlugin:
         await self.provider.close()
 
         self._initialized = False
-        self.logger.info(f"Plugin shutdown complete")
+        self.logger.info("Plugin shutdown complete")
 
     # =========================================================================
     # NATS Command Handlers

@@ -3,7 +3,7 @@ Tests for countdown recurrence patterns.
 """
 
 import pytest
-from datetime import datetime, time, timedelta, timezone
+from datetime import datetime, time, timezone
 
 from countdown.recurrence import (
     RecurrenceRule, RecurrenceType, DAYS, _ordinal_suffix

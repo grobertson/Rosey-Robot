@@ -3,14 +3,13 @@ Tests for trivia question providers.
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from trivia.question import Difficulty, Question, QuestionType
 from trivia.providers.base import QuestionProvider
 from trivia.providers.opentdb import (
     OpenTDBProvider,
     OpenTDBError,
-    RESPONSE_SUCCESS,
     RESPONSE_NO_RESULTS,
 )
 
@@ -34,7 +33,7 @@ class TestQuestionProviderBase:
                 return []
 
         # Should not raise
-        provider = ConcreteProvider()
+        ConcreteProvider()
         # close() is async, but default implementation does nothing
 
 

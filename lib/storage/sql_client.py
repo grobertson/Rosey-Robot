@@ -35,7 +35,7 @@ from .sql_errors import (
     StackedQueryError,
     TimeoutError,
 )
-from .sql_rate_limit import RateLimitError, SQLRateLimiter
+from .sql_rate_limit import SQLRateLimiter
 
 
 # Error code to exception class mapping

@@ -14,7 +14,7 @@ Tests cover:
 
 import json
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from plugin import EightBallPlugin
-from responses import Category, POSITIVE_RESPONSES, NEUTRAL_RESPONSES, NEGATIVE_RESPONSES
+from responses import POSITIVE_RESPONSES, NEUTRAL_RESPONSES, NEGATIVE_RESPONSES
 
 
 # =============================================================================

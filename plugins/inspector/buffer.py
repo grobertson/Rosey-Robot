@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional, Iterator, Dict
+from typing import List, Optional, Dict
 from collections import deque
 import json
 import re

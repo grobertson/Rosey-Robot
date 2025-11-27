@@ -30,7 +30,6 @@ Usage:
     schema = registry.get_schema("quote-db", "quotes")
 """
 
-import json
 import logging
 import re
 import time

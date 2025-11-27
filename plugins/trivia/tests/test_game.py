@@ -4,7 +4,7 @@ Tests for trivia game state machine.
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 from trivia.game import (
     GameConfig,
@@ -12,7 +12,6 @@ from trivia.game import (
     PlayerScore,
     TriviaGame,
 )
-from trivia.question import Question, Difficulty, QuestionType
 
 
 class TestGameState:

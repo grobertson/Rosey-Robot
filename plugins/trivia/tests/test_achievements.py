@@ -1,7 +1,7 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
-from plugins.trivia.achievements import AchievementChecker, Achievements, GameResult
+from plugins.trivia.achievements import AchievementChecker, GameResult
 from plugins.trivia.storage import UserStats
 
 @pytest.fixture

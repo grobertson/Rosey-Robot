@@ -1691,12 +1691,12 @@ class BotDatabase:
         self.logger.info(f"TEMP: schema retrieved: {schema is not None}, value: {schema}")
         self.logger.info(f"TEMP: About to check: if not schema (bool={not schema})")
         if not schema:
-            self.logger.error(f"TEMP: RAISING ValueError - schema is falsy!")
+            self.logger.error("TEMP: RAISING ValueError - schema is falsy!")
             raise ValueError(
                 f"Table '{table_name}' not registered for plugin '{plugin_name}'. "
                 f"Register schema first using schema_register."
             )
-        self.logger.info(f"TEMP: Schema check passed, continuing...")
+        self.logger.info("TEMP: Schema check passed, continuing...")
 
         # Handle bulk vs single
         is_bulk = isinstance(data, list)
@@ -1742,7 +1742,6 @@ class BotDatabase:
         Uses run_sync() to execute sync SQLAlchemy operations on the async engine's
         connection, ensuring we use the same database (critical for in-memory SQLite).
         """
-        from sqlalchemy import insert
         
         def do_insert(sync_conn):
             """Synchronous insert executed on async engine's connection."""

@@ -13,7 +13,7 @@ Tests cover:
 import asyncio
 import pytest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import sys
 from pathlib import Path

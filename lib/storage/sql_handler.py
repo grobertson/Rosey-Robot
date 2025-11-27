@@ -13,11 +13,7 @@ import time
 from typing import Any, Optional
 
 from .sql_errors import (
-    ExecutionError,
-    PermissionDeniedError,
     RequestValidationError,
-    SQLValidationError,
-    TimeoutError,
 )
 from .sql_executor import PreparedStatementExecutor
 from .sql_formatter import ResultFormatter

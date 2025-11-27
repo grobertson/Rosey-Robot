@@ -2,7 +2,6 @@
 Tests for trivia question models.
 """
 
-import pytest
 
 from trivia.question import (
     Answer,
