@@ -173,6 +173,14 @@ class CytubeConnector:
             )
             self._subscriptions.append(sub_id)
 
+            # Subscribe to playlist commands
+            pattern = f"{Subjects.PLATFORM}.{self.platform_name}.send.playlist.*"
+            sub_id = await self.event_bus.subscribe(
+                pattern,
+                self._handle_playlist_command
+            )
+            self._subscriptions.append(sub_id)
+
             self._running = True
             logger.info(f"Cytube connector started for channel: {self.channel.name}")
             return True
@@ -500,6 +508,216 @@ class CytubeConnector:
             logger.error(f"Failed to send chat message: {e}")
             self._errors += 1
             raise
+
+    # ========================================================================
+    # Playlist Command Handling
+    # ========================================================================
+
+    async def _handle_playlist_command(self, event: Event) -> None:
+        """Handle playlist commands from EventBus
+        
+        Routes playlist manipulation commands to appropriate handlers.
+        Supported commands: add, remove, move, jump, clear, shuffle.
+        
+        Args:
+            event: Event containing playlist command and parameters
+        """
+        try:
+            # Check if connected
+            if not self.channel:
+                await self._publish_playlist_error(
+                    event,
+                    "Not connected to CyTube server"
+                )
+                return
+
+            # Extract command
+            command = event.data.get("command", "")
+            if not command:
+                logger.warning("Received playlist event with no command")
+                return
+
+            # Route to appropriate handler
+            if command == "playlist.add":
+                await self._playlist_add(event)
+            elif command == "playlist.remove":
+                await self._playlist_remove(event)
+            elif command == "playlist.move":
+                await self._playlist_move(event)
+            elif command == "playlist.jump":
+                await self._playlist_jump(event)
+            elif command == "playlist.clear":
+                await self._playlist_clear(event)
+            elif command == "playlist.shuffle":
+                await self._playlist_shuffle(event)
+            else:
+                await self._publish_playlist_error(
+                    event,
+                    f"Unknown playlist command: {command}"
+                )
+                logger.warning(f"Unknown playlist command: {command}")
+
+        except Exception as e:
+            logger.error(f"Error handling playlist command: {e}")
+            await self._publish_playlist_error(event, str(e))
+            self._errors += 1
+
+    async def _publish_playlist_error(self, event: Event, error_message: str) -> None:
+        """Publish error event for failed playlist command
+        
+        Args:
+            event: Original command event
+            error_message: Description of the error
+        """
+        try:
+            error_event = Event(
+                subject=f"{Subjects.PLATFORM}.{self.platform_name}.error",
+                event_type="error",
+                source="cytube-connector",
+                data={
+                    "command": event.data.get("command", "unknown"),
+                    "error": error_message,
+                    "original_subject": event.subject,
+                    "correlation_id": event.correlation_id
+                },
+                correlation_id=event.correlation_id
+            )
+            await self.event_bus.publish(error_event)
+            logger.error(f"Playlist command error: {error_message} (correlation: {event.correlation_id})")
+        except Exception as e:
+            logger.error(f"Failed to publish error event: {e}")
+
+    async def _playlist_add(self, event: Event) -> None:
+        """Add video to playlist
+        
+        Args:
+            event: Event with params containing type and id
+        """
+        try:
+            params = event.data.get("params", {})
+            video_type = params.get("type")
+            video_id = params.get("id")
+
+            if not video_type or not video_id:
+                await self._publish_playlist_error(
+                    event,
+                    "Missing required parameters: type and id"
+                )
+                return
+
+            await self.channel.queue(video_type, video_id)
+            self._events_sent += 1
+            logger.debug(f"Added video to playlist: {video_type}:{video_id}")
+
+        except Exception as e:
+            await self._publish_playlist_error(event, f"Failed to add video: {e}")
+            self._errors += 1
+
+    async def _playlist_remove(self, event: Event) -> None:
+        """Remove video from playlist
+        
+        Args:
+            event: Event with params containing uid
+        """
+        try:
+            params = event.data.get("params", {})
+            uid = params.get("uid")
+
+            if not uid:
+                await self._publish_playlist_error(
+                    event,
+                    "Missing required parameter: uid"
+                )
+                return
+
+            await self.channel.delete(uid)
+            self._events_sent += 1
+            logger.debug(f"Removed video from playlist: {uid}")
+
+        except Exception as e:
+            await self._publish_playlist_error(event, f"Failed to remove video: {e}")
+            self._errors += 1
+
+    async def _playlist_move(self, event: Event) -> None:
+        """Move video in playlist
+        
+        Args:
+            event: Event with params containing uid and after
+        """
+        try:
+            params = event.data.get("params", {})
+            uid = params.get("uid")
+            after = params.get("after")
+
+            if not uid or not after:
+                await self._publish_playlist_error(
+                    event,
+                    "Missing required parameters: uid and after"
+                )
+                return
+
+            await self.channel.moveMedia(uid, after)
+            self._events_sent += 1
+            logger.debug(f"Moved video in playlist: {uid} after {after}")
+
+        except Exception as e:
+            await self._publish_playlist_error(event, f"Failed to move video: {e}")
+            self._errors += 1
+
+    async def _playlist_jump(self, event: Event) -> None:
+        """Jump to specific video in playlist
+        
+        Args:
+            event: Event with params containing uid
+        """
+        try:
+            params = event.data.get("params", {})
+            uid = params.get("uid")
+
+            if not uid:
+                await self._publish_playlist_error(
+                    event,
+                    "Missing required parameter: uid"
+                )
+                return
+
+            await self.channel.jumpTo(uid)
+            self._events_sent += 1
+            logger.debug(f"Jumped to video: {uid}")
+
+        except Exception as e:
+            await self._publish_playlist_error(event, f"Failed to jump to video: {e}")
+            self._errors += 1
+
+    async def _playlist_clear(self, event: Event) -> None:
+        """Clear entire playlist
+        
+        Args:
+            event: Command event (no params required)
+        """
+        try:
+            await self.channel.clearPlaylist()
+            self._events_sent += 1
+            logger.debug("Cleared playlist")
+
+        except Exception as e:
+            await self._publish_playlist_error(event, f"Failed to clear playlist: {e}")
+            self._errors += 1
+
+    async def _playlist_shuffle(self, event: Event) -> None:
+        """Shuffle playlist order
+        
+        Args:
+            event: Command event (no params required)
+        """
+        try:
+            await self.channel.shufflePlaylist()
+            self._events_sent += 1
+            logger.debug("Shuffled playlist")
+
+        except Exception as e:
+            await self._publish_playlist_error(event, f"Failed to shuffle playlist: {e}")
+            self._errors += 1
 
     async def _skip_video(self) -> None:
         """Skip current video"""
