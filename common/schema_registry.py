@@ -198,6 +198,8 @@ class SchemaRegistry:
         Raises:
             ValueError: If schema validation fails
         """
+        self.logger.info(f"TEMP: register_schema called for {plugin_name}.{table_name}")
+        
         # Validate table name
         valid, error = self.validate_table_name(table_name)
         if not valid:
@@ -216,77 +218,43 @@ class SchemaRegistry:
             )
             return False
 
+        self.logger.info(f"TEMP: About to store in database for {plugin_name}.{table_name}")
+        
         # Store in database
-        self.logger.info(f"DEBUG: Storing schema in database: {plugin_name}.{table_name}")
         now = int(time.time())
         try:
-            self.logger.info(f"DEBUG: About to enter session_factory context manager")
             async with self.db.session_factory() as session:
-                self.logger.info(f"DEBUG: Inside context manager, creating PluginTableSchema")
-                try:
-                    schema_model = PluginTableSchema(
-                        plugin_name=plugin_name,
-                        table_name=table_name,
-                        version=1,
-                        created_at=now,
-                        updated_at=now
-                    )
-                    self.logger.info(f"DEBUG: PluginTableSchema created successfully")
-                except Exception as e:
-                    self.logger.error(f"DEBUG: Failed to create PluginTableSchema: {e}")
-                    raise
-                
-                self.logger.info(f"DEBUG: Calling set_schema")
-                try:
-                    schema_model.set_schema(schema)
-                    self.logger.info(f"DEBUG: set_schema completed")
-                except Exception as e:
-                    self.logger.error(f"DEBUG: Failed in set_schema: {e}")
-                    raise
+                self.logger.info(f"TEMP: Inside context manager")
+                schema_model = PluginTableSchema(
+                    plugin_name=plugin_name,
+                    table_name=table_name,
+                    version=1,
+                    created_at=now,
+                    updated_at=now
+                )
+                self.logger.info(f"TEMP: Model created")
+                schema_model.set_schema(schema)
+                self.logger.info(f"TEMP: Schema set")
 
-                self.logger.info(f"DEBUG: Adding to session")
-                try:
-                    session.add(schema_model)
-                    self.logger.info(f"DEBUG: Added to session")
-                except Exception as e:
-                    self.logger.error(f"DEBUG: Failed to add to session: {e}")
-                    raise
-                
-                self.logger.info(f"DEBUG: About to commit")
-                try:
-                    import asyncio
-                    loop = asyncio.get_running_loop()
-                    self.logger.info(f"DEBUG: Current event loop: {id(loop)}")
-                    self.logger.info(f"DEBUG: Session type: {type(session)}")
-                    self.logger.info(f"DEBUG: Session bind: {session.bind}")
-                    
-                    # Try with timeout to detect if it hangs
-                    self.logger.info(f"DEBUG: Starting commit with 2s timeout")
-                    await asyncio.wait_for(session.commit(), timeout=2.0)
-                    self.logger.info(f"DEBUG: Commit completed successfully")
-                except asyncio.TimeoutError:
-                    self.logger.error(f"DEBUG: Commit TIMED OUT after 2 seconds - likely deadlock!")
-                    raise
-                except Exception as e:
-                    self.logger.error(f"DEBUG: Commit failed with exception: {type(e).__name__}: {e}")
-                    import traceback
-                    self.logger.error(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
-                    raise
-            
-            self.logger.info(f"DEBUG: Exited context manager successfully")
+                session.add(schema_model)
+                self.logger.info(f"TEMP: Added to session, about to commit")
+                await session.commit()
+                self.logger.info(f"TEMP: Schema committed to database for {plugin_name}.{table_name}")
+            self.logger.info(f"TEMP: Exited context manager")
         except Exception as e:
-            self.logger.error(f"DEBUG: Exception in store-to-database block: {type(e).__name__}: {e}")
+            self.logger.error(f"TEMP: Exception during database store: {type(e).__name__}: {e}")
+            import traceback
+            self.logger.error(f"TEMP: Traceback:\n{traceback.format_exc()}")
             raise
 
-        self.logger.info(f"DEBUG: Past all database operations, about to create table")
         # Create table
-        self.logger.info(f"DEBUG: Creating table: {plugin_name}_{table_name}")
+        self.logger.info(f"TEMP: About to create table for {plugin_name}.{table_name}")
         await self._create_table(plugin_name, table_name, schema)
-        self.logger.info(f"DEBUG: Table created successfully")
+        self.logger.info(f"TEMP: Table created for {plugin_name}.{table_name}")
 
         # Update cache
         self._cache[key] = schema
-        self.logger.info(f"DEBUG: Cache updated, key={key}")
+        self.logger.info(f"TEMP: Cache updated for {plugin_name}.{table_name}, key={key}")
 
         self.logger.info(f"Registered schema: {plugin_name}.{table_name}")
         return True

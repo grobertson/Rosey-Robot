@@ -60,9 +60,21 @@ async def nats_client():
 
 
 @pytest.fixture
-async def db_service(nats_client):
-    """Create DatabaseService with NATS and in-memory database."""
-    service = DatabaseService(nats_client, ':memory:')
+async def db_service(nats_client, tmp_path_factory):
+    """Create DatabaseService with NATS and file-backed temporary database.
+    
+    Uses file-backed SQLite instead of :memory: to avoid session.commit()
+    deadlock issues when called from NATS callback handlers.
+    """
+    import tempfile
+    import os
+    
+    # Create temporary database file
+    temp_dir = tmp_path_factory.mktemp("db")
+    db_path = temp_dir / "test_row_nats.db"
+    db_url = f"sqlite+aiosqlite:///{db_path}"
+    
+    service = DatabaseService(nats_client, str(db_path))
 
     # Initialize database tables BEFORE calling start()
     # start() will call connect() which needs tables to exist
@@ -81,9 +93,17 @@ async def db_service(nats_client):
         # The close() method tries to UPDATE user_stats table which doesn't exist in tests
         # This is handled by the try/except in close() method, but we log it here too
     except Exception as e:
-        # Log but don't fail on teardown errors (table may not exist in memory DB)
+        # Log but don't fail on teardown errors (table may not exist in test DB)
         import logging
         logging.warning(f"Error during db_service teardown: {e}")
+    
+    # Clean up temporary database file
+    try:
+        if db_path.exists():
+            db_path.unlink()
+    except Exception as e:
+        import logging
+        logging.warning(f"Failed to delete temporary database {db_path}: {e}")
 
 
 @pytest.fixture
@@ -225,16 +245,11 @@ class TestRowInsertNATS:
         )
         
         reg_result = json.loads(reg_response.data.decode())
-        print(f"DEBUG: Schema registration response: {reg_result}")
-        print(f"DEBUG: db_service.db id: {id(db_service.db)}")
-        print(f"DEBUG: schema_registry id: {id(db_service.db.schema_registry)}")
-        print(f"DEBUG: cache contents: {db_service.db.schema_registry._cache}")
         assert reg_result['success'] is True, f"Schema registration failed: {reg_result}"
         
-        # DEBUG: Check if schema is actually in cache
+        # Verify schema is in cache
         schema = db_service.db.schema_registry.get_schema("test", "items")
-        print(f"DEBUG: Schema from cache: {schema}")
-        assert schema is not None, "Schema not found in cache after registration!"
+        assert schema is not None, f"Schema not found in cache after registration. Cache: {db_service.db.schema_registry._cache}"
 
         # Insert row
         response = await nats_client.request(
