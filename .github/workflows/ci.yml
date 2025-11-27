@@ -111,7 +111,7 @@ jobs:
       - name: Start database service
         run: |
           # Start database service in background with nohup
-          nohup python -m common.database_service --db-path test_bot_data.db --nats-url nats://localhost:4222 --log-level INFO > /tmp/db_service.log 2>&1 &
+          nohup python -m common.database_service --db-path test_bot_data.db --nats-url nats://localhost:4222 --log-level DEBUG > /tmp/db_service.log 2>&1 &
           echo $! > /tmp/db_service.pid
           # Wait for service to be ready
           sleep 10
@@ -123,8 +123,8 @@ jobs:
           fi
           echo "✓ Database service started successfully with PID $(cat /tmp/db_service.pid)"
           # Show first few lines of log
-          echo "Service log (first 10 lines):"
-          head -n 10 /tmp/db_service.log
+          echo "Service log (first 20 lines):"
+          head -n 20 /tmp/db_service.log
         env:
           NATS_URL: nats://localhost:4222
       

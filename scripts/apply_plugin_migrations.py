@@ -54,8 +54,12 @@ async def apply_migrations(namespace: str, nats_url: str = "nats://localhost:422
             await nc.close()
             return True
         else:
-            error = result.get("error", "unknown error")
-            print(f"✗ Migration failed: {error}", file=sys.stderr)
+            error = result.get("error", {})
+            error_code = error.get("code", "unknown") if isinstance(error, dict) else str(error)
+            error_msg = error.get("message", "unknown error") if isinstance(error, dict) else str(error)
+            print(f"✗ Migration failed: {error_msg}", file=sys.stderr)
+            print(f"  Error code: {error_code}", file=sys.stderr)
+            print(f"  Full error response: {json.dumps(result, indent=2)}", file=sys.stderr)
             await nc.close()
             return False
             
