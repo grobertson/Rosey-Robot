@@ -30,7 +30,19 @@ class TestPluginInitialization:
     @pytest.mark.asyncio
     async def test_initialize_success(self, plugin, mock_nats):
         """Test successful initialization."""
-        # Mock returns migrations up to date
+        # Mock returns for: 1) migration status, 2) schema registration
+        status_response = MagicMock()
+        status_response.data = json.dumps({
+            "success": True,
+            "current_version": 3,
+            "pending_count": 0
+        }).encode()
+        
+        schema_response = MagicMock()
+        schema_response.data = json.dumps({"success": True}).encode()
+        
+        mock_nats.request.side_effect = [status_response, schema_response]
+        
         await plugin.initialize()
 
         assert plugin._initialized is True
@@ -45,13 +57,12 @@ class TestPluginInitialization:
     async def test_initialize_missing_migrations(self, plugin, mock_nats):
         """Test initialization fails if migrations not applied."""
         # Mock returns current_version=1 (missing migrations 2 and 3)
-        error_response = type('Response', (), {
-            'data': json.dumps({
-                "success": True,
-                "current_version": 1,
-                "pending_count": 2
-            }).encode()
-        })()
+        error_response = MagicMock()
+        error_response.data = json.dumps({
+            "success": True,
+            "current_version": 1,
+            "pending_count": 2
+        }).encode()
         mock_nats.request.return_value = error_response
 
         with pytest.raises(RuntimeError, match="Migrations not up to date"):

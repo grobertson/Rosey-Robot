@@ -82,6 +82,11 @@ class QuoteDBPlugin:
         """
         self.logger.info(f"Initializing {self.NAMESPACE} plugin v{self.VERSION}")
 
+        # Skip if already initialized (idempotent)
+        if self._initialized:
+            self.logger.debug("Plugin already initialized, skipping")
+            return
+
         # Check migration status
         status = await self._check_migration_status()
 
