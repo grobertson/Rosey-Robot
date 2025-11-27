@@ -901,7 +901,7 @@ class BotDatabase:
                     'timestamp': msg.timestamp,
                     'message': msg.message,
                     'retry_count': msg.retry_count,
-                    'last_error': msg.error_message
+                    'error_message': msg.error_message
                 }
                 for msg in messages
             ]
