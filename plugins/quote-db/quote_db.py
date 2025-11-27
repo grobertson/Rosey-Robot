@@ -287,6 +287,13 @@ class QuoteDBPlugin:
                 timeout=2.0
             )
             result = json.loads(response.data.decode())
+            
+            # Check for errors
+            if not result.get("success"):
+                error = result.get("error", "Unknown error")
+                self.logger.error(f"Row insert failed: {error}")
+                raise RuntimeError(f"Failed to add quote: {error}")
+            
             quote_id = result["id"]
 
             self.logger.info(f"Added quote {quote_id}: '{text[:50]}...' by {author}")

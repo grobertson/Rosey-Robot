@@ -108,7 +108,7 @@ class TestEnsureInitialized:
         """Test methods callable after initialization."""
         # Mock NATS response for add_quote
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"id": 1}).encode()
+        mock_response.data = json.dumps({"success": True, "id": 1}).encode()
         mock_nats.request.return_value = mock_response
 
         # Methods should not raise "not initialized" error
@@ -124,7 +124,7 @@ class TestAddQuote:
         """Test adding a quote successfully."""
         # Mock NATS response
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"id": 42}).encode()
+        mock_response.data = json.dumps({"success": True, "id": 42}).encode()
         mock_nats.request.return_value = mock_response
 
         # Add quote
@@ -151,7 +151,7 @@ class TestAddQuote:
     async def test_add_quote_author_defaults_to_unknown(self, initialized_plugin, mock_nats):
         """Test that empty author defaults to 'Unknown'."""
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"id": 43}).encode()
+        mock_response.data = json.dumps({"success": True, "id": 43}).encode()
         mock_nats.request.return_value = mock_response
 
         quote_id = await initialized_plugin.add_quote("Test", "", "bob")
