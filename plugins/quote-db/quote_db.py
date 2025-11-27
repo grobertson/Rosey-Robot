@@ -100,11 +100,57 @@ class QuoteDBPlugin:
                 f"Run: db.migrate.{self.NAMESPACE}.apply"
             )
 
+        # Register table schema (required for row operations)
+        await self._register_schema()
+
         self._initialized = True
         self.logger.info(
             f"Plugin initialized successfully. "
             f"Schema version: {current_version}"
         )
+
+    async def _register_schema(self) -> None:
+        """
+        Register quotes table schema with database service.
+        
+        This is required before any row operations can be performed.
+        Defines the table structure after all migrations are applied.
+        
+        Raises:
+            RuntimeError: If schema registration fails
+        """
+        schema = {
+            "table": "quotes",
+            "schema": {
+                "columns": {
+                    "id": {"type": "integer", "nullable": False, "primary_key": True},
+                    "text": {"type": "string", "nullable": False, "max_length": 1000},
+                    "author": {"type": "string", "nullable": True, "max_length": 100},
+                    "added_by": {"type": "string", "nullable": True, "max_length": 50},
+                    "added_at": {"type": "datetime", "nullable": False},
+                    "score": {"type": "integer", "nullable": False, "default": 0},
+                    "tags": {"type": "string", "nullable": False, "default": "[]"}
+                }
+            }
+        }
+        
+        try:
+            response = await self.nats.request(
+                f"rosey.db.row.{self.NAMESPACE}.schema.register",
+                json.dumps(schema).encode(),
+                timeout=2.0
+            )
+            result = json.loads(response.data.decode())
+            
+            if not result.get("success"):
+                raise RuntimeError(f"Schema registration failed: {result.get('error')}")
+                
+            self.logger.info("Schema registered successfully")
+            
+        except asyncio.TimeoutError:
+            raise RuntimeError("Schema registration timeout - database service not responding")
+        except Exception as e:
+            raise RuntimeError(f"Schema registration failed: {e}")
 
     async def _check_migration_status(self) -> Dict[str, Any]:
         """
@@ -223,8 +269,9 @@ class QuoteDBPlugin:
                 "text": text,
                 "author": author,
                 "added_by": added_by,
-                "timestamp": int(time.time()),
-                "score": 0
+                "added_at": int(time.time()),
+                "score": 0,
+                "tags": "[]"
             }
         }
 
