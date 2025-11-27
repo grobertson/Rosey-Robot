@@ -550,6 +550,9 @@ class QuoteDBPlugin:
         """
         Atomically increment quote score by 1.
 
+        Uses atomic $inc operator to prevent race conditions in concurrent
+        upvotes. See DATABASE_SERVICE.md for atomic operations documentation.
+
         Args:
             quote_id: The ID of the quote to upvote
 
@@ -604,6 +607,9 @@ class QuoteDBPlugin:
     async def downvote_quote(self, quote_id: int) -> int:
         """
         Atomically decrement quote score by 1.
+
+        Uses atomic $inc operator with negative value to prevent race conditions
+        in concurrent downvotes. See DATABASE_SERVICE.md for atomic operations.
 
         Args:
             quote_id: The ID of the quote to downvote
