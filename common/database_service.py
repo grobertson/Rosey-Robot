@@ -1853,7 +1853,7 @@ class DatabaseService:
             try:
                 # Get pending migrations
                 current_version = await self._get_current_version(plugin_name)
-                migrations = await self.migration_manager.get_pending_migrations(
+                migrations = self.migration_manager.get_pending_migrations(
                     plugin_name=plugin_name,
                     current_version=current_version,
                     target_version=target_version
