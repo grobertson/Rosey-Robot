@@ -1383,11 +1383,22 @@ class DatabaseService:
         """
         Handle rosey.db.row.{plugin}.update requests.
 
-        Request:
+        Supports two modes:
+        1. Simple update with "data" parameter (partial field updates)
+        2. Atomic operations with "operations" parameter (Sprint 14 atomic operators)
+
+        Request (Simple update):
             {
                 "table": str,
                 "id": int,
                 "data": dict
+            }
+
+        Request (Atomic operations):
+            {
+                "table": str,
+                "id": int,
+                "operations": dict
             }
 
         Response:
@@ -1419,6 +1430,7 @@ class DatabaseService:
             table_name = request.get('table')
             row_id = request.get('id')
             data = request.get('data')
+            operations = request.get('operations')
 
             if not table_name:
                 await msg.respond(json.dumps({
@@ -1440,19 +1452,23 @@ class DatabaseService:
                 }).encode())
                 return
 
-            if data is None:
+            # Must provide either data or operations
+            if data is None and operations is None:
                 await msg.respond(json.dumps({
                     "success": False,
                     "error": {
                         "code": "MISSING_FIELD",
-                        "message": "Required field 'data' missing"
+                        "message": "Must provide either 'data' or 'operations' field"
                     }
                 }).encode())
                 return
 
             # Update
             try:
-                result = await self.db.row_update(plugin_name, table_name, row_id, data)
+                result = await self.db.row_update(
+                    plugin_name, table_name, row_id, 
+                    data=data, operations=operations
+                )
             except ValueError as e:
                 await msg.respond(json.dumps({
                     "success": False,

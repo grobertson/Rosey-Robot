@@ -1,0 +1,90 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.11, pytest-7.4.4, pluggy-1.6.0 -- C:\Users\me\miniforge3\python.exe
+cachedir: .pytest_cache
+rootdir: D:\Devel\Rosey-Robot
+configfile: pytest.ini
+plugins: anyio-4.11.0, asyncio-0.23.8, cov-7.0.0, mock-3.15.1
+asyncio: mode=Mode.AUTO
+collecting ... collected 51 items / 50 deselected / 1 selected
+
+tests/integration/test_row_nats.py::TestRowInsertNATS::test_insert_single_row_via_nats 
+------------------------------- live log setup --------------------------------
+INFO     common.database:database.py:183 Database engine initialized: SQLite (pool: 5+10)
+INFO     common.database_service:database_service.py:114 Starting DatabaseService...
+INFO     common.database:database.py:211 Verifying database connection...
+INFO     common.database:database.py:218 Database connected (0 users)
+INFO     common.schema_registry:schema_registry.py:90 Loaded 0 schemas into cache
+INFO     common.database_service:database_service.py:198 DatabaseService started with 25 subscriptions (KV cleanup interval: 300s)
+INFO     common.database_service:database_service.py:2296 Starting KV cleanup background task (interval: 300s)
+-------------------------------- live log call --------------------------------
+INFO     common.schema_registry:schema_registry.py:307 Created table: test_items
+INFO     common.schema_registry:schema_registry.py:230 Registered schema: test.items
+Test - db_service.db id: 1904132023616
+Test - schema_registry id: 1904132023904
+Test - Cache keys: [('test', 'items')]
+INFO     common.database_service:database_service.py:1182 TEMP: [REQ-1764256970116866-8902] Handler called
+INFO     common.database:database.py:1687 TEMP: row_insert - plugin=test, table=items
+INFO     common.database:database.py:1688 TEMP: schema_registry id: 1904132023904
+INFO     common.database:database.py:1689 TEMP: cache keys: [('test', 'items')]
+INFO     common.database:database.py:1691 TEMP: schema retrieved: True, value: {'fields': [{'name': 'name', 'type': 'string', 'required': True}]}
+INFO     common.database:database.py:1692 TEMP: About to check: if not schema (bool=False)
+INFO     common.database:database.py:1699 TEMP: Schema check passed, continuing...
+INFO     common.database:database.py:1725 TEMP: About to call get_table(test_items)
+INFO     common.database:database.py:1726 TEMP: Table cache keys: ['test_items']
+INFO     common.database:database.py:1728 TEMP: get_table() returned successfully
+INFO     common.database:database.py:1734 TEMP: Using synchronous insert to avoid NATS cancellation
+INFO     common.database:database.py:1738 TEMP: Sync insert returned in 0.011s: {'id': 1, 'created': True}
+INFO     common.database_service:database_service.py:1261 TEMP: [REQ-1764256970116866-8902] SENDING FINAL RESPONSE: {"success": true, "request_id": "1764256970116866-8902", "id": 1, "created": true}
+INFO     common.database_service:database_service.py:1263 TEMP: [REQ-1764256970116866-8902] Response sent via msg.respond()
+INFO     common.database_service:database_service.py:1264 TEMP: [REQ-1764256970116866-8902] Handler completing normally
+Test - RESPONSE RAW: b'{"success": false, "error": {"code": "VALIDATION_ERROR", "message": "Table \'items\' not registered for plugin \'test\'. Register schema first using schema_register."}}'
+Test - INSERT RESPONSE: {'success': False, 'error': {'code': 'VALIDATION_ERROR', 'message': "Table 'items' not registered for plugin 'test'. Register schema first using schema_register."}}
+FAILED
+------------------------------ live log teardown ------------------------------
+INFO     common.database_service:database_service.py:218 Stopping DatabaseService...
+INFO     common.database_service:database_service.py:2338 KV cleanup background task stopped
+INFO     common.database:database.py:256 Database connection closed
+INFO     common.database_service:database_service.py:244 DatabaseService stopped
+
+
+================================== FAILURES ===================================
+______________ TestRowInsertNATS.test_insert_single_row_via_nats ______________
+tests\integration\test_row_nats.py:276: in test_insert_single_row_via_nats
+    assert result['success'] is True, f"Insert failed: {result.get('error', 'Unknown error')}"
+E   AssertionError: Insert failed: {'code': 'VALIDATION_ERROR', 'message': "Table 'items' not registered for plugin 'test'. Register schema first using schema_register."}
+E   assert False is True
+----------------------------- Captured log setup ------------------------------
+INFO     common.database:database.py:183 Database engine initialized: SQLite (pool: 5+10)
+INFO     common.database_service:database_service.py:114 Starting DatabaseService...
+INFO     common.database:database.py:211 Verifying database connection...
+INFO     common.database:database.py:218 Database connected (0 users)
+INFO     common.schema_registry:schema_registry.py:90 Loaded 0 schemas into cache
+INFO     common.database_service:database_service.py:198 DatabaseService started with 25 subscriptions (KV cleanup interval: 300s)
+INFO     common.database_service:database_service.py:2296 Starting KV cleanup background task (interval: 300s)
+------------------------------ Captured log call ------------------------------
+INFO     common.schema_registry:schema_registry.py:307 Created table: test_items
+INFO     common.schema_registry:schema_registry.py:230 Registered schema: test.items
+INFO     common.database_service:database_service.py:1182 TEMP: [REQ-1764256970116866-8902] Handler called
+INFO     common.database:database.py:1687 TEMP: row_insert - plugin=test, table=items
+INFO     common.database:database.py:1688 TEMP: schema_registry id: 1904132023904
+INFO     common.database:database.py:1689 TEMP: cache keys: [('test', 'items')]
+INFO     common.database:database.py:1691 TEMP: schema retrieved: True, value: {'fields': [{'name': 'name', 'type': 'string', 'required': True}]}
+INFO     common.database:database.py:1692 TEMP: About to check: if not schema (bool=False)
+INFO     common.database:database.py:1699 TEMP: Schema check passed, continuing...
+INFO     common.database:database.py:1725 TEMP: About to call get_table(test_items)
+INFO     common.database:database.py:1726 TEMP: Table cache keys: ['test_items']
+INFO     common.database:database.py:1728 TEMP: get_table() returned successfully
+INFO     common.database:database.py:1734 TEMP: Using synchronous insert to avoid NATS cancellation
+INFO     common.database:database.py:1738 TEMP: Sync insert returned in 0.011s: {'id': 1, 'created': True}
+INFO     common.database_service:database_service.py:1261 TEMP: [REQ-1764256970116866-8902] SENDING FINAL RESPONSE: {"success": true, "request_id": "1764256970116866-8902", "id": 1, "created": true}
+INFO     common.database_service:database_service.py:1263 TEMP: [REQ-1764256970116866-8902] Response sent via msg.respond()
+INFO     common.database_service:database_service.py:1264 TEMP: [REQ-1764256970116866-8902] Handler completing normally
+---------------------------- Captured log teardown ----------------------------
+INFO     common.database_service:database_service.py:218 Stopping DatabaseService...
+INFO     common.database_service:database_service.py:2338 KV cleanup background task stopped
+INFO     common.database:database.py:256 Database connection closed
+INFO     common.database_service:database_service.py:244 DatabaseService stopped
+=========================== short test summary info ===========================
+FAILED tests/integration/test_row_nats.py::TestRowInsertNATS::test_insert_single_row_via_nats
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+================= 1 failed, 50 deselected, 1 warning in 0.73s =================

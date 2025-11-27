@@ -325,11 +325,10 @@ class QuoteDBPlugin:
         """
         self._ensure_initialized()
 
-        # Query via NATS
+        # Query via NATS - select uses direct ID, not filters
         query = {
             "table": "quotes",
-            "filters": {"id": {"$eq": quote_id}},
-            "limit": 1
+            "id": quote_id
         }
 
         try:
@@ -346,11 +345,10 @@ class QuoteDBPlugin:
                 self.logger.error(f"Row select failed for quote {quote_id}: {error}")
                 raise RuntimeError(f"Failed to get quote: {error}")
             
-            rows = result.get("rows", [])
-
-            if rows:
+            # Select returns exists + data, not rows
+            if result.get("exists"):
                 self.logger.info(f"Retrieved quote {quote_id}")
-                return rows[0]
+                return result.get("data")
             else:
                 self.logger.info(f"Quote {quote_id} not found")
                 return None
@@ -379,10 +377,10 @@ class QuoteDBPlugin:
         """
         self._ensure_initialized()
 
-        # Delete via NATS
+        # Delete via NATS - uses direct ID, not filters
         query = {
             "table": "quotes",
-            "filters": {"id": {"$eq": quote_id}}
+            "id": quote_id
         }
 
         try:
@@ -399,7 +397,7 @@ class QuoteDBPlugin:
                 self.logger.error(f"Row delete failed for quote {quote_id}: {error}")
                 raise RuntimeError(f"Failed to delete quote: {error}")
             
-            deleted = result.get("deleted", 0) > 0
+            deleted = result.get("deleted", False)
 
             if deleted:
                 self.logger.info(f"Deleted quote {quote_id}")
@@ -568,7 +566,7 @@ class QuoteDBPlugin:
         # Atomic increment via $inc
         payload = {
             "table": "quotes",
-            "filters": {"id": {"$eq": quote_id}},
+            "id": quote_id,
             "operations": {"score": {"$inc": 1}}
         }
 
@@ -586,7 +584,7 @@ class QuoteDBPlugin:
                 self.logger.error(f"Row update failed for quote {quote_id}: {error}")
                 raise RuntimeError(f"Failed to upvote quote: {error}")
 
-            if result.get("updated", 0) == 0:
+            if not result.get("updated"):
                 raise ValueError(f"Quote {quote_id} not found")
 
             # Retrieve updated score
@@ -620,9 +618,10 @@ class QuoteDBPlugin:
         """
         self._ensure_initialized()
 
+        # Atomic decrement via $inc with negative value
         payload = {
             "table": "quotes",
-            "filters": {"id": {"$eq": quote_id}},
+            "id": quote_id,
             "operations": {"score": {"$inc": -1}}
         }
 
@@ -640,9 +639,10 @@ class QuoteDBPlugin:
                 self.logger.error(f"Row update failed for quote {quote_id}: {error}")
                 raise RuntimeError(f"Failed to downvote quote: {error}")
 
-            if result.get("updated", 0) == 0:
+            if not result.get("updated"):
                 raise ValueError(f"Quote {quote_id} not found")
 
+            # Retrieve updated score
             quote = await self.get_quote(quote_id)
             score = quote["score"]
 

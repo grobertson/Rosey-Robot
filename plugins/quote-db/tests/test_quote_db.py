@@ -177,14 +177,16 @@ class TestGetQuote:
         """Test getting a quote by ID."""
         mock_response = MagicMock()
         mock_response.data = json.dumps({
-            "rows": [{
+            "success": True,
+            "exists": True,
+            "data": {
                 "id": 42,
                 "text": "Test quote",
                 "author": "Alice",
                 "added_by": "bob",
                 "timestamp": 1234567890,
                 "score": 5
-            }]
+            }
         }).encode()
         mock_nats.request.return_value = mock_response
 
@@ -200,7 +202,7 @@ class TestGetQuote:
     async def test_get_quote_not_found(self, initialized_plugin, mock_nats):
         """Test getting a non-existent quote."""
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"rows": []}).encode()
+        mock_response.data = json.dumps({"success": True, "exists": False}).encode()
         mock_nats.request.return_value = mock_response
 
         quote = await initialized_plugin.get_quote(999)
@@ -222,7 +224,7 @@ class TestDeleteQuote:
     async def test_delete_quote_success(self, initialized_plugin, mock_nats):
         """Test deleting a quote."""
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"deleted": 1}).encode()
+        mock_response.data = json.dumps({"success": True, "deleted": True}).encode()
         mock_nats.request.return_value = mock_response
 
         deleted = await initialized_plugin.delete_quote(42)
@@ -232,13 +234,13 @@ class TestDeleteQuote:
         call_args = mock_nats.request.call_args
         assert call_args[0][0] == "rosey.db.row.quote-db.delete"
         payload = json.loads(call_args[0][1].decode())
-        assert payload["filters"]["id"]["$eq"] == 42
+        assert payload["id"] == 42  # Direct ID, not filters
 
     @pytest.mark.asyncio
     async def test_delete_quote_not_found(self, initialized_plugin, mock_nats):
         """Test deleting a non-existent quote."""
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"deleted": 0}).encode()
+        mock_response.data = json.dumps({"success": True, "deleted": False}).encode()
         mock_nats.request.return_value = mock_response
 
         deleted = await initialized_plugin.delete_quote(999)
@@ -307,6 +309,7 @@ class TestPlaceholderMethods:
 
         mock_response = MagicMock()
         mock_response.data = json.dumps({
+            "success": True,
             "rows": [
                 {"id": 1, "text": "Test quote", "author": "Einstein", "score": 5}
             ]
@@ -324,14 +327,16 @@ class TestPlaceholderMethods:
         """Test increment_score increases score by custom amount."""
         mock_nats.reset_mock()
 
-        # Mock update response
+        # Mock update response (atomic $inc)
         update_response = MagicMock()
-        update_response.data = json.dumps({"updated": 1}).encode()
+        update_response.data = json.dumps({"success": True, "updated": True}).encode()
 
-        # Mock get_quote response
+        # Mock get_quote response (retrieve updated score)
         get_response = MagicMock()
         get_response.data = json.dumps({
-            "rows": [{"id": 1, "text": "Test", "author": "Author", "score": 15}]
+            "success": True,
+            "exists": True,
+            "data": {"id": 1, "text": "Test", "author": "Author", "score": 15}
         }).encode()
 
         mock_nats.request.side_effect = [update_response, get_response]
@@ -347,7 +352,7 @@ class TestPlaceholderMethods:
         mock_nats.reset_mock()
 
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"updated": 0}).encode()
+        mock_response.data = json.dumps({"success": True, "updated": False}).encode()
         mock_nats.request.return_value = mock_response
 
         with pytest.raises(ValueError, match="Quote 999 not found"):
@@ -362,6 +367,7 @@ class TestSearchQuotes:
         """Test searching quotes with results."""
         mock_response = MagicMock()
         mock_response.data = json.dumps({
+            "success": True,
             "rows": [
                 {"id": 1, "text": "Test quote", "author": "Alice", "score": 5},
                 {"id": 2, "text": "Another quote", "author": "Bob", "score": 3}
@@ -386,7 +392,7 @@ class TestSearchQuotes:
     async def test_search_quotes_no_results(self, initialized_plugin, mock_nats):
         """Test searching with no results."""
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"rows": []}).encode()
+        mock_response.data = json.dumps({"success": True, "rows": []}).encode()
         mock_nats.request.return_value = mock_response
 
         results = await initialized_plugin.search_quotes("nonexistent")
@@ -411,14 +417,16 @@ class TestVoting:
         # Reset mock to clear initialization calls
         mock_nats.request.reset_mock()
 
-        # Mock update response
+        # Mock update response (atomic $inc)
         update_response = MagicMock()
-        update_response.data = json.dumps({"updated": 1}).encode()
+        update_response.data = json.dumps({"success": True, "updated": True}).encode()
 
-        # Mock get_quote response
+        # Mock get_quote response (retrieve updated score)
         get_response = MagicMock()
         get_response.data = json.dumps({
-            "rows": [{"id": 42, "text": "Test", "author": "Alice", "score": 6}]
+            "success": True,
+            "exists": True,
+            "data": {"id": 42, "text": "Test", "author": "Alice", "score": 6}
         }).encode()
 
         mock_nats.request.side_effect = [update_response, get_response]
@@ -426,7 +434,7 @@ class TestVoting:
         score = await initialized_plugin.upvote_quote(42)
         assert score == 6
 
-        # Verify update payload (first call after reset)
+        # Verify update payload uses atomic $inc
         call_args = mock_nats.request.call_args_list[0]
         assert "update" in call_args[0][0]
         payload = json.loads(call_args[0][1].decode())
@@ -438,12 +446,16 @@ class TestVoting:
         # Reset mock to clear initialization calls
         mock_nats.request.reset_mock()
 
+        # Mock update response (atomic $inc with -1)
         update_response = MagicMock()
-        update_response.data = json.dumps({"updated": 1}).encode()
+        update_response.data = json.dumps({"success": True, "updated": True}).encode()
 
+        # Mock get_quote response (retrieve updated score)
         get_response = MagicMock()
         get_response.data = json.dumps({
-            "rows": [{"id": 42, "text": "Test", "author": "Alice", "score": 4}]
+            "success": True,
+            "exists": True,
+            "data": {"id": 42, "text": "Test", "author": "Alice", "score": 4}
         }).encode()
 
         mock_nats.request.side_effect = [update_response, get_response]
@@ -451,7 +463,7 @@ class TestVoting:
         score = await initialized_plugin.downvote_quote(42)
         assert score == 4
 
-        # Verify $inc with negative value (first call after reset)
+        # Verify $inc with negative value
         call_args = mock_nats.request.call_args_list[0]
         payload = json.loads(call_args[0][1].decode())
         assert payload["operations"]["score"]["$inc"] == -1
@@ -460,7 +472,7 @@ class TestVoting:
     async def test_upvote_quote_not_found(self, initialized_plugin, mock_nats):
         """Test upvoting non-existent quote."""
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"updated": 0}).encode()
+        mock_response.data = json.dumps({"success": True, "updated": False}).encode()
         mock_nats.request.return_value = mock_response
 
         with pytest.raises(ValueError, match="not found"):
@@ -470,7 +482,7 @@ class TestVoting:
     async def test_downvote_quote_not_found(self, initialized_plugin, mock_nats):
         """Test downvoting non-existent quote."""
         mock_response = MagicMock()
-        mock_response.data = json.dumps({"updated": 0}).encode()
+        mock_response.data = json.dumps({"success": True, "updated": False}).encode()
         mock_nats.request.return_value = mock_response
 
         with pytest.raises(ValueError, match="not found"):
