@@ -20,10 +20,36 @@ import time
 import pytest
 import logging
 from unittest.mock import MagicMock, AsyncMock
+from dataclasses import dataclass
+from typing import Dict, Any
 from common.shell import Shell
 
 # Enable pytest-asyncio for all async tests in this module
 pytestmark = pytest.mark.asyncio
+
+
+# ============================================================================
+# Mock Event Object for NATS-style events
+# ============================================================================
+
+@dataclass
+class MockEvent:
+    """Mock NATS Event object for testing"""
+    subject: str
+    data: Dict[str, Any]
+    
+    @classmethod
+    def create_pm_event(cls, username: str, message: str):
+        """Helper to create PM event"""
+        return cls(
+            subject="rosey.platform.cytube.pm",
+            data={
+                "username": username,
+                "message": message,
+                "time": int(time.time() * 1000),
+                "recipient": "TestBot"
+            }
+        )
 
 
 # ============================================================================
@@ -61,6 +87,10 @@ def mock_bot():
 
     # Mock database
     bot.db = None
+
+    # Mock event_bus for NATS communication
+    bot.event_bus = MagicMock()
+    bot.event_bus.publish = AsyncMock()
 
     # Mock async methods
     bot.chat = AsyncMock()
@@ -485,70 +515,116 @@ class TestPlaylistCommands:
     @pytest.mark.asyncio
     async def test_cmd_add_temporary(self, shell, mock_bot):
         """add with temp flag adds temporary media"""
-        await shell.cmd_add(mock_bot, "https://youtu.be/xyz yes")
+        result = await shell.cmd_add(mock_bot, "https://youtu.be/xyz yes")
 
-        mock_bot.add_media.assert_called_once()
-        args = mock_bot.add_media.call_args
-        assert args[1]['temp'] is True
+        # Should publish event to EventBus
+        mock_bot.event_bus.publish.assert_called_once()
+        event = mock_bot.event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.send.playlist.add"
+        assert event.data["command"] == "playlist.add"
+        assert event.data["params"]["temporary"] is True
+        assert "Added:" in result
 
     @pytest.mark.asyncio
     async def test_cmd_add_permanent(self, shell, mock_bot):
         """add with perm flag adds permanent media"""
-        await shell.cmd_add(mock_bot, "https://youtu.be/xyz no")
+        result = await shell.cmd_add(mock_bot, "https://youtu.be/xyz no")
 
-        mock_bot.add_media.assert_called_once()
-        args = mock_bot.add_media.call_args
-        assert args[1]['temp'] is False
+        # Should publish event to EventBus
+        mock_bot.event_bus.publish.assert_called_once()
+        event = mock_bot.event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.send.playlist.add"
+        assert event.data["command"] == "playlist.add"
+        assert event.data["params"]["temporary"] is False
+        assert "Added:" in result
 
     @pytest.mark.asyncio
     async def test_cmd_remove(self, shell, mock_bot):
         """remove deletes playlist item"""
         item = MagicMock()
         item.title = "Test Video"
+        item.uid = "test-uid-123"
 
         mock_bot.channel.playlist.queue = [item]
 
-        await shell.cmd_remove(mock_bot, "1")
+        result = await shell.cmd_remove(mock_bot, "1")
 
-        mock_bot.remove_media.assert_called_once_with(item)
+        # Should publish event to EventBus
+        mock_bot.event_bus.publish.assert_called_once()
+        event = mock_bot.event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.send.playlist.remove"
+        assert event.data["command"] == "playlist.remove"
+        assert event.data["params"]["uid"] == "test-uid-123"
+        assert "Removed:" in result
 
     @pytest.mark.asyncio
     async def test_cmd_move(self, shell, mock_bot):
         """move reorders playlist items"""
         item1 = MagicMock()
+        item1.uid = "uid-1"
+        item1.title = "Video 1"
         item2 = MagicMock()
+        item2.uid = "uid-2"
+        item2.title = "Video 2"
         item3 = MagicMock()
+        item3.uid = "uid-3"
+        item3.title = "Video 3"
 
         mock_bot.channel.playlist.queue = [item1, item2, item3]
 
-        await shell.cmd_move(mock_bot, "1 3")
+        result = await shell.cmd_move(mock_bot, "1 3")
 
-        mock_bot.move_media.assert_called_once()
+        # Should publish event to EventBus
+        mock_bot.event_bus.publish.assert_called_once()
+        event = mock_bot.event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.send.playlist.move"
+        assert event.data["command"] == "playlist.move"
+        assert event.data["params"]["uid"] == "uid-1"
+        assert event.data["params"]["after"] == "uid-2"
+        assert "Moved" in result
 
     @pytest.mark.asyncio
     async def test_cmd_jump(self, shell, mock_bot):
         """jump switches to playlist item"""
         item1 = MagicMock()
+        item1.uid = "uid-1"
         item2 = MagicMock()
+        item2.uid = "uid-2"
+        item2.title = "Video 2"
 
         mock_bot.channel.playlist.queue = [item1, item2]
 
-        await shell.cmd_jump(mock_bot, "2")
+        result = await shell.cmd_jump(mock_bot, "2")
 
-        mock_bot.set_current_media.assert_called_once_with(item2)
+        # Should publish event to EventBus
+        mock_bot.event_bus.publish.assert_called_once()
+        event = mock_bot.event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.send.playlist.jump"
+        assert event.data["command"] == "playlist.jump"
+        assert event.data["params"]["uid"] == "uid-2"
+        assert "Jumped to:" in result
 
     @pytest.mark.asyncio
     async def test_cmd_next(self, shell, mock_bot):
         """next skips to next item"""
         item1 = MagicMock()
+        item1.uid = "uid-1"
         item2 = MagicMock()
+        item2.uid = "uid-2"
+        item2.title = "Next Video"
 
         mock_bot.channel.playlist.queue = [item1, item2]
         mock_bot.channel.playlist.current = item1
 
-        await shell.cmd_next(mock_bot)
+        result = await shell.cmd_next(mock_bot)
 
-        mock_bot.set_current_media.assert_called_once_with(item2)
+        # Should publish event to EventBus (next uses jump command)
+        mock_bot.event_bus.publish.assert_called_once()
+        event = mock_bot.event_bus.publish.call_args[0][0]
+        assert event.subject == "rosey.platform.cytube.send.playlist.jump"
+        assert event.data["command"] == "playlist.jump"
+        assert event.data["params"]["uid"] == "uid-2"
+        assert "Skipped to:" in result
 
     @pytest.mark.asyncio
     async def test_cmd_next_at_end(self, shell, mock_bot):
@@ -630,12 +706,9 @@ class TestPMCommandHandling:
         mock_bot.channel.userlist.__contains__ = lambda self, name: True
         mock_bot.channel.userlist.__getitem__ = lambda self, name: moderator_user
 
-        data = {
-            'username': 'ModUser',
-            'msg': 'help'
-        }
+        event = MockEvent.create_pm_event('ModUser', 'help')
 
-        await shell.handle_pm_command('pm', data)
+        await shell.handle_pm_command(event)
 
         # Should send response via PM
         mock_bot.pm.assert_called()
@@ -648,12 +721,9 @@ class TestPMCommandHandling:
         mock_bot.channel.userlist.__contains__ = lambda self, name: True
         mock_bot.channel.userlist.__getitem__ = lambda self, name: regular_user
 
-        data = {
-            'username': 'RegularUser',
-            'msg': 'say test'
-        }
+        event = MockEvent.create_pm_event('RegularUser', 'say test')
 
-        await shell.handle_pm_command('pm', data)
+        await shell.handle_pm_command(event)
 
         # Should not respond
         mock_bot.pm.assert_not_called()
@@ -662,80 +732,64 @@ class TestPMCommandHandling:
     @pytest.mark.asyncio
     async def test_handle_pm_empty_message(self, shell, mock_bot):
         """Empty PM messages are ignored"""
-        data = {
-            'username': 'ModUser',
-            'msg': '   '
-        }
+        event = MockEvent.create_pm_event('ModUser', '   ')
 
         # Should not crash
-        await shell.handle_pm_command('pm', data)
+        await shell.handle_pm_command(event)
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="PM command logging needs refactor - see issue #XX")
     async def test_handle_pm_from_self(self, shell, mock_bot, caplog):
         """PMs from bot itself are ignored"""
         caplog.set_level(logging.DEBUG, logger='common.shell')
-        data = {
-            'username': 'TestBot',  # Same as bot name
-            'msg': 'help'
-        }
+        event = MockEvent.create_pm_event('TestBot', 'help')  # Same as bot name
 
-        await shell.handle_pm_command('pm', data)
+        await shell.handle_pm_command(event)
         assert 'Ignoring PM from self' in caplog.text
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="PM command logging needs refactor - see issue #XX")
     async def test_handle_pm_splits_long_responses(self, shell, mock_bot, moderator_user):
         """Long responses are split into multiple PMs"""
         mock_bot.channel.userlist.__contains__ = lambda self, name: True
         mock_bot.channel.userlist.__getitem__ = lambda self, name: moderator_user
 
-        data = {
-            'username': 'ModUser',
-            'msg': 'help'  # Returns long HELP_TEXT
-        }
+        event = MockEvent.create_pm_event('ModUser', 'help')  # Returns long HELP_TEXT
 
-        await shell.handle_pm_command('pm', data)
+        await shell.handle_pm_command(event)
 
         # Should be called multiple times for long response
         assert mock_bot.pm.call_count >= 1
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="PM command logging needs refactor - see issue #XX")
     async def test_handle_pm_logs_command(self, shell, mock_bot, moderator_user, caplog):
         """PM commands are logged"""
         caplog.set_level(logging.INFO, logger='common.shell')
         mock_bot.channel.userlist.__contains__ = lambda self, name: True
         mock_bot.channel.userlist.__getitem__ = lambda self, name: moderator_user
 
-        data = {
-            'username': 'ModUser',
-            'msg': 'info'
-        }
+        event = MockEvent.create_pm_event('ModUser', 'info')
 
-        await shell.handle_pm_command('pm', data)
+        await shell.handle_pm_command(event)
         assert 'PM command from ModUser: info' in caplog.text
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="PM command logging needs refactor - see issue #XX")
     async def test_handle_pm_database_logging(self, shell, mock_bot, moderator_user):
-        """PM commands are logged to database"""
+        """PM commands are logged via NATS"""
         mock_bot.channel.userlist.__contains__ = lambda self, name: True
         mock_bot.channel.userlist.__getitem__ = lambda self, name: moderator_user
-        mock_bot.db = MagicMock()
+        mock_nats = AsyncMock()
+        mock_nats.is_connected = True
+        mock_bot.nats = mock_nats
 
-        data = {
-            'username': 'ModUser',
-            'msg': 'status'
-        }
+        event = MockEvent.create_pm_event('ModUser', 'status')
 
-        await shell.handle_pm_command('pm', data)
-        mock_bot.db.log_user_action.assert_called_once_with(
-            'ModUser', 'pm_command', 'status'
-        )
+        await shell.handle_pm_command(event)
+        
+        # Verify NATS publish was called with correct subject
+        assert mock_nats.publish.called
+        call_args = mock_nats.publish.call_args
+        assert call_args[0][0] == 'rosey.db.action.pm_command'
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="PM command logging needs refactor - see issue #XX")
     async def test_handle_pm_error_handling(self, shell, mock_bot, moderator_user, caplog):
         """PM command errors are handled gracefully"""
         caplog.set_level(logging.ERROR, logger='common.shell')
@@ -743,29 +797,22 @@ class TestPMCommandHandling:
         mock_bot.channel.userlist.__getitem__ = lambda self, name: moderator_user
         mock_bot.pm = AsyncMock(side_effect=Exception("Test error"))
 
-        data = {
-            'username': 'ModUser',
-            'msg': 'info'
-        }
+        event = MockEvent.create_pm_event('ModUser', 'info')
 
         # Should not crash
-        await shell.handle_pm_command('pm', data)
+        await shell.handle_pm_command(event)
         assert 'Error processing PM command' in caplog.text
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="PM command logging needs refactor - see issue #XX")
     async def test_handle_pm_unknown_user(self, shell, mock_bot, caplog):
         """PMs from unknown users are ignored"""
         caplog.set_level(logging.WARNING, logger='common.shell')
         mock_bot.channel.userlist.__contains__ = lambda self, name: False
 
-        data = {
-            'username': 'UnknownUser',
-            'msg': 'help'
-        }
+        event = MockEvent.create_pm_event('UnknownUser', 'help')
 
-        await shell.handle_pm_command('pm', data)
-        assert 'unknown user' in caplog.text
+        await shell.handle_pm_command(event)
+        assert 'PM from user not in userlist' in caplog.text
 
 
 # ============================================================================

@@ -5,9 +5,12 @@ import asyncio
 import json
 import logging
 import time
+import uuid
 from datetime import datetime
 
 from lib import MediaLink
+from bot.rosey.core.event_bus import Event
+from bot.rosey.core.subjects import Subjects
 
 
 class Shell:
@@ -93,24 +96,21 @@ Examples:
         if addr is None:
             self.logger.info('PM command interface disabled')
 
-    async def handle_pm_command(self, event, data):  # noqa: C901 (complex PM routing)
-        """Handle commands sent via PM from moderators
+    async def handle_pm_command(self, event):  # noqa: C901 (complex PM routing)
+        """Handle commands sent via PM from moderators via NATS event bus
 
         Args:
-            event: Event name ('pm')
-            data: PM data containing username, msg, etc.
+            event: Event object from NATS with PM data
 
         Returns:
             None - responses are sent back via PM
         """
-        self.logger.debug('handle_pm_command called: event=%s, data=%s', event, data)
+        self.logger.debug('handle_pm_command called: subject=%s', event.subject)
 
-        # TODO: NORMALIZATION - Shell should only use normalized fields (user, content)
-        # Platform-specific access to platform_data should be removed once normalization is complete
-        # Extract data from PM - check both normalized and platform_data locations
-        platform_data = data.get('platform_data', {})
-        username = data.get('user', platform_data.get('username', ''))
-        message = data.get('content', platform_data.get('msg', '')).strip()
+        # Extract data from NATS event
+        data = event.data
+        username = data.get('username', '')
+        message = data.get('message', '').strip()
 
         # Ignore empty messages
         if not message:
@@ -640,9 +640,31 @@ Examples:
                 temp = False
 
         try:
+            # Parse media link to extract type and id
             link = MediaLink.from_url(url)
-            await bot.add_media(link, append=True, temp=temp)
+            
+            # Create NATS event for playlist add
+            event = Event(
+                subject=f"{Subjects.PLATFORM}.cytube.send.playlist.add",
+                event_type="command",
+                source="shell",
+                data={
+                    "command": "playlist.add",
+                    "params": {
+                        "type": link.type,
+                        "id": link.id,
+                        "position": "end",
+                        "temporary": temp
+                    }
+                },
+                correlation_id=str(uuid.uuid4())
+            )
+            
+            # Publish event to EventBus (fire-and-forget)
+            await bot.event_bus.publish(event)
             return f"Added: {url} ({'temporary' if temp else 'permanent'})"
+        except AttributeError:
+            return "EventBus not available"
         except Exception as e:
             return f"Failed to add media: {e}"
 
@@ -664,8 +686,29 @@ Examples:
             return f"Position must be between 1 and {len(queue)}"
 
         item = queue[pos - 1]
-        await bot.remove_media(item)
-        return f"Removed: {item.title}"
+        
+        try:
+            # Create NATS event for playlist remove
+            event = Event(
+                subject=f"{Subjects.PLATFORM}.cytube.send.playlist.remove",
+                event_type="command",
+                source="shell",
+                data={
+                    "command": "playlist.remove",
+                    "params": {
+                        "uid": item.uid
+                    }
+                },
+                correlation_id=str(uuid.uuid4())
+            )
+            
+            # Publish event to EventBus (fire-and-forget)
+            await bot.event_bus.publish(event)
+            return f"Removed: {item.title}"
+        except AttributeError:
+            return "EventBus not available"
+        except Exception as e:
+            return f"Failed to remove media: {e}"
 
     async def cmd_move(self, bot, args):
         """Move playlist item"""
@@ -690,15 +733,31 @@ Examples:
 
         from_item = queue[from_pos - 1]
         # After position in CyTube is the item before the target position
-        after_item = queue[to_pos - 2] if to_pos > 1 else None
-
-        if after_item:
-            await bot.move_media(from_item, after_item)
-        else:
-            # Move to beginning - no "after" item
-            return "Moving to beginning not yet supported"
-
-        return f"Moved {from_item.title} from position {from_pos} to {to_pos}"
+        after_uid = queue[to_pos - 2].uid if to_pos > 1 else "prepend"
+        
+        try:
+            # Create NATS event for playlist move
+            event = Event(
+                subject=f"{Subjects.PLATFORM}.cytube.send.playlist.move",
+                event_type="command",
+                source="shell",
+                data={
+                    "command": "playlist.move",
+                    "params": {
+                        "uid": from_item.uid,
+                        "after": after_uid
+                    }
+                },
+                correlation_id=str(uuid.uuid4())
+            )
+            
+            # Publish event to EventBus (fire-and-forget)
+            await bot.event_bus.publish(event)
+            return f"Moved {from_item.title} from position {from_pos} to {to_pos}"
+        except AttributeError:
+            return "EventBus not available"
+        except Exception as e:
+            return f"Failed to move media: {e}"
 
     async def cmd_jump(self, bot, args):
         """Jump to playlist item"""
@@ -718,8 +777,29 @@ Examples:
             return f"Position must be between 1 and {len(queue)}"
 
         item = queue[pos - 1]
-        await bot.set_current_media(item)
-        return f"Jumped to: {item.title}"
+        
+        try:
+            # Create NATS event for playlist jump
+            event = Event(
+                subject=f"{Subjects.PLATFORM}.cytube.send.playlist.jump",
+                event_type="command",
+                source="shell",
+                data={
+                    "command": "playlist.jump",
+                    "params": {
+                        "uid": item.uid
+                    }
+                },
+                correlation_id=str(uuid.uuid4())
+            )
+            
+            # Publish event to EventBus (fire-and-forget)
+            await bot.event_bus.publish(event)
+            return f"Jumped to: {item.title}"
+        except AttributeError:
+            return "EventBus not available"
+        except Exception as e:
+            return f"Failed to jump to media: {e}"
 
     async def cmd_next(self, bot):
         """Skip to next item"""
@@ -735,8 +815,29 @@ Examples:
             current_idx = queue.index(current)
             if current_idx + 1 < len(queue):
                 next_item = queue[current_idx + 1]
-                await bot.set_current_media(next_item)
-                return f"Skipped to: {next_item.title}"
+                
+                try:
+                    # Create NATS event for playlist jump (next uses jump command)
+                    event = Event(
+                        subject=f"{Subjects.PLATFORM}.cytube.send.playlist.jump",
+                        event_type="command",
+                        source="shell",
+                        data={
+                            "command": "playlist.jump",
+                            "params": {
+                                "uid": next_item.uid
+                            }
+                        },
+                        correlation_id=str(uuid.uuid4())
+                    )
+                    
+                    # Publish event to EventBus (fire-and-forget)
+                    await bot.event_bus.publish(event)
+                    return f"Skipped to: {next_item.title}"
+                except AttributeError:
+                    return "EventBus not available"
+                except Exception as e:
+                    return f"Failed to skip: {e}"
             else:
                 return "Already at last item"
         except ValueError:
