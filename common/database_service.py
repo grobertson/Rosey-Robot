@@ -1822,7 +1822,14 @@ class DatabaseService:
             plugin_name = parts[3]
 
             # Extract request fields
-            target_version = request.get('version')
+            target_version_raw = request.get('target_version')
+            if target_version_raw is None or target_version_raw == 'latest':
+                # Default to latest: discover all migrations and use max version
+                all_migrations = self.migration_manager.discover_migrations(plugin_name)
+                target_version = max(m.version for m in all_migrations) if all_migrations else 0
+            else:
+                target_version = int(target_version_raw)
+            
             applied_by = request.get('applied_by', 'system')
             dry_run = request.get('dry_run', False)
 
