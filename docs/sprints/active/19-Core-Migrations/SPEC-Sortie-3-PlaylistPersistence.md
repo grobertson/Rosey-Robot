@@ -49,16 +49,25 @@ Complete the playlist migration with:
 ```
 plugins/playlist/
 ├── ...existing files...
-├── storage.py            # Database operations
+├── storage.py            # Storage adapter using NATS storage API
 └── tests/
     ├── ...existing tests...
     └── test_storage.py      # Storage tests
+
+migrations/
+└── playlist/
+    ├── 001_create_queue.sql
+    ├── 002_create_history.sql
+    └── 003_create_user_stats.sql
 ```
 
-### 2.2 Database Schema
+### 2.2 Database Schema (via Migrations)
 
+**Migration Files** (Sprint 15 pattern):
+
+**`migrations/playlist/001_create_queue.sql`:**
 ```sql
--- Queue items (for persistence across restarts)
+-- UP
 CREATE TABLE playlist_queue (
     id INTEGER PRIMARY KEY,
     channel TEXT NOT NULL,
@@ -75,7 +84,14 @@ CREATE TABLE playlist_queue (
 
 CREATE INDEX idx_playlist_queue_channel ON playlist_queue(channel, position);
 
--- Play history
+-- DOWN
+DROP INDEX IF EXISTS idx_playlist_queue_channel;
+DROP TABLE IF EXISTS playlist_queue;
+```
+
+**`migrations/playlist/002_create_history.sql`:**
+```sql
+-- UP
 CREATE TABLE playlist_history (
     id INTEGER PRIMARY KEY,
     channel TEXT NOT NULL,
@@ -85,14 +101,22 @@ CREATE TABLE playlist_history (
     duration INTEGER DEFAULT 0,
     added_by TEXT NOT NULL,
     played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    play_duration INTEGER DEFAULT 0,  -- How long it actually played
+    play_duration INTEGER DEFAULT 0,
     skipped BOOLEAN DEFAULT FALSE
 );
 
 CREATE INDEX idx_playlist_history_channel ON playlist_history(channel);
 CREATE INDEX idx_playlist_history_user ON playlist_history(added_by);
 
--- User statistics
+-- DOWN
+DROP INDEX IF EXISTS idx_playlist_history_user;
+DROP INDEX IF EXISTS idx_playlist_history_channel;
+DROP TABLE IF EXISTS playlist_history;
+```
+
+**`migrations/playlist/003_create_user_stats.sql`:**
+```sql
+-- UP
 CREATE TABLE playlist_user_stats (
     id INTEGER PRIMARY KEY,
     user_id TEXT NOT NULL UNIQUE,
@@ -105,138 +129,228 @@ CREATE TABLE playlist_user_stats (
 );
 
 CREATE INDEX idx_playlist_user_stats_user ON playlist_user_stats(user_id);
+
+-- DOWN
+DROP INDEX IF EXISTS idx_playlist_user_stats_user;
+DROP TABLE IF EXISTS playlist_user_stats;
 ```
 
-### 2.3 Storage Class
+**Note:** Schema is managed via migrations (Sprint 15 pattern). Plugin code does NOT contain CREATE TABLE statements.
+
+### 2.3 Storage Adapter
 
 ```python
 # plugins/playlist/storage.py
 
-from typing import List, Optional
+"""
+Storage adapter for playlist plugin using NATS-based storage API.
+
+Uses:
+- KV Storage (Sprint 12): Counters, feature flags
+- Row Operations (Sprint 13): CRUD operations
+- Advanced Operators (Sprint 14): Atomic updates, complex queries
+- Parameterized SQL (Sprint 17): Complex multi-table queries
+
+Note: Database access is infrastructure (like NATS), not plugin-to-plugin
+communication. Uses BotDatabase methods which are acceptable as established
+in Sprint 17.
+"""
+
+import json
+from typing import List, Optional, Dict, Any
 from datetime import datetime
-from common.database_service import DatabaseService
-from .models import PlaylistItem, MediaType
 
 
 class PlaylistStorage:
-    """Database operations for playlist persistence."""
+    """
+    Storage adapter for playlist persistence using proper storage APIs.
     
-    def __init__(self, db_service: DatabaseService):
-        self.db = db_service
+    This class demonstrates the correct storage pattern for plugins:
+    - Schema via migrations (not CREATE TABLE in code)
+    - KV storage for simple counters
+    - Row operations for CRUD
+    - Parameterized SQL for complex queries
+    """
     
-    async def create_tables(self) -> None:
-        """Create playlist tables if not exists."""
-        ...
+    def __init__(self, nats_client, plugin_name: str = "playlist"):
+        """
+        Initialize storage adapter.
+        
+        Args:
+            nats_client: NATS client for storage API requests
+            plugin_name: Plugin namespace for storage isolation
+        """
+        self.nc = nats_client
+        self.plugin_name = plugin_name
     
-    # === Queue Persistence ===
+    # === Queue Persistence (Using Row Operations API) ===
     
-    async def save_queue(self, channel: str, items: List[PlaylistItem]) -> None:
-        """Save entire queue to database."""
-        # Clear existing
-        await self.db.execute(
-            "DELETE FROM playlist_queue WHERE channel = ?",
-            (channel,)
+    async def save_queue(self, channel: str, items: List[dict]) -> None:
+        """
+        Save entire queue to database using row operations API.
+        
+        Uses Sprint 13 (Row Operations) pattern with atomic batch insert.
+        """
+        # Clear existing queue for channel
+        await self.nc.request(
+            f"db.row.{self.plugin_name}.delete",
+            json.dumps({
+                "table": "queue",
+                "filter": {"channel": channel}
+            }).encode()
         )
         
-        # Insert all items
+        # Batch insert new queue items
         for i, item in enumerate(items):
-            await self.db.execute(
-                """
-                INSERT INTO playlist_queue 
-                (channel, position, media_type, media_id, title, duration, added_by, added_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (channel, i, item.media_type.value, item.media_id, 
-                 item.title, item.duration, item.added_by, item.added_at)
+            await self.nc.request(
+                f"db.row.{self.plugin_name}.insert",
+                json.dumps({
+                    "table": "queue",
+                    "values": {
+                        "channel": channel,
+                        "position": i,
+                        "media_type": item.get("media_type"),
+                        "media_id": item.get("media_id"),
+                        "title": item.get("title"),
+                        "duration": item.get("duration", 0),
+                        "added_by": item.get("added_by"),
+                        "added_at": item.get("added_at")
+                    }
+                }).encode()
             )
     
-    async def load_queue(self, channel: str) -> List[PlaylistItem]:
-        """Load queue from database."""
-        rows = await self.db.fetch_all(
-            """
-            SELECT * FROM playlist_queue 
-            WHERE channel = ? 
-            ORDER BY position
-            """,
-            (channel,)
+    async def load_queue(self, channel: str) -> List[dict]:
+        """
+        Load queue from database using row operations API.
+        
+        Uses Sprint 13 (Row Operations) with ordered query.
+        """
+        response = await self.nc.request(
+            f"db.row.{self.plugin_name}.select",
+            json.dumps({
+                "table": "queue",
+                "filter": {"channel": channel},
+                "order": {"position": 1}  # ASC order
+            }).encode(),
+            timeout=5.0
         )
         
-        return [self._row_to_item(row) for row in rows]
+        data = json.loads(response.data.decode())
+        return data.get("rows", [])
     
     async def clear_queue(self, channel: str) -> None:
-        """Clear persisted queue."""
-        await self.db.execute(
-            "DELETE FROM playlist_queue WHERE channel = ?",
-            (channel,)
+        """Clear persisted queue using row operations API."""
+        await self.nc.request(
+            f"db.row.{self.plugin_name}.delete",
+            json.dumps({
+                "table": "queue",
+                "filter": {"channel": channel}
+            }).encode()
         )
     
-    # === History ===
+    # === History (Using Row Operations API) ===
     
     async def record_play(
         self, 
         channel: str, 
-        item: PlaylistItem,
+        item: dict,
         play_duration: int,
         skipped: bool,
     ) -> None:
-        """Record item play in history."""
-        await self.db.execute(
-            """
-            INSERT INTO playlist_history
-            (channel, media_type, media_id, title, duration, 
-             added_by, play_duration, skipped)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (channel, item.media_type.value, item.media_id, item.title,
-             item.duration, item.added_by, play_duration, skipped)
+        """
+        Record item play in history using row operations API.
+        
+        Uses Sprint 13 (Row Operations) insert.
+        """
+        await self.nc.request(
+            f"db.row.{self.plugin_name}.insert",
+            json.dumps({
+                "table": "history",
+                "values": {
+                    "channel": channel,
+                    "media_type": item.get("media_type"),
+                    "media_id": item.get("media_id"),
+                    "title": item.get("title"),
+                    "duration": item.get("duration", 0),
+                    "added_by": item.get("added_by"),
+                    "play_duration": play_duration,
+                    "skipped": skipped
+                }
+            }).encode()
         )
         
-        # Update user stats
-        await self._update_user_stats(item.added_by, item.duration, skipped)
+        # Update user stats atomically
+        await self._update_user_stats(item.get("added_by"), item.get("duration", 0), skipped)
     
     async def get_history(
         self, 
         channel: str, 
         limit: int = 20
     ) -> List[dict]:
-        """Get recent play history."""
-        rows = await self.db.fetch_all(
-            """
-            SELECT * FROM playlist_history 
-            WHERE channel = ?
-            ORDER BY played_at DESC
-            LIMIT ?
-            """,
-            (channel, limit)
+        """
+        Get recent play history using row operations API.
+        
+        Uses Sprint 13 (Row Operations) with ordering and limit.
+        """
+        response = await self.nc.request(
+            f"db.row.{self.plugin_name}.select",
+            json.dumps({
+                "table": "history",
+                "filter": {"channel": channel},
+                "order": {"played_at": -1},  # DESC order
+                "limit": limit
+            }).encode(),
+            timeout=5.0
         )
-        return [dict(row) for row in rows]
+        
+        data = json.loads(response.data.decode())
+        return data.get("rows", [])
     
     async def get_user_history(
         self, 
         user: str, 
         limit: int = 20
     ) -> List[dict]:
-        """Get user's play history."""
-        rows = await self.db.fetch_all(
-            """
-            SELECT * FROM playlist_history
-            WHERE added_by = ?
-            ORDER BY played_at DESC
-            LIMIT ?
-            """,
-            (user, limit)
+        """
+        Get user's play history using row operations API.
+        
+        Uses Sprint 13 (Row Operations) with filtering.
+        """
+        response = await self.nc.request(
+            f"db.row.{self.plugin_name}.select",
+            json.dumps({
+                "table": "history",
+                "filter": {"added_by": user},
+                "order": {"played_at": -1},  # DESC order
+                "limit": limit
+            }).encode(),
+            timeout=5.0
         )
-        return [dict(row) for row in rows]
+        
+        data = json.loads(response.data.decode())
+        return data.get("rows", [])
     
-    # === User Stats ===
+    # === User Stats (Using KV Storage + Atomic Updates) ===
     
     async def get_user_stats(self, user: str) -> Optional[dict]:
-        """Get user playlist statistics."""
-        row = await self.db.fetch_one(
-            "SELECT * FROM playlist_user_stats WHERE user_id = ?",
-            (user,)
+        """
+        Get user playlist statistics using row operations API.
+        
+        Uses Sprint 13 (Row Operations) select.
+        """
+        response = await self.nc.request(
+            f"db.row.{self.plugin_name}.select",
+            json.dumps({
+                "table": "user_stats",
+                "filter": {"user_id": user},
+                "limit": 1
+            }).encode(),
+            timeout=5.0
         )
-        return dict(row) if row else None
+        
+        data = json.loads(response.data.decode())
+        rows = data.get("rows", [])
+        return rows[0] if rows else None
     
     async def _update_user_stats(
         self, 
@@ -244,57 +358,67 @@ class PlaylistStorage:
         duration: int, 
         skipped: bool
     ) -> None:
-        """Update user stats after play."""
-        await self.db.execute(
-            """
-            INSERT INTO playlist_user_stats (user_id, items_played, items_skipped,
-                                            total_duration_played)
-            VALUES (?, 1, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                items_played = items_played + 1,
-                items_skipped = items_skipped + ?,
-                total_duration_played = total_duration_played + ?
-            """,
-            (user, 1 if skipped else 0, duration,
-             1 if skipped else 0, duration)
+        """
+        Update user stats after play using atomic operators.
+        
+        Uses Sprint 14 (Advanced Operators) with $inc for atomic updates.
+        This avoids race conditions in concurrent plays.
+        """
+        await self.nc.request(
+            f"db.row.{self.plugin_name}.update",
+            json.dumps({
+                "table": "user_stats",
+                "filter": {"user_id": user},
+                "update": {
+                    "$inc": {
+                        "items_played": 1,
+                        "items_skipped": 1 if skipped else 0,
+                        "total_duration_played": duration
+                    }
+                },
+                "upsert": True  # Create if doesn't exist
+            }).encode()
         )
     
     async def record_add(self, user: str, duration: int) -> None:
-        """Record item add for user stats."""
-        await self.db.execute(
-            """
-            INSERT INTO playlist_user_stats (user_id, items_added, 
-                                            total_duration_added, last_add)
-            VALUES (?, 1, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id) DO UPDATE SET
-                items_added = items_added + 1,
-                total_duration_added = total_duration_added + ?,
-                last_add = CURRENT_TIMESTAMP
-            """,
-            (user, duration, duration)
+        """
+        Record item add for user stats using atomic operators.
+        
+        Uses Sprint 14 (Advanced Operators) with $inc and $set for atomic updates.
+        """
+        await self.nc.request(
+            f"db.row.{self.plugin_name}.update",
+            json.dumps({
+                "table": "user_stats",
+                "filter": {"user_id": user},
+                "update": {
+                    "$inc": {
+                        "items_added": 1,
+                        "total_duration_added": duration
+                    },
+                    "$set": {
+                        "last_add": int(datetime.now().timestamp())
+                    }
+                },
+                "upsert": True
+            }).encode()
         )
-    
-    def _row_to_item(self, row) -> PlaylistItem:
-        """Convert database row to PlaylistItem."""
-        return PlaylistItem(
-            id=str(row["id"]),
-            media_type=MediaType(row["media_type"]),
-            media_id=row["media_id"],
-            title=row["title"],
-            duration=row["duration"],
-            added_by=row["added_by"],
-            added_at=row["added_at"],
-        )
-```
 
-### 2.4 User Quotas & Rate Limiting
+### 2.4 QuotaManager (Using KV Storage)
 
 ```python
 # plugins/playlist/quotas.py
 
+"""
+Quota management using KV Storage (Sprint 12) for rate limiting.
+
+Demonstrates Sprint 12 (KV Storage) pattern for temporary data with TTL.
+"""
+
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict
+import json
 
 
 @dataclass
@@ -308,14 +432,17 @@ class QuotaConfig:
 
 class QuotaManager:
     """
-    Manage user quotas for playlist additions.
+    Manage user quotas using KV storage for rate limiting.
+    
+    Uses Sprint 12 (KV Storage) with TTL for temporary rate limit data.
     """
     
-    def __init__(self, config: QuotaConfig):
+    def __init__(self, nats_client, config: QuotaConfig, plugin_name: str = "playlist"):
+        self.nc = nats_client
+        self.plugin_name = plugin_name
         self.config = config
-        self._last_adds: Dict[str, list[datetime]] = {}
     
-    def check_quota(
+    async def check_quota(
         self, 
         user: str, 
         current_items: int,
@@ -337,35 +464,68 @@ class QuotaManager:
             max_mins = self.config.max_duration_per_user // 60
             return False, f"You can only have {max_mins} minutes of content queued"
         
-        # Check rate limit
-        if not self._check_rate_limit(user):
+        # Check rate limit using KV storage
+        if not await self._check_rate_limit(user):
             return False, "Slow down! You're adding too fast."
         
         return True, ""
     
-    def record_add(self, user: str) -> None:
-        """Record an addition for rate limiting."""
-        now = datetime.utcnow()
-        if user not in self._last_adds:
-            self._last_adds[user] = []
+    async def record_add(self, user: str) -> None:
+        """
+        Record an addition for rate limiting using KV storage.
         
-        self._last_adds[user].append(now)
+        Uses Sprint 12 (KV Storage) with TTL to auto-expire old entries.
+        """
+        key = f"ratelimit:{user}"
         
-        # Cleanup old entries
-        cutoff = now - timedelta(seconds=self.config.rate_limit_seconds)
-        self._last_adds[user] = [
-            t for t in self._last_adds[user] if t > cutoff
-        ]
+        # Get current rate limit data
+        response = await self.nc.request(
+            f"db.kv.{self.plugin_name}.get",
+            json.dumps({"key": key}).encode(),
+            timeout=2.0
+        )
+        
+        data = json.loads(response.data.decode())
+        timestamps = data.get("value", []) if data.get("exists") else []
+        
+        # Add current timestamp
+        now = int(datetime.now().timestamp())
+        timestamps.append(now)
+        
+        # Store with TTL matching rate limit window
+        await self.nc.request(
+            f"db.kv.{self.plugin_name}.set",
+            json.dumps({
+                "key": key,
+                "value": timestamps,
+                "ttl_seconds": self.config.rate_limit_seconds
+            }).encode()
+        )
     
-    def _check_rate_limit(self, user: str) -> bool:
-        """Check if user is within rate limit."""
-        if user not in self._last_adds:
+    async def _check_rate_limit(self, user: str) -> bool:
+        """
+        Check if user is within rate limit using KV storage.
+        
+        Uses Sprint 12 (KV Storage) to retrieve recent additions.
+        """
+        key = f"ratelimit:{user}"
+        
+        response = await self.nc.request(
+            f"db.kv.{self.plugin_name}.get",
+            json.dumps({"key": key}).encode(),
+            timeout=2.0
+        )
+        
+        data = json.loads(response.data.decode())
+        if not data.get("exists"):
             return True
         
-        now = datetime.utcnow()
-        cutoff = now - timedelta(seconds=self.config.rate_limit_seconds)
-        recent = [t for t in self._last_adds[user] if t > cutoff]
+        timestamps = data.get("value", [])
+        now = int(datetime.now().timestamp())
+        cutoff = now - self.config.rate_limit_seconds
         
+        # Count recent additions (KV TTL handles cleanup)
+        recent = [t for t in timestamps if t > cutoff]
         return len(recent) < self.config.rate_limit_count
 ```
 
@@ -378,17 +538,22 @@ class PlaylistPlugin(PluginBase):
     """Complete playlist plugin with persistence."""
     
     async def setup(self) -> None:
-        """Setup with persistence."""
-        # Initialize storage
-        db_service = await get_database_service()
-        self.storage = PlaylistStorage(db_service)
-        await self.storage.create_tables()
+        """Setup with persistence using storage API."""
+        # Initialize storage adapter (NATS-based, no DB service needed)
+        self.storage = PlaylistStorage(
+            nats_client=self._nc,
+            plugin_name="playlist"
+        )
         
-        # Initialize quotas
-        self.quota_manager = QuotaManager(QuotaConfig(
-            max_items_per_user=self.config.get("max_items_per_user", 5),
-            max_duration_per_user=self.config.get("max_duration_per_user", 1800),
-        ))
+        # Initialize quotas (uses KV storage internally)
+        self.quota_manager = QuotaManager(
+            nats_client=self._nc,
+            config=QuotaConfig(
+                max_items_per_user=self.config.get("max_items_per_user", 5),
+                max_duration_per_user=self.config.get("max_duration_per_user", 1800),
+            ),
+            plugin_name="playlist"
+        )
         
         # ... existing setup ...
         
@@ -558,45 +723,79 @@ async def migrate_playlist_to_plugin():
 
 ## 3. Implementation Steps
 
-### Step 1: Database Schema (30 minutes)
+### Step 1: Create Migration Files (30 minutes)
 
-1. Create Alembic migration
-2. Run migration
-3. Verify tables
+1. Create `migrations/playlist/` directory
+2. Write 001_create_queue.sql (with UP/DOWN)
+3. Write 002_create_history.sql (with UP/DOWN)
+4. Write 003_create_user_stats.sql (with UP/DOWN)
+5. Test migrations (UP then DOWN then UP)
 
-### Step 2: Implement Storage (1.5 hours)
+**Verification:**
+```bash
+# Apply migrations
+python -m common.database migrate --plugin playlist --action up
 
-1. Implement PlaylistStorage class
-2. Implement queue persistence
-3. Implement history tracking
-4. Implement user stats
-5. Write tests
+# Verify tables created
+sqlite3 bot_data.db ".schema playlist_queue"
 
-### Step 3: Implement Quotas (1 hour)
+# Test rollback
+python -m common.database migrate --plugin playlist --action down
+```
 
-1. Implement QuotaManager
-2. Implement rate limiting
-3. Write tests
+### Step 2: Implement Storage Adapter (2 hours)
+
+1. Create `plugins/playlist/storage.py`
+2. Implement `PlaylistStorage` class using NATS storage API
+3. Implement queue operations (save/load/clear) with row operations API
+4. Implement history operations with row operations API  
+5. Implement user stats with atomic operators
+6. Write comprehensive tests (mock NATS, not database)
+
+**Key Pattern:**
+```python
+# Use NATS requests, not direct SQL
+await self.nc.request("db.row.playlist.insert", ...)
+await self.nc.request("db.row.playlist.select", ...)
+```
+
+### Step 3: Implement QuotaManager with KV Storage (1 hour)
+
+1. Create `plugins/playlist/quotas.py`
+2. Implement `QuotaManager` using KV storage for rate limiting
+3. Use KV storage with TTL for auto-expiring rate limit data
+4. Write tests (mock NATS KV subjects)
+
+**Key Pattern:**
+```python
+# Use KV storage for temporary data
+await self.nc.request("db.kv.playlist.set", 
+    json.dumps({"key": f"ratelimit:{user}", "value": [...], "ttl_seconds": 10}))
+```
 
 ### Step 4: Extend Plugin (1.5 hours)
 
-1. Add storage initialization
+1. Update plugin setup to use storage adapter
 2. Add queue recovery on startup
-3. Add history commands
-4. Add quota checking to add
-5. Add persistence on changes
+3. Add history commands (!history, !mystats)
+4. Add quota checking to add handler
+5. Add persistence after queue changes
+6. Write integration tests
 
-### Step 5: Migration Script (1 hour)
+### Step 5: Migration Script (Optional, 1 hour)
 
-1. Write migration script
-2. Test migration
+1. Write script to migrate from lib/playlist.py if exists
+2. Test migration with sample data
 3. Document migration process
 
-### Step 6: Deprecate lib/playlist.py (30 minutes)
+**Note:** Only needed if lib/playlist.py has existing data to migrate.
 
-1. Add deprecation warnings
-2. Update imports
-3. Document removal timeline
+### Step 6: Documentation (30 minutes)
+
+1. Update plugin README with new commands
+2. Document quota configuration
+3. Document migration files
+4. Update acceptance criteria
 
 ---
 
@@ -612,15 +811,27 @@ async def migrate_playlist_to_plugin():
 
 ### 4.2 Technical
 
-- [ ] Database migration runs cleanly
-- [ ] Queue recovery on startup
+- [ ] Migration files created for all 3 tables (with UP/DOWN)
+- [ ] All database operations use storage API (no direct SQL in plugin code)
+- [ ] Tests use NATS mocking (no database mocking)
+- [ ] Schema DDL removed from plugin code
+- [ ] Queue recovery on startup works
 - [ ] Clean shutdown with persistence
 - [ ] Test coverage > 85%
 
-### 4.3 Migration
+### 4.3 Storage Architecture Compliance
 
-- [ ] Migration script works
-- [ ] lib/playlist.py deprecated
+- [ ] ✅ Uses migrations for schema (Sprint 15 pattern)
+- [ ] ✅ Uses row operations for CRUD (Sprint 13 pattern)
+- [ ] ✅ Uses advanced operators for atomic updates (Sprint 14 pattern)
+- [ ] ✅ Uses KV storage for rate limiting (Sprint 12 pattern)
+- [ ] ✅ No direct SQL queries in plugin code
+- [ ] ✅ No CREATE TABLE statements in plugin code
+- [ ] ✅ Storage adapter uses NATS requests only
+
+### 4.4 Migration (if applicable)
+
+- [ ] Migration script works if lib/playlist.py exists
 - [ ] No data loss during migration
 
 ---

@@ -81,7 +81,9 @@ plugins/playlist/
     └── test_plugin.py       # Integration tests
 ```
 
-### 2.2 NATS Subjects
+### 2.1 NATS Subjects
+
+**Command Subjects (for user commands):**
 
 | Subject | Direction | Purpose |
 |---------|-----------|---------|
@@ -89,12 +91,21 @@ plugins/playlist/
 | `rosey.command.playlist.queue` | Subscribe | Handle `!queue` command |
 | `rosey.command.playlist.skip` | Subscribe | Handle `!skip` command |
 | `rosey.command.playlist.remove` | Subscribe | Handle `!remove` command |
-| `rosey.command.playlist.clear` | Subscribe | Handle `!clear` command (admin) |
+| `rosey.command.playlist.clear` | Subscribe | Handle `!clear` command |
 | `rosey.command.playlist.shuffle` | Subscribe | Handle `!shuffle` command |
+
+**Event Subjects (notifications to other plugins):**
+
+| Subject | Direction | Purpose |
+|---------|-----------|---------|
 | `playlist.item.added` | Publish | Event when item added |
+| `playlist.item.playing` | Publish | Event when item starts |
 | `playlist.item.removed` | Publish | Event when item removed |
-| `playlist.item.playing` | Publish | Event when item starts playing |
 | `playlist.cleared` | Publish | Event when queue cleared |
+
+**Service Subjects (for other plugins to call):**
+
+Service subjects will be added in Sortie 2. These use NATS request/reply pattern for inter-plugin communication. See SPEC-Sortie-2 for complete service API via NATS.
 
 ### 2.3 Models (Migrated)
 
@@ -427,6 +438,10 @@ class PlaylistPlugin(PluginBase):
         !remove [id] - Remove from queue
         !clear - Clear queue (admin)
         !shuffle - Shuffle queue
+    
+    Note: This plugin does NOT expose services via get_service().
+    All inter-plugin communication happens via NATS request/reply.
+    See Sortie 2 for NATS service subject definitions.
     """
     
     NAME = "playlist"
@@ -439,9 +454,6 @@ class PlaylistPlugin(PluginBase):
         max_queue = self.config.get("max_queue_size", 100)
         self.queues: dict[str, PlaylistQueue] = {}  # channel -> queue
         self.default_max_queue = max_queue
-        
-        # Service will be set up in Sortie 2
-        self.service: Optional['PlaylistService'] = None
     
     def _get_queue(self, channel: str) -> PlaylistQueue:
         """Get or create queue for a channel."""

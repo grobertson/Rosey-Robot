@@ -89,6 +89,7 @@ class EventTypes:
 
     # Message events
     MESSAGE = "message"
+    PM = "pm"
     MESSAGE_DELETE = "message.delete"
     MESSAGE_EDIT = "message.edit"
 

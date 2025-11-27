@@ -10,6 +10,27 @@ Tests complete user workflows from start to finish:
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
+from dataclasses import dataclass
+from typing import Dict, Any
+
+
+@dataclass
+class MockEvent:
+    """Mock NATS Event for testing."""
+    subject: str
+    data: Dict[str, Any]
+
+    @classmethod
+    def create_pm_event(cls, username: str, message: str):
+        """Create a PM event with standard structure."""
+        return cls(
+            subject="rosey.platform.cytube.pm",
+            data={
+                'username': username,
+                'msg': message,
+                'time': 0
+            }
+        )
 
 
 pytestmark = pytest.mark.asyncio
@@ -91,10 +112,8 @@ async def test_moderator_control_workflow(integration_bot, integration_shell, in
     integration_bot.kick = AsyncMock()
 
     # 1. Moderator sends PM command
-    await integration_shell.handle_pm_command('pm', {
-        'username': 'ModUser',
-        'msg': 'kick alice Spamming'
-    })
+    event = MockEvent.create_pm_event('ModUser', 'kick alice Spamming')
+    await integration_shell.handle_pm_command(event)
 
     # 2. Verify bot action executed
     integration_bot.kick.assert_called_once_with('alice', 'Spamming')

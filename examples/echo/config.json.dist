@@ -1,8 +1,0 @@
-{
-  "domain": "https://cytu.be",
-  "channel": "YourChannelName",
-  "user": ["YourUsername", "YourPassword"],
-  "response_timeout": 1,
-  "restart_delay": 5,
-  "log_level": "WARNING"
-}
